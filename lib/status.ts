@@ -1272,13 +1272,11 @@ function buildStatusSummary(ctx: TelegramStatusContext): string {
   return "unknown";
 }
 
-function buildTelegramStatusThreadSummary(
+function buildTelegramStatusRoleSuffix(
   state: TelegramBridgeStatusLineState | undefined,
-): string | undefined {
-  if (state?.botThreadMode !== "enabled" || !state.busRole) return undefined;
-  const threadName = state.instanceThreadName?.trim();
-  const identity = threadName || (state.instanceSlot ? `[${state.instanceSlot}]` : "");
-  return identity ? `${identity} @${state.busRole}` : undefined;
+): string {
+  if (state?.botThreadMode !== "enabled" || !state.busRole) return "";
+  return ` @${state.busRole}`;
 }
 
 export function buildStatusHtml(
@@ -1290,11 +1288,12 @@ export function buildStatusHtml(
   const usesSubscription = activeModel
     ? ctx.modelRegistry.isUsingOAuth(activeModel)
     : false;
-  const lines: string[] = [buildStatusRow("Status", buildStatusSummary(ctx))];
-  const threadSummary = buildTelegramStatusThreadSummary(bridgeStatus);
-  if (threadSummary) {
-    lines.push(buildStatusRow("Thread", threadSummary));
-  }
+  const lines: string[] = [
+    buildStatusRow(
+      "Status",
+      `${buildStatusSummary(ctx)}${buildTelegramStatusRoleSuffix(bridgeStatus)}`,
+    ),
+  ];
   const usageSummary = buildUsageSummary(stats);
   const costSummary = buildCostSummary(stats, usesSubscription);
   if (usageSummary) {

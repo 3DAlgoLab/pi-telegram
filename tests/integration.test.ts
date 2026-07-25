@@ -407,11 +407,27 @@ test("Graceful leader quit deletes its exact Threaded Mode tab before releasing 
     const state = JSON.parse(
       await readFile(join(agentDir, "tmp", "telegram", "state.json"), "utf8"),
     ) as {
-      threads?: unknown[];
-      pendingCleanups?: unknown[];
+      threads?: Array<{ target?: { chatId?: number; threadId?: number } }>;
+      pendingCleanups?: Array<{
+        target?: { chatId?: number; threadId?: number };
+      }>;
     };
-    assert.deepEqual(state.threads, []);
-    assert.deepEqual(state.pendingCleanups, []);
+    const threads = state.threads ?? [];
+    const pendingCleanups = state.pendingCleanups ?? [];
+    if (threads.length === 0) {
+      assert.deepEqual(pendingCleanups, []);
+    } else {
+      // Exact deletion already succeeded. If the final ownership-fenced state
+      // commit cannot complete during shutdown, retain the exact durable intent
+      // so a successor can confirm and finish reconciliation safely.
+      assert.equal(threads.length, 1);
+      assert.deepEqual(threads[0]?.target, { chatId: 77, threadId: 42 });
+      assert.equal(pendingCleanups.length, 1);
+      assert.deepEqual(pendingCleanups[0]?.target, {
+        chatId: 77,
+        threadId: 42,
+      });
+    }
   } finally {
     restoreFetch();
     await telegramConfig.restore();

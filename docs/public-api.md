@@ -336,7 +336,7 @@ Contract:
 - Providers are synchronous because `/start` status text is rendered inline with the menu.
 - Return `undefined` when the line is not relevant for the active model.
 - Provider failures are isolated and skipped so optional companion status cannot break the core Telegram menu.
-- The bridge renders rows as `<Label>: <value>` in the same HTML status block as Status, the optional Threaded Mode `Thread: <name> @<role>` row, Usage, Cost, and Context, capitalizing the first label character for Telegram UI consistency.
+- The bridge renders rows as `<Label>: <value>` in the same HTML status block as Status, Usage, Cost, and Context, capitalizing the first label character for Telegram UI consistency.
 
 ## Updates
 
