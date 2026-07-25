@@ -4,10 +4,15 @@
  * Owns the shared Bot API reply-markup shape while feature domains own their button semantics
  */
 
+export type TelegramInlineKeyboardButtonStyle =
+  | "danger"
+  | "success"
+  | "primary";
+
 export interface TelegramInlineKeyboardButton {
   text: string;
   callback_data: string;
-  style?: "danger" | "success" | "primary";
+  style?: TelegramInlineKeyboardButtonStyle;
 }
 
 export interface TelegramInlineKeyboardMarkup {

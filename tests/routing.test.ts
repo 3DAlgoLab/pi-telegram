@@ -1323,7 +1323,7 @@ test("Routing runtime preserves follower target and marks generated prompt butto
             {
               text: "Approve",
               callback_data: callbackData,
-              style: "success",
+              style: "primary",
             },
           ],
         ],

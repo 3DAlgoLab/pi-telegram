@@ -177,7 +177,7 @@ Examples:
 
 ## Generated Prompt Buttons
 
-Assistant-generated prompt buttons use the default app style before selection. After queue admission, edit only the selected button to Telegram's `success` style; preserve its agent-authored text and emoji, and leave other choices at their default style. The callback acknowledgement remains the compatibility fallback when a client does not render button styles.
+Assistant-generated prompt buttons use the default app style before selection. After queue admission, edit only the selected button to its agent-configured `selected_style`: `primary` (default/blue), `success` (green), or `danger` (red). Preserve its agent-authored text and emoji, leave other choices at their default style, and always queue the selected prompt regardless of color. The callback acknowledgement remains the compatibility fallback when a client does not render button styles.
 
 ## Navigation
 

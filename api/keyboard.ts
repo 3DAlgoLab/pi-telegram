@@ -6,5 +6,6 @@
 
 export type {
   TelegramInlineKeyboardButton,
+  TelegramInlineKeyboardButtonStyle,
   TelegramInlineKeyboardMarkup,
 } from "../lib/keyboard.ts";

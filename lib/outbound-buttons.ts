@@ -6,7 +6,10 @@
 
 import { randomUUID } from "node:crypto";
 
-import type { TelegramInlineKeyboardMarkup } from "./keyboard.ts";
+import type {
+  TelegramInlineKeyboardButtonStyle,
+  TelegramInlineKeyboardMarkup,
+} from "./keyboard.ts";
 import {
   parseTelegramCommentAttributes,
   parseTopLevelTelegramComment,
@@ -24,6 +27,7 @@ const TELEGRAM_BUTTON_ACTION_TTL_MS = 24 * 60 * 60 * 1000;
 export interface TelegramOutboundButtonAction {
   text: string;
   prompt: string;
+  selectedStyle?: TelegramInlineKeyboardButtonStyle;
 }
 
 export interface TelegramOutboundButtonStoredAction extends TelegramOutboundButtonAction {
@@ -86,11 +90,18 @@ function normalizeMarkdownAfterButtonExtraction(markdown: string): string {
 function parseButtonsCommentAttributes(input: string): {
   label?: string;
   prompt?: string;
+  selectedStyle?: TelegramInlineKeyboardButtonStyle;
 } {
   const attributes = parseTelegramCommentAttributes(input);
+  const selectedStyle = attributes.selected_style;
   return {
     ...(attributes.label ? { label: attributes.label } : {}),
     ...(attributes.prompt ? { prompt: attributes.prompt } : {}),
+    ...(selectedStyle === "success" ||
+    selectedStyle === "danger" ||
+    selectedStyle === "primary"
+      ? { selectedStyle }
+      : {}),
   };
 }
 
@@ -107,14 +118,34 @@ function parseButtonsCommentRows(
     }
     const attributes = parseButtonsCommentAttributes(head);
     return attributes.label && attributes.prompt
-      ? [[{ text: attributes.label, prompt: attributes.prompt }]]
+      ? [
+          [
+            {
+              text: attributes.label,
+              prompt: attributes.prompt,
+              ...(attributes.selectedStyle
+                ? { selectedStyle: attributes.selectedStyle }
+                : {}),
+            },
+          ],
+        ]
       : [];
   }
 
-  const label = parseButtonsCommentAttributes(head).label;
+  const attributes = parseButtonsCommentAttributes(head);
   const prompt = body.trim();
-  if (!label || !prompt) return [];
-  return [[{ text: label, prompt }]];
+  if (!attributes.label || !prompt) return [];
+  return [
+    [
+      {
+        text: attributes.label,
+        prompt,
+        ...(attributes.selectedStyle
+          ? { selectedStyle: attributes.selectedStyle }
+          : {}),
+      },
+    ],
+  ];
 }
 
 export function createTelegramButtonActionStore(
@@ -144,10 +175,18 @@ export function createTelegramButtonActionStore(
       const action = actions.get(callbackData);
       if (!action) return undefined;
       actions.delete(callbackData);
-      return { text: action.text, prompt: action.prompt };
+      return {
+        text: action.text,
+        prompt: action.prompt,
+        ...(action.selectedStyle
+          ? { selectedStyle: action.selectedStyle }
+          : {}),
+      };
     },
   };
 }
+
+const DEFAULT_TELEGRAM_BUTTON_REPLY_MARKDOWN = "Choose an option:";
 
 export function planTelegramButtonReply(
   markdown: string,
@@ -168,8 +207,12 @@ export function planTelegramButtonReply(
     }
     return "";
   });
+  const visibleMarkdown = normalizeMarkdownAfterButtonExtraction(stripped);
   return {
-    markdown: normalizeMarkdownAfterButtonExtraction(stripped),
+    markdown:
+      keyboard.length > 0 && !visibleMarkdown
+        ? DEFAULT_TELEGRAM_BUTTON_REPLY_MARKDOWN
+        : visibleMarkdown,
     ...(keyboard.length > 0
       ? { replyMarkup: { inline_keyboard: keyboard } }
       : {}),
@@ -212,13 +255,14 @@ export function createTelegramButtonPromptTurn(options: {
 export function markTelegramButtonSelected(
   replyMarkup: TelegramOutboundButtonMarkup,
   callbackData: string,
+  selectedStyle: TelegramInlineKeyboardButtonStyle = "primary",
 ): TelegramOutboundButtonMarkup | undefined {
   let matched = false;
   const inlineKeyboard = replyMarkup.inline_keyboard.map((row) =>
     row.map((button) => {
       if (button.callback_data !== callbackData) return { ...button };
       matched = true;
-      return { ...button, style: "success" as const };
+      return { ...button, style: selectedStyle };
     }),
   );
   return matched ? { inline_keyboard: inlineKeyboard } : undefined;
@@ -253,7 +297,11 @@ export async function handleTelegramButtonCallbackQuery<TContext = unknown>(
   }
   const selectedMarkup =
     query.data && query.message?.reply_markup
-      ? markTelegramButtonSelected(query.message.reply_markup, query.data)
+      ? markTelegramButtonSelected(
+          query.message.reply_markup,
+          query.data,
+          action.selectedStyle,
+        )
       : undefined;
   if (selectedMarkup && deps.editMessageReplyMarkup) {
     await deps.editMessageReplyMarkup(chatId, messageId, selectedMarkup);
