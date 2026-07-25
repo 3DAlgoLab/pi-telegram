@@ -207,6 +207,7 @@ test("Bus leader follower disconnect preserves binding when deletion is unconfir
     await assert.rejects(
       disconnect({
         instanceId: "follower-a",
+        registrationGeneration: "follower-a:1",
         connectedAtMs: 500,
         lastHeartbeatMs: 1000,
         target: { chatId: 7, threadId: 42 },
@@ -217,6 +218,69 @@ test("Bus leader follower disconnect preserves binding when deletion is unconfir
       store.getByProfileKey("manual:owner-a")?.status,
       "active",
     );
+    assert.equal(store.listPendingCleanups()[0]?.runtimeGeneration, "follower-a:1");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Successor leader replays durable cleanup intent before provisioning its own thread", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-successor-cleanup-"));
+  const store = createTelegramTopicTargetStore({
+    path: join(dir, "state.json"),
+    getNowMs: () => 2000,
+  });
+  store.upsert({
+    profileKey: "leader:old",
+    owner: { kind: "leader", instanceId: "leader-old" },
+    target: { chatId: 7, threadId: 42 },
+    status: "active",
+    createdAtMs: 500,
+    updatedAtMs: 500,
+    instanceId: "leader-old",
+    slot: "A",
+    threadName: "Atlas",
+  });
+  store.upsertPendingCleanup({
+    id: "cleanup:leader-old:runtime-old:7:42",
+    owner: "leader",
+    instanceId: "leader-old",
+    runtimeGeneration: "runtime-old",
+    target: { chatId: 7, threadId: 42 },
+    requestedAtMs: 1000,
+  });
+  await store.persist();
+  const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
+  let syncState = {};
+  const provision = createTelegramBusLeaderTargetProvisioner({
+    getAllowedUserId: () => 7,
+    instanceId: "leader-new",
+    getCwd: () => "/repo/new",
+    topicTargetStore: store,
+    async callApi<TResponse>(method: string, body: Record<string, unknown>) {
+      calls.push({ method, body });
+      if (method === "createForumTopic") {
+        return { message_thread_id: 43 } as TResponse;
+      }
+      return { ok: true } as TResponse;
+    },
+    getCurrentLeaderEpoch: () => 2,
+    getSyncState: () => syncState,
+    setSyncState: (state) => {
+      syncState = state;
+    },
+    setLeaderTarget: () => undefined,
+    recordRuntimeEvent: () => undefined,
+  });
+  try {
+    await provision({ cwd: "/repo/new" });
+    assert.deepEqual(
+      calls.slice(0, 3).map((call) => call.method),
+      ["closeForumTopic", "deleteForumTopic", "createForumTopic"],
+    );
+    assert.deepEqual(store.listPendingCleanups(), []);
+    assert.equal(store.getByProfileKey("leader:old"), undefined);
+    assert.equal(store.getActiveByInstanceId("leader-new")?.target.threadId, 43);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1693,6 +1757,55 @@ test("Bus leader runtime provisions leader target before polling", async () => {
   }
 });
 
+test("Bus leader runtime keeps follower endpoint unpublished during cleanup replay", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-replay-fence-"));
+  const socketPath = join(dir, "bus.sock");
+  let finishProvisioning!: () => void;
+  let provisioningStarted!: () => void;
+  const provisioningGate = new Promise<void>((resolve) => {
+    finishProvisioning = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    provisioningStarted = resolve;
+  });
+  const runtime = createTelegramBusLeaderRuntime({
+    socketPath,
+    followerRegistry: createTelegramBusFollowerRegistry(),
+    provisionLeaderTarget: async () => {
+      provisioningStarted();
+      await provisioningGate;
+    },
+    startPolling: () => undefined,
+    stopPolling: () => undefined,
+  });
+  try {
+    const startup = runtime.startPolling("ctx");
+    await started;
+    const probe = () =>
+      sendTelegramBusLocalEnvelope({
+        socketPath,
+        timeoutMs: 50,
+        envelope: {
+          kind: "follower.register",
+          requestId: "replay-fence:1",
+          registration: {
+            instanceId: "replay-fence",
+            registrationGeneration: "replay-fence:1",
+            connectedAtMs: 1000,
+          },
+        },
+      });
+    await assert.rejects(probe);
+    finishProvisioning();
+    await startup;
+    assert.equal((await probe())?.kind, "bus.ack");
+  } finally {
+    finishProvisioning();
+    await runtime.stopPolling().catch(() => undefined);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("Bus leader runtime starts the local server around polling", async () => {
   const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-leader-"));
   const socketPath = join(dir, "bus.sock");
@@ -1789,6 +1902,158 @@ test("Bus leader runtime prunes stale followers while polling", async () => {
       ),
       true,
     );
+  } finally {
+    await runtime.stopPolling();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Bus leader cleans up a stale follower only after its process is confirmed dead and cleanup is enabled", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-dead-cleanup-"));
+  const socketPath = join(dir, "bus.sock");
+  const registry = createTelegramBusFollowerRegistry();
+  registry.register({
+    instanceId: "dead",
+    connectedAtMs: 0,
+    pid: 4242,
+    registrationGeneration: "generation-dead",
+    target: { chatId: 7, threadId: 11 },
+  });
+  const cleaned: string[] = [];
+  const runtime = createTelegramBusLeaderRuntime({
+    socketPath,
+    followerRegistry: registry,
+    getNowMs: () => 1000,
+    followerPruneIntervalMs: 5,
+    followerStaleAfterMs: 100,
+    isFollowerProcessAlive: (pid) => pid !== 4242,
+    shouldCleanupConfirmedDeadFollower: async () => true,
+    onFollowerConfirmedDead: async (follower) => {
+      cleaned.push(
+        `${follower.instanceId}:${follower.registrationGeneration}:${follower.target?.chatId}:${follower.target?.threadId}`,
+      );
+    },
+    startPolling: () => undefined,
+    stopPolling: () => undefined,
+  });
+  try {
+    await runtime.startPolling("ctx");
+    await waitForCondition(() => cleaned.length === 1);
+    assert.deepEqual(cleaned, ["dead:generation-dead:7:11"]);
+  } finally {
+    await runtime.stopPolling();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Bus leader serializes confirmed-dead cleanup before replacement registration", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-dead-race-"));
+  const socketPath = join(dir, "bus.sock");
+  const registry = createTelegramBusFollowerRegistry();
+  registry.register({
+    instanceId: "old",
+    profileKey: "manual:owner-a",
+    connectedAtMs: 0,
+    pid: 4242,
+    registrationGeneration: "generation-old",
+    target: { chatId: 7, threadId: 11 },
+  });
+  let markCleanupStarted: (() => void) | undefined;
+  let releaseCleanup: (() => void) | undefined;
+  const cleanupStarted = new Promise<void>((resolve) => {
+    markCleanupStarted = resolve;
+  });
+  let provisionStarted = false;
+  const runtime = createTelegramBusLeaderRuntime({
+    socketPath,
+    followerRegistry: registry,
+    getNowMs: () => 1000,
+    followerPruneIntervalMs: 5,
+    followerStaleAfterMs: 100,
+    isFollowerProcessAlive: () => false,
+    shouldCleanupConfirmedDeadFollower: () => true,
+    onFollowerConfirmedDead: async () => {
+      markCleanupStarted?.();
+      await new Promise<void>((resolve) => {
+        releaseCleanup = resolve;
+      });
+    },
+    provisionFollowerTarget: async (registration) => {
+      provisionStarted = true;
+      return registration.target;
+    },
+    startPolling: () => undefined,
+    stopPolling: () => undefined,
+  });
+  try {
+    await runtime.startPolling("ctx");
+    await cleanupStarted;
+    const replacement = sendTelegramBusLocalEnvelope({
+      socketPath,
+      envelope: {
+        kind: "follower.register",
+        requestId: "replacement:1",
+        registration: {
+          instanceId: "replacement",
+          profileKey: "manual:owner-a",
+          connectedAtMs: 1000,
+          registrationGeneration: "generation-new",
+          target: { chatId: 7, threadId: 12 },
+        },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(provisionStarted, false);
+    releaseCleanup?.();
+    assert.equal((await replacement)?.kind, "bus.ack");
+    assert.equal(provisionStarted, true);
+    assert.equal(
+      registry.get("replacement")?.registrationGeneration,
+      "generation-new",
+    );
+  } finally {
+    releaseCleanup?.();
+    await runtime.stopPolling();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Bus leader preserves stale follower threads without both confirmed death and enabled cleanup", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-dead-preserve-"));
+  const socketPath = join(dir, "bus.sock");
+  const registry = createTelegramBusFollowerRegistry();
+  registry.register({ instanceId: "alive", connectedAtMs: 0, pid: 1 });
+  registry.register({ instanceId: "dead-disabled", connectedAtMs: 0, pid: 2 });
+  registry.register({ instanceId: "unknown", connectedAtMs: 0 });
+  const cleaned: string[] = [];
+  const runtimeEvents: string[] = [];
+  const runtime = createTelegramBusLeaderRuntime({
+    socketPath,
+    followerRegistry: registry,
+    getNowMs: () => 1000,
+    followerPruneIntervalMs: 5,
+    followerStaleAfterMs: 100,
+    isFollowerProcessAlive: (pid) => pid === 1,
+    shouldCleanupConfirmedDeadFollower: () => false,
+    onFollowerConfirmedDead: (follower) => {
+      cleaned.push(follower.instanceId);
+    },
+    startPolling: () => undefined,
+    stopPolling: () => undefined,
+    recordRuntimeEvent: (_category, _error, details) => {
+      runtimeEvents.push(`${details?.phase}:${details?.instanceId}`);
+    },
+  });
+  try {
+    await runtime.startPolling("ctx");
+    await waitForCondition(() => registry.list().length === 0);
+    assert.deepEqual(cleaned, []);
+    assert.equal(runtimeEvents.includes("follower-pruned:alive"), true);
+    assert.equal(
+      runtimeEvents.includes("follower-confirmed-dead-preserved:dead-disabled"),
+      true,
+    );
+    assert.equal(runtimeEvents.includes("follower-pruned:unknown"), true);
   } finally {
     await runtime.stopPolling();
     rmSync(dir, { recursive: true, force: true });

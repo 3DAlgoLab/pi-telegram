@@ -218,6 +218,7 @@ export function isTelegramFollowerApiCallAllowed(input: {
     "deleteForumTopic",
     "deleteMessage",
     "editForumTopic",
+    "editMessageReplyMarkup",
     "editMessageText",
     "sendChatAction",
     "sendMessage",
@@ -296,7 +297,11 @@ export function isTelegramFollowerApiCallAllowed(input: {
       const body = input.args[1] as Record<string, unknown>;
       return body.message_thread_id === undefined && isTargetChatScoped(body);
     }
-    if (apiMethod === "deleteMessage" || apiMethod === "editMessageText") {
+    if (
+      apiMethod === "deleteMessage" ||
+      apiMethod === "editMessageReplyMarkup" ||
+      apiMethod === "editMessageText"
+    ) {
       if (!isTargetMessageScoped(input.args[1])) return false;
       const body = input.args[1] as Record<string, unknown>;
       const messageId =

@@ -7,6 +7,7 @@
 export interface TelegramInlineKeyboardButton {
   text: string;
   callback_data: string;
+  style?: "danger" | "success" | "primary";
 }
 
 export interface TelegramInlineKeyboardMarkup {

@@ -175,6 +175,10 @@ Examples:
 - `🟢 mirror`
 - `always`
 
+## Generated Prompt Buttons
+
+Assistant-generated prompt buttons use the default app style before selection. After queue admission, edit only the selected button to Telegram's `success` style; preserve its agent-authored text and emoji, and leave other choices at their default style. The callback acknowledgement remains the compatibility fallback when a client does not render button styles.
+
 ## Navigation
 
 Inline submenu navigation is hierarchical.

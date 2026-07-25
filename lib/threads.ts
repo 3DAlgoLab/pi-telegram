@@ -92,6 +92,9 @@ export interface TelegramThreadPendingProvision {
   leaderEpoch?: number | string;
 }
 
+export type TelegramThreadCleanupIntent =
+  ThreadReconciler.TelegramThreadCleanupIntent;
+
 type TelegramProvisionRecoveryFile = Record<
   string,
   {
@@ -160,6 +163,7 @@ export interface TelegramTopicTargetFile {
   identities?: TelegramThreadIdentityRecord[];
   reservations?: TelegramThreadReservation[];
   pendingProvisions?: TelegramThreadPendingProvision[];
+  pendingCleanups?: TelegramThreadCleanupIntent[];
   syncObservations?: TelegramTopicSyncObservation[];
 }
 
@@ -229,6 +233,7 @@ export interface TelegramTopicTargetStore {
   ) => { slot?: string; threadName?: string } | undefined;
   listReservations: () => TelegramThreadReservation[];
   listPendingProvisions: () => TelegramThreadPendingProvision[];
+  listPendingCleanups: () => TelegramThreadCleanupIntent[];
   listSyncObservations: () => TelegramTopicSyncObservation[];
   reserveThread: (reservation: TelegramThreadReservation) => void;
   upsertPendingProvision: (provision: TelegramThreadPendingProvision) => void;
@@ -237,6 +242,8 @@ export interface TelegramTopicTargetStore {
     target: TelegramTarget & { threadId: number },
   ) => Promise<boolean>;
   removePendingProvision: (id: string) => boolean;
+  upsertPendingCleanup: (intent: TelegramThreadCleanupIntent) => void;
+  removePendingCleanup: (id: string) => boolean;
   getBotState: () => TelegramBotStateSnapshot;
   setBotState: (state: Partial<TelegramBotStateSnapshot>) => void;
   setStatusSnapshot: (snapshot: {
@@ -876,6 +883,56 @@ function normalizePendingProvision(
   };
 }
 
+function normalizePendingCleanup(
+  value: unknown,
+): TelegramThreadCleanupIntent | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return undefined;
+  const record = value as Record<string, unknown>;
+  const targetValue = record.target;
+  if (
+    !targetValue ||
+    typeof targetValue !== "object" ||
+    Array.isArray(targetValue)
+  ) {
+    return undefined;
+  }
+  const targetRecord = targetValue as Record<string, unknown>;
+  const owner = record.owner;
+  if (owner !== "leader" && owner !== "manual-follower") return undefined;
+  if (typeof record.id !== "string" || record.id.length === 0) return undefined;
+  if (typeof record.instanceId !== "string" || record.instanceId.length === 0)
+    return undefined;
+  if (
+    typeof record.runtimeGeneration !== "string" ||
+    record.runtimeGeneration.length === 0
+  ) {
+    return undefined;
+  }
+  if (
+    typeof targetRecord.chatId !== "number" ||
+    typeof targetRecord.threadId !== "number" ||
+    !Number.isInteger(targetRecord.threadId) ||
+    typeof record.requestedAtMs !== "number"
+  ) {
+    return undefined;
+  }
+  return {
+    id: record.id,
+    owner,
+    instanceId: record.instanceId,
+    runtimeGeneration: record.runtimeGeneration,
+    ...(typeof record.profileKey === "string"
+      ? { profileKey: record.profileKey }
+      : {}),
+    target: {
+      chatId: targetRecord.chatId,
+      threadId: targetRecord.threadId,
+    },
+    requestedAtMs: record.requestedAtMs,
+  };
+}
+
 function normalizeReservation(
   value: unknown,
 ): TelegramThreadReservation | undefined {
@@ -967,6 +1024,12 @@ function parseTopicTargetFile(value: unknown): TelegramTopicTargetFile {
     pendingProvisions: Array.isArray(file.pendingProvisions)
       ? file.pendingProvisions.flatMap((provision) => {
           const normalized = normalizePendingProvision(provision);
+          return normalized ? [normalized] : [];
+        })
+      : [],
+    pendingCleanups: Array.isArray(file.pendingCleanups)
+      ? file.pendingCleanups.flatMap((intent) => {
+          const normalized = normalizePendingCleanup(intent);
           return normalized ? [normalized] : [];
         })
       : [],
@@ -1084,6 +1147,7 @@ export function createTelegramTopicTargetStore(
   let identities = new Map<string, TelegramThreadIdentityRecord>();
   let reservations: TelegramThreadReservation[] = [];
   let pendingProvisions: TelegramThreadPendingProvision[] = [];
+  let pendingCleanups: TelegramThreadCleanupIntent[] = [];
   let syncObservations: TelegramTopicSyncObservation[] = [];
   let followerRecoveryHints = new Map<
     string,
@@ -1140,6 +1204,7 @@ export function createTelegramTopicTargetStore(
     identities = new Map();
     reservations = [];
     pendingProvisions = [];
+    pendingCleanups = [];
     syncObservations = [];
     followerRecoveryHints = new Map();
     statusSnapshot = {};
@@ -1157,6 +1222,7 @@ export function createTelegramTopicTargetStore(
       identities = new Map();
       reservations = [];
       pendingProvisions = [];
+      pendingCleanups = [];
       syncObservations = [];
       followerRecoveryHints = new Map();
       loaded = true;
@@ -1207,6 +1273,10 @@ export function createTelegramTopicTargetStore(
               : {}),
         };
       });
+    pendingCleanups = (file.pendingCleanups ?? []).map((intent) => ({
+      ...intent,
+      target: { ...intent.target },
+    }));
     syncObservations = (file.syncObservations ?? []).map((observation) => ({
       ...observation,
       target: { ...observation.target },
@@ -1268,6 +1338,10 @@ export function createTelegramTopicTargetStore(
           pendingProvisions: pendingProvisions.map((provision) => ({
             ...provision,
             ...(provision.target ? { target: { ...provision.target } } : {}),
+          })),
+          pendingCleanups: pendingCleanups.map((intent) => ({
+            ...intent,
+            target: { ...intent.target },
           })),
           syncObservations: syncObservations.map((observation) => ({
             ...observation,
@@ -1355,6 +1429,12 @@ export function createTelegramTopicTargetStore(
           ...(provision.target ? { target: { ...provision.target } } : {}),
         }));
     },
+    listPendingCleanups() {
+      return pendingCleanups.map((intent) => ({
+        ...intent,
+        target: { ...intent.target },
+      }));
+    },
     listSyncObservations() {
       return syncObservations.map((observation) => ({
         ...observation,
@@ -1422,6 +1502,21 @@ export function createTelegramTopicTargetStore(
         (provision) => provision.id !== id,
       );
       const changed = pendingProvisions.length !== before;
+      if (changed) markDirty();
+      return changed;
+    },
+    upsertPendingCleanup(intent) {
+      const next = { ...intent, target: { ...intent.target } };
+      pendingCleanups = pendingCleanups.filter(
+        (existing) => existing.id !== next.id,
+      );
+      pendingCleanups.push(next);
+      markDirty();
+    },
+    removePendingCleanup(id) {
+      const before = pendingCleanups.length;
+      pendingCleanups = pendingCleanups.filter((intent) => intent.id !== id);
+      const changed = pendingCleanups.length !== before;
       if (changed) markDirty();
       return changed;
     },

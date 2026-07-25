@@ -51,6 +51,7 @@ export interface TelegramButtonCallbackQuery {
     message_id?: number;
     message_thread_id?: number;
     chat?: { id?: number };
+    reply_markup?: TelegramOutboundButtonMarkup;
   };
 }
 
@@ -66,7 +67,12 @@ export interface TelegramButtonCallbackHandlerDeps<TContext = unknown> {
     query: TelegramButtonCallbackQuery,
     action: TelegramOutboundButtonAction,
     ctx: TContext,
-  ) => void;
+  ) => boolean | void;
+  editMessageReplyMarkup?: (
+    chatId: number,
+    messageId: number,
+    replyMarkup: TelegramOutboundButtonMarkup,
+  ) => Promise<void>;
 }
 
 function nowMs(): number {
@@ -203,6 +209,21 @@ export function createTelegramButtonPromptTurn(options: {
   };
 }
 
+export function markTelegramButtonSelected(
+  replyMarkup: TelegramOutboundButtonMarkup,
+  callbackData: string,
+): TelegramOutboundButtonMarkup | undefined {
+  let matched = false;
+  const inlineKeyboard = replyMarkup.inline_keyboard.map((row) =>
+    row.map((button) => {
+      if (button.callback_data !== callbackData) return { ...button };
+      matched = true;
+      return { ...button, style: "success" as const };
+    }),
+  );
+  return matched ? { inline_keyboard: inlineKeyboard } : undefined;
+}
+
 export async function handleTelegramButtonCallbackQuery<TContext = unknown>(
   query: TelegramButtonCallbackQuery,
   ctx: TContext,
@@ -225,7 +246,18 @@ export async function handleTelegramButtonCallbackQuery<TContext = unknown>(
     return true;
   }
 
-  deps.enqueueButtonPrompt(query, action, ctx);
+  const enqueued = deps.enqueueButtonPrompt(query, action, ctx);
+  if (enqueued === false) {
+    await deps.answerCallbackQuery(query.id, "Already queued.");
+    return true;
+  }
+  const selectedMarkup =
+    query.data && query.message?.reply_markup
+      ? markTelegramButtonSelected(query.message.reply_markup, query.data)
+      : undefined;
+  if (selectedMarkup && deps.editMessageReplyMarkup) {
+    await deps.editMessageReplyMarkup(chatId, messageId, selectedMarkup);
+  }
   await deps.answerCallbackQuery(query.id, "Queued.");
   return true;
 }

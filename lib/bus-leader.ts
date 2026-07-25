@@ -112,7 +112,10 @@ export interface TelegramBusFollowerTargetProvisionerDeps {
 export interface TelegramBusFollowerDisconnectHandlerDeps {
   topicTargetStore: Pick<
     Threads.TelegramTopicTargetStore,
-    "markOfflineByInstanceId" | "persist"
+    | "markStaleByTarget"
+    | "persist"
+    | "upsertPendingCleanup"
+    | "removePendingCleanup"
   >;
   callApi: <TResponse>(
     method: string,
@@ -155,6 +158,7 @@ export interface TelegramBusLeaderRuntimeAssemblyDeps<TContext> {
     TelegramBusLeaderRuntimeDeps<TContext>,
     | "callApi"
     | "onFollowerDisconnected"
+    | "onFollowerConfirmedDead"
     | "provisionFollowerTarget"
     | "provisionLeaderTarget"
     | "recordRuntimeEvent"
@@ -212,6 +216,9 @@ export function createTelegramBusLeaderRuntimeAssembly<TContext>(
     onFollowerDisconnected: createTelegramBusFollowerDisconnectHandler({
       ...provisionerPorts,
     }),
+    onFollowerConfirmedDead: createTelegramBusFollowerConfirmedDeadHandler({
+      ...provisionerPorts,
+    }),
     provisionFollowerTarget: createTelegramBusFollowerTargetProvisioner({
       ...provisionerPorts,
     }),
@@ -259,7 +266,12 @@ export interface TelegramBusLeaderRuntimeDeps<TContext> {
   getNowMs?: () => number;
   followerPruneIntervalMs?: number;
   followerStaleAfterMs?: number;
+  isFollowerProcessAlive?: (pid: number) => boolean;
+  shouldCleanupConfirmedDeadFollower?: () => Promise<boolean> | boolean;
   onFollowerDisconnected?: (
+    follower: TelegramBusFollowerView,
+  ) => Promise<void> | void;
+  onFollowerConfirmedDead?: (
     follower: TelegramBusFollowerView,
   ) => Promise<void> | void;
   recordRuntimeEvent?: (
@@ -678,8 +690,9 @@ export function createTelegramBusFollowerTargetProvisioner(
   };
 }
 
-export function createTelegramBusFollowerDisconnectHandler(
+function createTelegramBusFollowerCleanupHandler(
   deps: TelegramBusFollowerDisconnectHandlerDeps,
+  trigger: "graceful-disconnect" | "confirmed-dead",
 ): (follower: TelegramBusFollowerView) => Promise<void> {
   return async (follower) => {
     const target = follower.target;
@@ -688,14 +701,33 @@ export function createTelegramBusFollowerDisconnectHandler(
     if (deps.getCurrentLeaderEpoch && leaderEpoch === undefined) {
       throw new Error("Follower disconnect cleanup requires leader ownership.");
     }
+    if (!follower.registrationGeneration) {
+      throw new Error(
+        "Follower disconnect cleanup requires an exact registration generation.",
+      );
+    }
+    const intent: ThreadReconciler.TelegramThreadCleanupIntent = {
+      id: `cleanup:${follower.instanceId}:${follower.registrationGeneration}:${target.chatId}:${target.threadId}`,
+      owner: "manual-follower",
+      instanceId: follower.instanceId,
+      runtimeGeneration: follower.registrationGeneration,
+      ...(follower.profileKey ? { profileKey: follower.profileKey } : {}),
+      target: { chatId: target.chatId, threadId: target.threadId },
+      requestedAtMs: (deps.getNowMs ?? Date.now)(),
+    };
+    deps.topicTargetStore.upsertPendingCleanup(intent);
+    await deps.topicTargetStore.persist();
     const cleanup = await ThreadReconciler.applyThreadReconciliationPlan(
-      ThreadReconciler.planDisconnectedInstanceThreadCleanup({
-        target: { chatId: target.chatId, threadId: target.threadId },
-        instanceId: follower.instanceId,
-        leaderEpoch,
+      ThreadReconciler.planThreadReconciliation({
+        nowMs: (deps.getNowMs ?? Date.now)(),
+        currentLeaderEpoch: leaderEpoch,
+        records: [],
+        pendingCleanups: [intent],
       }),
       {
         callApi: deps.callApi,
+        markStaleByTarget: deps.topicTargetStore.markStaleByTarget,
+        removeCleanupIntentById: deps.topicTargetStore.removePendingCleanup,
         persist: deps.topicTargetStore.persist,
         getCurrentLeaderEpoch: deps.getCurrentLeaderEpoch,
         recordRuntimeEvent: deps.recordRuntimeEvent,
@@ -703,7 +735,7 @@ export function createTelegramBusFollowerDisconnectHandler(
     );
     if (cleanup.incompleteActions?.length) {
       throw new Error(
-        "Telegram follower thread deletion was not confirmed; reconnect the leader and retry /telegram-disconnect.",
+        "Telegram follower thread deletion was not confirmed; reconnect the leader to retry cleanup.",
       );
     }
     if (
@@ -712,22 +744,43 @@ export function createTelegramBusFollowerDisconnectHandler(
     ) {
       throw new Error("Follower disconnect cleanup lost leader ownership.");
     }
-    const changed =
-      deps.topicTargetStore.markOfflineByInstanceId(follower.instanceId) > 0;
-    if (changed) await deps.topicTargetStore.persist();
     deps.setSyncState(
       Sync.markTelegramSyncSliceFresh(deps.getSyncState(), "target-bindings", {
         nowMs: (deps.getNowMs ?? Date.now)(),
-        action: "manual-follower-disconnect",
+        action:
+          trigger === "confirmed-dead"
+            ? "manual-follower-confirmed-dead"
+            : "manual-follower-disconnect",
       }),
     );
-    deps.recordRuntimeEvent("bus", "Telegram bus follower disconnected", {
-      phase: "follower-disconnect",
-      instanceId: follower.instanceId,
-      chatId: target.chatId,
-      threadId: target.threadId,
-    });
+    deps.recordRuntimeEvent(
+      "bus",
+      trigger === "confirmed-dead"
+        ? "Confirmed-dead Telegram bus follower thread cleaned up"
+        : "Telegram bus follower disconnected",
+      {
+        phase:
+          trigger === "confirmed-dead"
+            ? "follower-confirmed-dead-cleanup"
+            : "follower-disconnect",
+        instanceId: follower.instanceId,
+        chatId: target.chatId,
+        threadId: target.threadId,
+      },
+    );
   };
+}
+
+export function createTelegramBusFollowerDisconnectHandler(
+  deps: TelegramBusFollowerDisconnectHandlerDeps,
+): (follower: TelegramBusFollowerView) => Promise<void> {
+  return createTelegramBusFollowerCleanupHandler(deps, "graceful-disconnect");
+}
+
+export function createTelegramBusFollowerConfirmedDeadHandler(
+  deps: TelegramBusFollowerDisconnectHandlerDeps,
+): (follower: TelegramBusFollowerView) => Promise<void> {
+  return createTelegramBusFollowerCleanupHandler(deps, "confirmed-dead");
 }
 
 export function createTelegramBusLeaderTargetProvisioner<TContext>(
@@ -741,6 +794,23 @@ export function createTelegramBusLeaderTargetProvisioner<TContext>(
         "Telegram leader target provisioning requires ownership.",
       );
     }
+    await deps.topicTargetStore.load();
+    const pendingCleanupPlan = ThreadReconciler.planThreadReconciliation({
+      nowMs: getNowMs(),
+      currentLeaderEpoch: leaderEpoch,
+      previousState: deps.getThreadReconciliationMachineState?.(),
+      records: deps.topicTargetStore.list(),
+      pendingCleanups: deps.topicTargetStore.listPendingCleanups(),
+    });
+    deps.recordThreadReconciliationPlan?.(pendingCleanupPlan);
+    await ThreadReconciler.applyThreadReconciliationPlan(pendingCleanupPlan, {
+      callApi: deps.callApi,
+      markStaleByTarget: deps.topicTargetStore.markStaleByTarget,
+      removeCleanupIntentById: deps.topicTargetStore.removePendingCleanup,
+      persist: deps.topicTargetStore.persist,
+      getCurrentLeaderEpoch: deps.getCurrentLeaderEpoch,
+      recordRuntimeEvent: deps.recordRuntimeEvent,
+    });
     deps.onProvisioningStart?.();
     let ownTarget: Threads.TelegramOwnTopicProvisionResult | undefined;
     try {
@@ -858,6 +928,33 @@ export function createTelegramBusLeaderApiProxy(
   };
 }
 
+type TelegramBusFollowerMutationRunner = <T>(
+  follower: { instanceId: string; profileKey?: string },
+  operation: () => Promise<T>,
+) => Promise<T>;
+
+function createTelegramBusFollowerMutationRunner(): TelegramBusFollowerMutationRunner {
+  const tails = new Map<string, Promise<void>>();
+  return async (follower, operation) => {
+    const key = follower.profileKey
+      ? `profile:${follower.profileKey}`
+      : `instance:${follower.instanceId}`;
+    const previous = tails.get(key);
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    tails.set(key, current);
+    if (previous) await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (tails.get(key) === current) tails.delete(key);
+    }
+  };
+}
+
 export function createTelegramBusLeaderEnvelopeHandler(deps: {
   followerRegistry: TelegramBusFollowerRegistry;
   authSecret?: string;
@@ -883,38 +980,13 @@ export function createTelegramBusLeaderEnvelopeHandler(deps: {
     follower: TelegramBusFollowerView,
   ) => Promise<void> | void;
   getCurrentLeaderEpoch?: () => number | string | undefined;
+  runFollowerMutation?: TelegramBusFollowerMutationRunner;
 }): (
   envelope: TelegramBusEnvelope,
 ) => Promise<TelegramBusEnvelope> | TelegramBusEnvelope {
   const getNowMs = deps.getNowMs ?? Date.now;
-  const followerMutationTails = new Map<string, Promise<void>>();
-  const getFollowerMutationKey = (follower: {
-    instanceId: string;
-    profileKey?: string;
-  }): string =>
-    follower.profileKey
-      ? `profile:${follower.profileKey}`
-      : `instance:${follower.instanceId}`;
-  const runFollowerMutation = async <T>(
-    mutationKey: string,
-    operation: () => Promise<T>,
-  ): Promise<T> => {
-    const previous = followerMutationTails.get(mutationKey);
-    let release!: () => void;
-    const current = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    followerMutationTails.set(mutationKey, current);
-    if (previous) await previous;
-    try {
-      return await operation();
-    } finally {
-      release();
-      if (followerMutationTails.get(mutationKey) === current) {
-        followerMutationTails.delete(mutationKey);
-      }
-    }
-  };
+  const runFollowerMutation =
+    deps.runFollowerMutation ?? createTelegramBusFollowerMutationRunner();
   const forwardToFollower = async (
     envelope: Extract<
       TelegramBusEnvelope,
@@ -977,9 +1049,7 @@ export function createTelegramBusLeaderEnvelopeHandler(deps: {
     }
     switch (envelope.kind) {
       case "follower.register": {
-        return runFollowerMutation(
-          getFollowerMutationKey(envelope.registration),
-          async () => {
+        return runFollowerMutation(envelope.registration, async () => {
           try {
             if (!envelope.registration.registrationGeneration) {
               throw new Error(
@@ -1041,9 +1111,7 @@ export function createTelegramBusLeaderEnvelopeHandler(deps: {
       case "follower.disconnect": {
         const registeredFollower = deps.followerRegistry.get(envelope.instanceId);
         return runFollowerMutation(
-          getFollowerMutationKey(
-            registeredFollower ?? { instanceId: envelope.instanceId },
-          ),
+          registeredFollower ?? { instanceId: envelope.instanceId },
           async () => {
           const follower = deps.followerRegistry.get(envelope.instanceId);
           if (!follower) {
@@ -1368,6 +1436,7 @@ export function createTelegramBusLeaderRuntime<TContext>(
   const getNowMs = deps.getNowMs ?? Date.now;
   const followerPruneIntervalMs = deps.followerPruneIntervalMs ?? 1000;
   const followerStaleAfterMs = deps.followerStaleAfterMs ?? 5000;
+  const runFollowerMutation = createTelegramBusFollowerMutationRunner();
   let pruneInterval: ReturnType<typeof setInterval> | undefined;
   const stopPruning = () => {
     if (!pruneInterval) return;
@@ -1387,14 +1456,87 @@ export function createTelegramBusLeaderRuntime<TContext>(
       followerStaleAfterMs,
     );
     for (const follower of removed) {
-      deps.recordRuntimeEvent?.(
-        "bus",
-        "Telegram bus follower heartbeat stale; preserving thread binding",
-        {
-          phase: "follower-pruned",
+      let processConfirmedDead = false;
+      if (follower.pid !== undefined && deps.isFollowerProcessAlive) {
+        try {
+          processConfirmedDead = !deps.isFollowerProcessAlive(follower.pid);
+        } catch (error) {
+          deps.recordRuntimeEvent?.("bus", error, {
+            phase: "follower-process-liveness",
+            instanceId: follower.instanceId,
+            pid: follower.pid,
+          });
+        }
+      }
+      if (!processConfirmedDead) {
+        deps.recordRuntimeEvent?.(
+          "bus",
+          "Telegram bus follower heartbeat stale; preserving thread binding",
+          {
+            phase: "follower-pruned",
+            instanceId: follower.instanceId,
+            processLiveness:
+              follower.pid === undefined || !deps.isFollowerProcessAlive
+                ? "unknown"
+                : "alive-or-unknown",
+          },
+        );
+        continue;
+      }
+      let cleanupEnabled = false;
+      try {
+        cleanupEnabled =
+          (await deps.shouldCleanupConfirmedDeadFollower?.()) ?? false;
+      } catch (error) {
+        deps.recordRuntimeEvent?.("bus", error, {
+          phase: "follower-confirmed-dead-cleanup-policy",
           instanceId: follower.instanceId,
-        },
-      );
+          pid: follower.pid,
+        });
+      }
+      if (!cleanupEnabled || !deps.onFollowerConfirmedDead) {
+        deps.recordRuntimeEvent?.(
+          "bus",
+          "Telegram bus follower process confirmed dead; preserving thread binding",
+          {
+            phase: "follower-confirmed-dead-preserved",
+            instanceId: follower.instanceId,
+            pid: follower.pid,
+            cleanupEnabled,
+          },
+        );
+        continue;
+      }
+      try {
+        await runFollowerMutation(follower, async () => {
+          const replacement = deps.followerRegistry.list().find((candidate) =>
+            follower.profileKey
+              ? candidate.profileKey === follower.profileKey
+              : candidate.instanceId === follower.instanceId,
+          );
+          if (replacement) {
+            deps.recordRuntimeEvent?.(
+              "bus",
+              "Telegram bus follower replaced before confirmed-dead cleanup; preserving thread binding",
+              {
+                phase: "follower-confirmed-dead-replaced",
+                instanceId: follower.instanceId,
+                replacementInstanceId: replacement.instanceId,
+              },
+            );
+            return;
+          }
+          await deps.onFollowerConfirmedDead!(follower);
+        });
+      } catch (error) {
+        deps.recordRuntimeEvent?.("bus", error, {
+          phase: "follower-confirmed-dead-cleanup",
+          instanceId: follower.instanceId,
+          pid: follower.pid,
+          chatId: follower.target?.chatId,
+          threadId: follower.target?.threadId,
+        });
+      }
     }
   };
   const startPruning = () => {
@@ -1423,14 +1565,17 @@ export function createTelegramBusLeaderRuntime<TContext>(
       provisionFollowerTarget: deps.provisionFollowerTarget,
       onFollowerDisconnected: deps.onFollowerDisconnected,
       getCurrentLeaderEpoch: deps.getCurrentLeaderEpoch,
+      runFollowerMutation,
     }),
   });
   return {
     startPolling: async (ctx) => {
+      // Replay durable cleanup before publishing the follower endpoint so a
+      // replacement registration cannot reclaim a target while it is deleted.
+      await deps.provisionLeaderTarget?.(ctx);
       await localServer.start();
       startPruning();
       try {
-        await deps.provisionLeaderTarget?.(ctx);
         await deps.startPolling(ctx);
       } catch (error) {
         stopPruning();

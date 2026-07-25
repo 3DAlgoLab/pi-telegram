@@ -1109,7 +1109,6 @@ test("Topic lifecycle sync does not delete unknown created topics during provisi
 test("Manual follower disconnect delegates thread deletion to its live leader", async () => {
   const calls: unknown[] = [];
   let followerDisconnects = 0;
-  let offlineCalls = 0;
   let persisted = 0;
   let syncState = createUnknownTelegramSyncState();
   const disconnect = createTelegramManualThreadDisconnectHandler({
@@ -1120,10 +1119,9 @@ test("Manual follower disconnect delegates thread deletion to its live leader", 
       target: { chatId: 7, threadId: 42 },
     }),
     topicTargetStore: {
-      markOfflineByInstanceId: () => {
-        offlineCalls += 1;
-        return 1;
-      },
+      markStaleByTarget: () => false,
+      upsertPendingCleanup: () => undefined,
+      removePendingCleanup: () => false,
       persist: async () => {
         persisted += 1;
       },
@@ -1150,7 +1148,6 @@ test("Manual follower disconnect delegates thread deletion to its live leader", 
   assert.equal(await disconnect(), "stopped");
   assert.deepEqual(calls, []);
   assert.equal(followerDisconnects, 1);
-  assert.equal(offlineCalls, 0);
   assert.equal(persisted, 0);
 });
 
@@ -1166,9 +1163,16 @@ test("Manual leader disconnect rejects unconfirmed cleanup after epoch loss", as
       target: { chatId: 7, threadId: 42 },
     }),
     topicTargetStore: {
-      markOfflineByInstanceId: () => {
-        trace.push("mark-offline");
-        return 1;
+      markStaleByTarget: () => {
+        trace.push("mark-stale");
+        return true;
+      },
+      upsertPendingCleanup: () => {
+        trace.push("upsert-intent");
+      },
+      removePendingCleanup: () => {
+        trace.push("remove-intent");
+        return true;
       },
       persist: async () => {
         trace.push("persist");
@@ -1200,7 +1204,7 @@ test("Manual leader disconnect rejects unconfirmed cleanup after epoch loss", as
   });
 
   await assert.rejects(disconnect(), /deletion was not confirmed/);
-  assert.deepEqual(trace, ["closeForumTopic"]);
+  assert.deepEqual(trace, ["upsert-intent", "persist", "closeForumTopic"]);
 });
 
 test("Promoted leader deletes its inherited follower thread under owned epoch", async () => {
@@ -1215,10 +1219,16 @@ test("Promoted leader deletes its inherited follower thread under owned epoch", 
       target: { chatId: 7, threadId: 42 },
     }),
     topicTargetStore: {
-      markOfflineByInstanceId: () => {
-        trace.push("mark-offline");
-        currentEpoch = undefined;
-        return 0;
+      markStaleByTarget: () => {
+        trace.push("mark-stale");
+        return true;
+      },
+      upsertPendingCleanup: () => {
+        trace.push("upsert-intent");
+      },
+      removePendingCleanup: () => {
+        trace.push("remove-intent");
+        return true;
       },
       persist: async () => {
         trace.push("persist");
@@ -1250,9 +1260,16 @@ test("Promoted leader deletes its inherited follower thread under owned epoch", 
 
   assert.equal(await disconnect(), "stopped");
   assert.deepEqual(trace, [
+    "upsert-intent",
+    "persist",
     "closeForumTopic",
     "deleteForumTopic",
-    "mark-offline",
+    "mark-stale",
+    "remove-intent",
+    "persist",
+    "get-leader-target",
+    "clear-leader-target",
+    "set-sync-state",
     "stop-polling",
   ]);
 });
@@ -1268,9 +1285,16 @@ test("Manual leader disconnect remains live when deletion is unconfirmed", async
       target: { chatId: 7, threadId: 42 },
     }),
     topicTargetStore: {
-      markOfflineByInstanceId: () => {
-        trace.push("mark-offline");
-        return 1;
+      markStaleByTarget: () => {
+        trace.push("mark-stale");
+        return true;
+      },
+      upsertPendingCleanup: () => {
+        trace.push("upsert-intent");
+      },
+      removePendingCleanup: () => {
+        trace.push("remove-intent");
+        return true;
       },
       persist: async () => {
         trace.push("persist");
@@ -1301,5 +1325,10 @@ test("Manual leader disconnect remains live when deletion is unconfirmed", async
   });
 
   await assert.rejects(disconnect(), /deletion was not confirmed/);
-  assert.deepEqual(trace, ["closeForumTopic", "deleteForumTopic"]);
+  assert.deepEqual(trace, [
+    "upsert-intent",
+    "persist",
+    "closeForumTopic",
+    "deleteForumTopic",
+  ]);
 });

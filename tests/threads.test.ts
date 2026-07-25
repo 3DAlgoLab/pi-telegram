@@ -946,6 +946,49 @@ test("Thread store persists and prunes pending provisions", async () => {
   }
 });
 
+test("Thread store persists exact graceful cleanup intents until confirmation", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-pending-cleanups-"));
+  const path = join(dir, "state.json");
+  try {
+    const store = createTelegramTopicTargetStore({ path, getNowMs: () => 1000 });
+    store.upsertPendingCleanup({
+      id: "cleanup:leader-a:runtime-1:7:42",
+      owner: "leader",
+      instanceId: "leader-a",
+      runtimeGeneration: "runtime-1",
+      profileKey: "leader:leader-a",
+      target: { chatId: 7, threadId: 42 },
+      requestedAtMs: 900,
+    });
+    await store.persist();
+
+    const reloaded = createTelegramTopicTargetStore({ path });
+    await reloaded.load();
+    assert.deepEqual(reloaded.listPendingCleanups(), [
+      {
+        id: "cleanup:leader-a:runtime-1:7:42",
+        owner: "leader",
+        instanceId: "leader-a",
+        runtimeGeneration: "runtime-1",
+        profileKey: "leader:leader-a",
+        target: { chatId: 7, threadId: 42 },
+        requestedAtMs: 900,
+      },
+    ]);
+    assert.equal(
+      reloaded.removePendingCleanup("cleanup:leader-a:runtime-1:7:42"),
+      true,
+    );
+    await reloaded.persist();
+
+    const confirmed = createTelegramTopicTargetStore({ path });
+    await confirmed.load();
+    assert.deepEqual(confirmed.listPendingCleanups(), []);
+  } finally {
+    await rm(dir, { force: true, recursive: true });
+  }
+});
+
 test("Thread store retains expired targeted pending provisions for reconciler cleanup", async () => {
   const dir = await mkdtemp(
     join(tmpdir(), "pi-telegram-expired-pending-provisions-"),

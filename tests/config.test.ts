@@ -680,7 +680,7 @@ test("Telegram settings setters reload before scoped writes to preserve shared c
   assert.deepEqual(secondStore.get().voice, { replyMode: "mirror" });
 });
 
-test("Automatic thread cleanup fails closed after invalid shared config recovery", async () => {
+test("Thread cleanup fails closed after invalid shared config recovery", async () => {
   const agentDir = await mkdtemp(
     join(tmpdir(), "pi-telegram-invalid-cleanup-setting-"),
   );

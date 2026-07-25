@@ -817,6 +817,7 @@ export {
   createTelegramButtonPromptTurn,
   createTelegramButtonReplyPlanner,
   handleTelegramButtonCallbackQuery,
+  markTelegramButtonSelected,
   planTelegramButtonReply,
   type TelegramButtonActionStore,
   type TelegramButtonCallbackHandlerDeps,

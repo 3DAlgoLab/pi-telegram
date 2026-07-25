@@ -183,7 +183,7 @@ Voice notes, audio, images, PDFs, and other media can pass through configured in
 
 ### Buttons And Callbacks
 
-Assistant replies can include top-level hidden `telegram_button` comments. The bridge strips the comments from visible text, renders inline buttons, and routes callbacks back into Pi as queued prompts or extension-owned callback actions.
+Assistant replies can include top-level hidden `telegram_button` comments. The bridge strips the comments from visible text, renders inline buttons, and routes callbacks back into Pi as queued prompts or extension-owned callback actions. Once a generated prompt button is accepted, only that exact button switches to Telegram's green success style so the chosen prompt remains visible without altering its agent-authored label or emoji.
 
 ### Threaded Mode And Multi-Instance Bus
 
@@ -280,7 +280,7 @@ Full validation:
 npm run validate
 ```
 
-`npm run audit` executes raw npm audit and then applies a fail-closed temporary policy for two findings pinned inside Pi's published shrinkwrap: `brace-expansion@5.0.6` (`GHSA-3jxr-9vmj-r5cp`) and `protobufjs@7.6.4` (`GHSA-j3f2-48v5-ccww`). It verifies exact advisory sources, graph, installed paths/versions, and rejects every other finding. The exception expires after 2026-08-21 UTC; see [BACKLOG.md](./BACKLOG.md).
+`npm run audit` fails closed over dependencies owned and shipped by `pi-telegram`, omitting Pi host packages declared as peers because the host selects and supplies their dependency graph. Use `npm run audit:host` separately to inspect the complete installed development graph, including upstream Pi advisories; host findings remain visible without being misattributed to this extension's release artifact.
 
 Project context:
 

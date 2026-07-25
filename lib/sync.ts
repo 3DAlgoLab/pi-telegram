@@ -110,11 +110,19 @@ export interface TelegramLeaderHealthRuntime {
 export interface TelegramManualThreadDisconnectDeps<TSyncState> {
   instanceId: string;
   getCurrentThreadRecord: () =>
-    | { target: TelegramTarget; instanceId?: string; owner?: { kind?: string } }
+    | {
+        target: TelegramTarget;
+        instanceId?: string;
+        profileKey?: string;
+        owner?: { kind?: string };
+      }
     | undefined;
   topicTargetStore: Pick<
     TelegramTopicTargetStore,
-    "markOfflineByInstanceId" | "persist"
+    | "markStaleByTarget"
+    | "persist"
+    | "upsertPendingCleanup"
+    | "removePendingCleanup"
   >;
   callApi: <TResponse>(
     method: string,
@@ -175,21 +183,43 @@ export function createTelegramManualThreadDisconnectHandler<
           }
         }
       } else {
-        const stillOwnsLeaderEpoch = () =>
-          !deps.getCurrentLeaderEpoch ||
-          (leaderEpoch !== undefined &&
-            deps.getCurrentLeaderEpoch() === leaderEpoch);
+        const target = currentRecord.target as TelegramTarget & {
+          threadId: number;
+        };
+        const runtimeGeneration = currentRecord.instanceId ?? deps.instanceId;
+        const intent: ThreadReconciler.TelegramThreadCleanupIntent = {
+          id: `cleanup:${deps.instanceId}:${runtimeGeneration}:${target.chatId}:${target.threadId}`,
+          owner: isManualFollower ? "manual-follower" : "leader",
+          instanceId: deps.instanceId,
+          runtimeGeneration,
+          ...(currentRecord.profileKey
+            ? { profileKey: currentRecord.profileKey }
+            : {}),
+          target,
+          requestedAtMs: (deps.getNowMs ?? Date.now)(),
+        };
+        deps.topicTargetStore.upsertPendingCleanup(intent);
+        await deps.topicTargetStore.persist();
         const cleanup = await ThreadReconciler.applyThreadReconciliationPlan(
-          ThreadReconciler.planDisconnectedInstanceThreadCleanup({
-            target: currentRecord.target as TelegramTarget & {
-              threadId: number;
-            },
-            instanceId: deps.instanceId,
-            leaderEpoch,
+          ThreadReconciler.planThreadReconciliation({
+            nowMs: (deps.getNowMs ?? Date.now)(),
+            currentLeaderEpoch: leaderEpoch,
+            records: [],
+            pendingCleanups: [intent],
           }),
           {
             callApi(method, body) {
               return deps.callApi(method, body);
+            },
+            markStaleByTarget(targetToMark, syncStatus, lastSyncError) {
+              return deps.topicTargetStore.markStaleByTarget(
+                targetToMark,
+                syncStatus,
+                lastSyncError,
+              );
+            },
+            removeCleanupIntentById(id) {
+              return deps.topicTargetStore.removePendingCleanup(id);
             },
             persist() {
               return deps.topicTargetStore.persist();
@@ -202,14 +232,6 @@ export function createTelegramManualThreadDisconnectHandler<
           throw new Error(
             "Telegram thread deletion was not confirmed; inspect /telegram-status --debug and retry /telegram-disconnect.",
           );
-        }
-        if (!stillOwnsLeaderEpoch()) return deps.stopPolling();
-        const offlineChanged =
-          deps.topicTargetStore.markOfflineByInstanceId(deps.instanceId) > 0;
-        if (!stillOwnsLeaderEpoch()) return deps.stopPolling();
-        if (offlineChanged) {
-          await deps.topicTargetStore.persist();
-          if (!stillOwnsLeaderEpoch()) return deps.stopPolling();
         }
       }
       const leaderTarget = deps.getLeaderTarget();
