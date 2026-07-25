@@ -147,7 +147,8 @@ Rules:
 - Keep the canonical body form as `<!-- telegram_button label="Label"` + body + `-->`; closed heads must use `prompt="..."` or the colon shorthand to create a button.
 - Use one block per button; this mirrors HTML's singular element model and avoids a nested button DSL inside comments.
 - Button actions are stored in memory with short `callback_data`; Telegram never sees the full prompt in the button payload.
-- After Telegram accepts a generated button callback as a queued prompt, the bridge changes that exact button to Telegram's green `success` style without changing its agent-authored text or emoji. Other choices stay visually unchanged and remain available; the callback acknowledgement remains the fallback on clients that do not render button styles.
+- After Telegram accepts a generated button callback as a queued prompt, the bridge changes that exact button to its configured selection style without changing agent-authored text or emoji. Set `selected_style="primary"` (blue), `selected_style="success"` (green), or `selected_style="danger"` (red); omitted or invalid values fall back to `primary`. The style never suppresses queue admission. Other choices stay visually unchanged and remain available; the callback acknowledgement remains the fallback on clients that do not render button styles.
+- When generated button markup is the entire assistant reply, the bridge supplies `Choose an option:` as visible message text so Telegram has a message to which it can attach the inline keyboard.
 
 Do not emit JSON button specs, inline comments after visible text, standalone button actions, or tool calls for ordinary Telegram-turn buttons. The agent writes Markdown plus hidden comments; the bridge strips comments and attaches Telegram `reply_markup` after `agent_end`. For local/TUI-originated direct sends, put the same Markdown and `telegram_button` comments in `telegram_message(text)`.
 
@@ -162,8 +163,8 @@ The extension injects prompt guidance by context:
 - For Telegram-originated turns, the prompt carries only minimal mobile/reply/file guidance; agents can call `telegram_help()` for full voice/button/direct-delivery/Threaded Mode/formatting/debug details.
 - For Telegram-originated turns, write the full technical answer as normal Markdown.
 - Add `telegram_voice` when a Telegram-native voice message is useful; use body text, `text="..."`, or colon shorthand for the text to synthesize. A companion summary is optional, no specific summary format is required.
-- Add `telegram_button: ...` when label equals prompt, `telegram_button label="..." prompt="..."` for one-line prompts, or `telegram_button label="..."` with a body for multiline prompts. If the reply contains only button/voice comment blocks, add a short visible marker (for example `Choose one:`) before them so Telegram always has a visible parent message for attachment.
+- Add `telegram_button: ...` when label equals prompt, `telegram_button label="..." prompt="..."` for one-line prompts, or `telegram_button label="..."` with a body for multiline prompts. Use optional `selected_style="success|danger|primary"` for post-admission color. A button-only reply may omit parent text because the bridge supplies `Choose an option:` automatically.
 - For ordinary Telegram-turn replies, do not call transport tools for voice or buttons; the bridge owns delivery, while registered voice synthesis providers own TTS and OGG/Opus conversion. For explicit local/TUI direct sends, `telegram_message` may include top-level `telegram_button` comments in its Markdown text because those buttons are attached to that text message.
-- Never send buttons without visible parent text. If the answer would contain only hidden comments, add a compact line such as `Choose one:` first.
+- Prefer meaningful visible parent text when it adds context; for a button-only answer, rely on the bridge's automatic `Choose an option:` fallback rather than manufacturing duplicate text.
 
 This keeps the agent focused on semantics, prevents Telegram action syntax from leaking into normal local replies, and lets the bridge handle low-latency Telegram adaptation.

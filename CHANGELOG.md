@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.24.8: Prompt Button Reliability Hotfix
+
+- `Prompt Buttons`: Button-only assistant replies now receive `Choose an option:` as visible fallback text after hidden markup extraction. Accepted choices use Telegram's blue `primary` style by default; agents may set `selected_style` to `success`, `danger`, or `primary` so quiz-like choices become green, red, or blue while preserving their labels and always queueing the selected prompt. Impact: Telegram can reliably create the keyboard message and retain agent-authored visual feedback instead of silently dropping an empty visible reply or forcing every accepted choice to appear green.
+- `Status`: Threaded Mode identity now renders on a dedicated `Thread: <name> @<role>` row instead of appending `@leader` or `@follower` to the execution status. Impact: `Status` remains an unambiguous `active`/`idle` signal while the current Telegram thread and transport role stay visible separately.
+
 ## 0.24.7: Thread Cleanup Hotfix
 
 - `Thread Cleanup`: Renamed the Telegram Settings control from `Auto thread cleanup` to `Thread cleanup` while preserving `threads.automaticCleanup`. Graceful leader/follower teardown now persists exact generation-fenced cleanup intent before deletion and lets the current or successor leader retry until Telegram confirms removal. If a follower's graceful envelope never arrives, cleanup runs only after stale heartbeat, enabled policy, OS-confirmed death of the exact registered PID, serialized exclusion of replacement registration, an unpublished follower endpoint during durable replay, and cancellation of intents superseded by a current replacement binding. Impact: normal and missed Ctrl-C exits remove only the intended tab without turning heartbeat loss, live/unknown process state, reload, or IPC uncertainty into deletion authority.

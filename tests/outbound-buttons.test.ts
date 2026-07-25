@@ -40,13 +40,41 @@ test("Button reply planner strips telegram_button markup and registers actions",
   });
 });
 
+test("Button reply planner supplies visible text and stores selected style for a button-only reply", () => {
+  const actions: unknown[] = [];
+  const plan = planTelegramButtonReply(
+    '<!-- telegram_button label="Continue" prompt="Continue now." selected_style="danger" -->',
+    {
+      registerAction: (action) => {
+        actions.push(action);
+        return "tgbtn:continue";
+      },
+    },
+  );
+
+  assert.equal(plan.markdown, "Choose an option:");
+  assert.deepEqual(actions, [
+    { text: "Continue", prompt: "Continue now.", selectedStyle: "danger" },
+  ]);
+  assert.deepEqual(plan.replyMarkup, {
+    inline_keyboard: [
+      [{ text: "Continue", callback_data: "tgbtn:continue" }],
+    ],
+  });
+});
+
 test("Button action store resolves registered actions once and expires old entries", () => {
   const store = createTelegramButtonActionStore();
-  const callbackData = store.register({ text: "Run", prompt: "Do it." });
+  const callbackData = store.register({
+    text: "Run",
+    prompt: "Do it.",
+    selectedStyle: "primary",
+  });
 
   assert.deepEqual(store.resolve(callbackData), {
     text: "Run",
     prompt: "Do it.",
+    selectedStyle: "primary",
   });
   assert.equal(store.resolve(callbackData), undefined);
   assert.equal(store.resolve("other:callback"), undefined);
@@ -104,7 +132,11 @@ test("Button callback handler enqueues owned actions, marks the selected button,
     },
     "ctx",
     {
-      resolveAction: () => ({ text: "Run", prompt: "Run it." }),
+      resolveAction: () => ({
+        text: "Run",
+        prompt: "Run it.",
+        selectedStyle: "danger",
+      }),
       answerCallbackQuery: async (_id, text) => {
         answered.push(text ?? "");
       },
@@ -130,7 +162,7 @@ test("Button callback handler enqueues owned actions, marks the selected button,
             {
               text: "🚀 Run",
               callback_data: "tgbtn:live",
-              style: "success",
+              style: "danger",
             },
             { text: "Wait", callback_data: "tgbtn:wait" },
           ],

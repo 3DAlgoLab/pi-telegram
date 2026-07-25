@@ -961,7 +961,7 @@ test("Status HTML builder binds active model lookup", () => {
   assert.match(html, /Context.*0\.0%\/1\.0k/s);
 });
 
-test("Status HTML builder appends Threaded Mode bus role to status row", () => {
+test("Status HTML builder renders Threaded Mode identity on a dedicated row", () => {
   const buildStatusHtml = createTelegramStatusHtmlBuilder({
     getActiveModel: () => undefined,
     getBridgeStatusLineState: () => ({
@@ -984,8 +984,38 @@ test("Status HTML builder appends Threaded Mode bus role to status row", () => {
     isIdle: () => true,
     modelRegistry: { isUsingOAuth: () => false },
   });
-  assert.match(html, /Status.*idle @leader/s);
+  assert.match(html, /<b>Status:<\/b> <code>idle<\/code>/);
+  assert.doesNotMatch(html, /<code>idle @leader<\/code>/);
+  assert.match(html, /<b>Thread:<\/b> <code>Dune @leader<\/code>/);
+  assert.ok(html.indexOf("<b>Thread:") < html.indexOf("<b>Context:"));
   assert.doesNotMatch(html, /Telegram/s);
+});
+
+test("Status HTML builder falls back to slot for an unnamed Threaded Mode target", () => {
+  const buildStatusHtml = createTelegramStatusHtmlBuilder({
+    getActiveModel: () => undefined,
+    getBridgeStatusLineState: () => ({
+      hasBotToken: true,
+      botThreadMode: "enabled",
+      busRole: "follower",
+      instanceSlot: "B",
+      pollingActive: false,
+      pendingDispatch: false,
+      compactionInProgress: false,
+      activeToolExecutions: 0,
+      pendingModelSwitch: false,
+      queuedItems: [],
+      recentRuntimeEvents: [],
+    }),
+  });
+  const html = buildStatusHtml({
+    sessionManager: { getEntries: () => [] },
+    getContextUsage: () => ({ percent: 0, contextWindow: 1000 }),
+    isIdle: () => true,
+    modelRegistry: { isUsingOAuth: () => false },
+  });
+
+  assert.match(html, /<b>Thread:<\/b> <code>\[B\] @follower<\/code>/);
 });
 
 test("Status HTML builder includes extension-provided status lines", () => {
