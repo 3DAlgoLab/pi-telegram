@@ -741,6 +741,13 @@ export default function (pi: Pi.ExtensionAPI) {
     stopTypingLoop: typing.stop,
     answerCallbackQuery,
     editInteractiveMessage,
+    async editMessageReplyMarkup(chatId, messageId, replyMarkup) {
+      await callTelegramApi("editMessageReplyMarkup", {
+        chat_id: chatId,
+        message_id: messageId,
+        reply_markup: replyMarkup,
+      });
+    },
     sendInteractiveMessage,
     deleteMessage: deleteTelegramMessage,
     answerGuestQuery,
@@ -878,6 +885,9 @@ export default function (pi: Pi.ExtensionAPI) {
         startPolling: pollingRuntime.start,
         stopPolling: pollingRuntime.stop,
         authorizeFollowerApiCall,
+        isFollowerProcessAlive: Locks.isProcessAlive,
+        shouldCleanupConfirmedDeadFollower:
+          configControls.resolveAutomaticThreadCleanupEnabled,
         recordFollowerMessageOwnership(record) {
           messageOwnershipRuntime.recordFollower(record);
         },

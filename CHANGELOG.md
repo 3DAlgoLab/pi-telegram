@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.24.7: Thread Cleanup Hotfix
+
+- `Thread Cleanup`: Renamed the Telegram Settings control from `Auto thread cleanup` to `Thread cleanup` while preserving `threads.automaticCleanup`. Graceful leader/follower teardown now persists exact generation-fenced cleanup intent before deletion and lets the current or successor leader retry until Telegram confirms removal. If a follower's graceful envelope never arrives, cleanup runs only after stale heartbeat, enabled policy, OS-confirmed death of the exact registered PID, serialized exclusion of replacement registration, an unpublished follower endpoint during durable replay, and cancellation of intents superseded by a current replacement binding. Impact: normal and missed Ctrl-C exits remove only the intended tab without turning heartbeat loss, live/unknown process state, reload, or IPC uncertainty into deletion authority.
+- `Prompt Button Feedback`: After acceptance, only the exact selected generated prompt button switches to Telegram's green `success` style while its agent-authored text, emoji, and the other available choices remain unchanged. Owned-message authorization also permits the markup update through follower transport, and visual failure remains non-fatal after queue admission. Impact: Telegram keeps accurate visible evidence of which prompt was sent instead of relying on a brief callback toast.
+- `Dependency Audit Boundary`: The release audit now fails closed over dependencies owned and shipped by `pi-telegram` while omitting host-selected Pi peer packages; a separate full-host audit retains visibility into upstream findings. Removed the expired exception machinery and ineffective consumer overrides against Pi's nested shrinkwrap. Impact: extension releases remain zero-finding for their owned artifact without claiming control over the host's dependency graph.
+
 ## 0.24.6: README Positioning Hotfix
 
 - `README Positioning`: Removed duplicated automatic thread-cleanup detail from the opening and defaults summary while retaining the canonical behavior in the lifecycle controls and configuration documentation. Impact: the package entrypoint stays focused on the companion runtime model without changing graceful-quit behavior or its configurable cleanup policy.

@@ -662,7 +662,7 @@ test("buildTelegramSettingsMenuReplyMarkup injects extension settings rows", asy
   assert.equal(rows[1][0].text, "🔧 Extension A");
   assert.ok(rows[1][0].callback_data.startsWith("section:"));
   // Built-in rows follow extension settings
-  assert.ok(rows[2][0].text.includes("Auto thread cleanup"));
+  assert.ok(rows[2][0].text.includes("Thread cleanup"));
   assert.ok(rows[3][0].text.includes("Voice reply"));
   assert.ok(rows[4][0].text.includes("Time"));
   assert.ok(rows[5][0].text.includes("Draft previews"));

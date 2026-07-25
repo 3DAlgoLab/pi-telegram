@@ -46,6 +46,7 @@ interface TestMessage extends Routing.TelegramRoutedMessage {
   }>;
   caption?: string;
   text?: string;
+  reply_markup?: Outbound.TelegramOutboundButtonMarkup;
 }
 
 interface TestCallbackQuery extends Routing.TelegramRoutedCallbackQuery {
@@ -382,6 +383,12 @@ interface RouteHarnessOptions {
     TestContext,
     TestModel
   >["deleteMessage"];
+  editMessageReplyMarkup?: Routing.TelegramInboundRouteRuntimeDeps<
+    TestMessage,
+    TestCallbackQuery,
+    TestContext,
+    TestModel
+  >["editMessageReplyMarkup"];
   replaceFollowerThreadTarget?: Routing.TelegramInboundRouteRuntimeDeps<
     TestMessage,
     TestCallbackQuery,
@@ -507,6 +514,7 @@ function createRouteHarness(options: RouteHarnessOptions = {}) {
       if (text) events.push(`answer:${text}`);
     },
     answerGuestQuery: async () => undefined,
+    editMessageReplyMarkup: options.editMessageReplyMarkup,
     sendInteractiveMessage: async (_chatId, text, mode, replyMarkup, options) => {
       events.push(`interactive:${mode}:${text}`);
       events.push(`markup:${JSON.stringify(replyMarkup)}`);
@@ -1259,9 +1267,13 @@ test("Routing runtime keeps private guest identity when replying to the bot", as
   );
 });
 
-test("Routing runtime preserves follower thread target for generated button callbacks", async () => {
+test("Routing runtime preserves follower target and marks generated prompt buttons selected", async () => {
+  const selectedMarkups: unknown[] = [];
   const { buttonActionStore, events, routeRuntime, telegramQueueStore } =
     createRouteHarness({
+      editMessageReplyMarkup: async (chatId, messageId, replyMarkup) => {
+        selectedMarkups.push({ chatId, messageId, replyMarkup });
+      },
     });
   const callbackData = buttonActionStore.register({
     text: "Continue",
@@ -1279,6 +1291,11 @@ test("Routing runtime preserves follower thread target for generated button call
           message_thread_id: 55,
           chat: { id: 100, type: "private" },
           from: { id: 7, is_bot: false },
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "Approve", callback_data: callbackData }],
+            ],
+          },
         },
       },
     },
@@ -1296,6 +1313,23 @@ test("Routing runtime preserves follower thread target for generated button call
     44,
   );
   assert.equal(events.includes("dispatch"), true);
+  assert.deepEqual(selectedMarkups, [
+    {
+      chatId: 100,
+      messageId: 44,
+      replyMarkup: {
+        inline_keyboard: [
+          [
+            {
+              text: "Approve",
+              callback_data: callbackData,
+              style: "success",
+            },
+          ],
+        ],
+      },
+    },
+  ]);
 });
 
 test("Routing runtime treats All menu commands as threaded target chooser", async () => {

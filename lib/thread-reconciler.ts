@@ -48,6 +48,16 @@ export interface TelegramThreadPendingProvision {
   leaderEpoch?: number | string;
 }
 
+export interface TelegramThreadCleanupIntent {
+  id: string;
+  owner: "leader" | "manual-follower";
+  instanceId: string;
+  runtimeGeneration: string;
+  profileKey?: string;
+  target: ThreadTarget;
+  requestedAtMs: number;
+}
+
 export interface TelegramUnboundThreadMessageObservation {
   target: TelegramTarget & { threadId: number };
   observedAtMs: number;
@@ -131,6 +141,24 @@ export type ThreadReconciliationAction =
       leaderEpoch?: number | string;
     }
   | {
+      kind: "close-delete-graceful-shutdown-topic";
+      target: TelegramTarget & { threadId: number };
+      reason: "graceful-shutdown";
+      cleanupIntentId: string;
+      instanceId: string;
+      runtimeGeneration: string;
+      leaderEpoch?: number | string;
+    }
+  | {
+      kind: "cancel-superseded-graceful-shutdown-cleanup";
+      target: TelegramTarget & { threadId: number };
+      reason: "replacement-registration";
+      cleanupIntentId: string;
+      instanceId: string;
+      runtimeGeneration: string;
+      leaderEpoch?: number | string;
+    }
+  | {
       kind: "close-delete-expired-pending-provision-topic";
       target: TelegramTarget & { threadId: number };
       reason: "expired-pending-provision";
@@ -186,6 +214,7 @@ export interface ThreadReconciliationApplyPorts {
   ) => boolean;
   persist?: () => Promise<void>;
   removePendingProvisionById?: (id: string) => boolean;
+  removeCleanupIntentById?: (id: string) => boolean;
   getCurrentLeaderEpoch?: () => number | string | undefined;
   recordRuntimeEvent?: (
     category: string,
@@ -201,6 +230,7 @@ export interface ThreadReconciliationInput {
   reservations?: readonly ThreadReconciliationReservation[];
   observations?: readonly ThreadReconciliationObservation[];
   pendingProvisions?: readonly TelegramThreadPendingProvision[];
+  pendingCleanups?: readonly TelegramThreadCleanupIntent[];
   unboundMessages?: readonly TelegramUnboundThreadMessageObservation[];
   reservedMessages?: readonly TelegramReservedThreadMessageObservation[];
   proactiveReservationCleanup?: boolean;
@@ -291,6 +321,8 @@ function isCleanupAction(action: ThreadReconciliationAction): boolean {
     action.kind === "close-delete-replaced-follower-topic" ||
     action.kind === "close-delete-previous-leader-topic" ||
     action.kind === "close-delete-disconnected-instance-topic" ||
+    action.kind === "close-delete-graceful-shutdown-topic" ||
+    action.kind === "cancel-superseded-graceful-shutdown-cleanup" ||
     action.kind === "close-delete-expired-pending-provision-topic"
   );
 }
@@ -505,6 +537,26 @@ export async function applyThreadReconciliationPlan(
         shouldPersist;
       continue;
     }
+    if (action.kind === "cancel-superseded-graceful-shutdown-cleanup") {
+      if (shouldSkipForStaleLeaderEpoch(action, ports)) {
+        incompleteActions.push(action);
+        continue;
+      }
+      const changed =
+        ports.removeCleanupIntentById?.(action.cleanupIntentId) ?? false;
+      shouldPersist = changed || shouldPersist;
+      ports.recordRuntimeEvent?.(
+        "telegram",
+        "Cancelled superseded Telegram topic cleanup",
+        {
+          phase: "thread-reconciler-cleanup-superseded",
+          instanceId: action.instanceId,
+          chatId: action.target.chatId,
+          threadId: action.target.threadId,
+        },
+      );
+      continue;
+    }
     if (action.kind === "close-stale-replaced-topic") {
       if (shouldSkipForStaleLeaderEpoch(action, ports)) {
         incompleteActions.push(action);
@@ -558,6 +610,7 @@ export async function applyThreadReconciliationPlan(
       action.kind === "close-delete-replaced-follower-topic" ||
       action.kind === "close-delete-previous-leader-topic" ||
       action.kind === "close-delete-disconnected-instance-topic" ||
+      action.kind === "close-delete-graceful-shutdown-topic" ||
       action.kind === "close-delete-expired-pending-provision-topic"
     ) {
       if (shouldSkipForStaleLeaderEpoch(action, ports)) {
@@ -647,7 +700,9 @@ export async function applyThreadReconciliationPlan(
                   ? "Previous leader Telegram topic deleted"
                   : action.kind === "close-delete-disconnected-instance-topic"
                     ? "Disconnected instance Telegram topic deleted"
-                    : "Expired pending provision Telegram topic deleted",
+                    : action.kind === "close-delete-graceful-shutdown-topic"
+                      ? "Graceful shutdown Telegram topic deleted"
+                      : "Expired pending provision Telegram topic deleted",
         {
           phase:
             action.kind === "close-delete-unbound-topic"
@@ -661,7 +716,10 @@ export async function applyThreadReconciliationPlan(
                       : action.kind ===
                           "close-delete-disconnected-instance-topic"
                         ? "thread-reconciler-disconnected-instance-topic-delete"
-                        : "thread-reconciler-expired-pending-provision-topic-delete",
+                        : action.kind ===
+                            "close-delete-graceful-shutdown-topic"
+                          ? "thread-reconciler-graceful-shutdown-topic-delete"
+                          : "thread-reconciler-expired-pending-provision-topic-delete",
           chatId: action.target.chatId,
           threadId: action.target.threadId,
           ...("messageId" in action ? { messageId: action.messageId } : {}),
@@ -675,6 +733,16 @@ export async function applyThreadReconciliationPlan(
         const changed =
           ports.removePendingProvisionById?.(action.pendingProvisionId) ??
           false;
+        if (changed) persistFences.push(action);
+        shouldPersist = changed || shouldPersist;
+      }
+      if (
+        action.kind === "close-delete-graceful-shutdown-topic" &&
+        deleteConfirmed
+      ) {
+        if (shouldSkipForStaleLeaderEpoch(action, ports)) continue;
+        const changed =
+          ports.removeCleanupIntentById?.(action.cleanupIntentId) ?? false;
         if (changed) persistFences.push(action);
         shouldPersist = changed || shouldPersist;
       }
@@ -736,6 +804,36 @@ export function planThreadReconciliation(
   );
 
   const actions: ThreadReconciliationAction[] = [];
+  for (const cleanup of input.pendingCleanups ?? []) {
+    const superseded = input.records.some(
+      (record) =>
+        isCurrentRecord(record) &&
+        targetKey(record.target) === targetKey(cleanup.target) &&
+        record.instanceId !== cleanup.instanceId,
+    );
+    const common = {
+      target: cleanup.target,
+      cleanupIntentId: cleanup.id,
+      instanceId: cleanup.instanceId,
+      runtimeGeneration: cleanup.runtimeGeneration,
+      ...(input.currentLeaderEpoch !== undefined
+        ? { leaderEpoch: input.currentLeaderEpoch }
+        : {}),
+    };
+    if (superseded) {
+      actions.push({
+        ...common,
+        kind: "cancel-superseded-graceful-shutdown-cleanup",
+        reason: "replacement-registration",
+      });
+    } else {
+      actions.push({
+        ...common,
+        kind: "close-delete-graceful-shutdown-topic",
+        reason: "graceful-shutdown",
+      });
+    }
+  }
   for (const provision of input.pendingProvisions ?? []) {
     if (!provision.target) continue;
     if (!isPendingProvisionExpired(provision, input.nowMs)) continue;

@@ -147,6 +147,7 @@ Rules:
 - Keep the canonical body form as `<!-- telegram_button label="Label"` + body + `-->`; closed heads must use `prompt="..."` or the colon shorthand to create a button.
 - Use one block per button; this mirrors HTML's singular element model and avoids a nested button DSL inside comments.
 - Button actions are stored in memory with short `callback_data`; Telegram never sees the full prompt in the button payload.
+- After Telegram accepts a generated button callback as a queued prompt, the bridge changes that exact button to Telegram's green `success` style without changing its agent-authored text or emoji. Other choices stay visually unchanged and remain available; the callback acknowledgement remains the fallback on clients that do not render button styles.
 
 Do not emit JSON button specs, inline comments after visible text, standalone button actions, or tool calls for ordinary Telegram-turn buttons. The agent writes Markdown plus hidden comments; the bridge strips comments and attaches Telegram `reply_markup` after `agent_end`. For local/TUI-originated direct sends, put the same Markdown and `telegram_button` comments in `telegram_message(text)`.
 

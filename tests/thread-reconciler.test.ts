@@ -406,6 +406,92 @@ test("Thread reconciler plans expired targeted pending provision cleanup", () =>
   ]);
 });
 
+test("Thread reconciler plans persisted graceful cleanup under current leader authority", () => {
+  const plan = planThreadReconciliation({
+    nowMs,
+    currentLeaderEpoch: 7,
+    records: [{ ...record(95), instanceId: "inst-95" }],
+    pendingCleanups: [
+      {
+        id: "cleanup:inst-95:runtime-1:7:95",
+        owner: "leader",
+        instanceId: "inst-95",
+        runtimeGeneration: "runtime-1",
+        target: { chatId: 7, threadId: 95 },
+        requestedAtMs: nowMs - 100,
+      },
+    ],
+  });
+
+  assert.deepEqual(plan.actions, [
+    {
+      kind: "close-delete-graceful-shutdown-topic",
+      target: { chatId: 7, threadId: 95 },
+      reason: "graceful-shutdown",
+      cleanupIntentId: "cleanup:inst-95:runtime-1:7:95",
+      instanceId: "inst-95",
+      runtimeGeneration: "runtime-1",
+      leaderEpoch: 7,
+    },
+  ]);
+  assert.equal(plan.state?.phase, "cleanup-required");
+});
+
+test("Thread reconciler cancels persisted cleanup superseded by a replacement binding", async () => {
+  const cleanupIntentId = "cleanup:old-runtime:runtime-1:7:95";
+  const plan = planThreadReconciliation({
+    nowMs,
+    currentLeaderEpoch: 7,
+    records: [{ ...record(95), instanceId: "replacement-runtime" }],
+    pendingCleanups: [
+      {
+        id: cleanupIntentId,
+        owner: "manual-follower",
+        instanceId: "old-runtime",
+        runtimeGeneration: "runtime-1",
+        profileKey: "profile:95",
+        target: { chatId: 7, threadId: 95 },
+        requestedAtMs: nowMs - 100,
+      },
+    ],
+  });
+
+  assert.deepEqual(plan.actions, [
+    {
+      kind: "cancel-superseded-graceful-shutdown-cleanup",
+      target: { chatId: 7, threadId: 95 },
+      reason: "replacement-registration",
+      cleanupIntentId,
+      instanceId: "old-runtime",
+      runtimeGeneration: "runtime-1",
+      leaderEpoch: 7,
+    },
+  ]);
+
+  const calls: string[] = [];
+  const removed: string[] = [];
+  let persisted = 0;
+  const result = await applyThreadReconciliationPlan(plan, {
+    callApi: async <TResponse>(method: string) => {
+      calls.push(method);
+      return { ok: true } as TResponse;
+    },
+    removeCleanupIntentById: (id) => {
+      removed.push(id);
+      return true;
+    },
+    persist: async () => {
+      persisted += 1;
+    },
+    getCurrentLeaderEpoch: () => 7,
+  });
+
+  assert.deepEqual(calls, []);
+  assert.deepEqual(removed, [cleanupIntentId]);
+  assert.equal(persisted, 1);
+  assert.equal(result.changed, true);
+});
+
 test("Thread reconciler ignores stale-epoch cleanup observations", () => {
   const plan = planThreadReconciliation({
     nowMs,
@@ -421,6 +507,81 @@ test("Thread reconciler ignores stale-epoch cleanup observations", () => {
   });
 
   assert.deepEqual(plan.actions, []);
+});
+
+test("Thread reconciler removes graceful cleanup intent only after confirmed deletion", async () => {
+  const calls: string[] = [];
+  const removed: string[] = [];
+  const staleTargets: unknown[] = [];
+  let persisted = 0;
+  const action = {
+    kind: "close-delete-graceful-shutdown-topic" as const,
+    target: { chatId: 7, threadId: 95 },
+    reason: "graceful-shutdown" as const,
+    cleanupIntentId: "cleanup:inst-95:runtime-1:7:95",
+    instanceId: "inst-95",
+    runtimeGeneration: "runtime-1",
+    leaderEpoch: 7,
+  };
+  const result = await applyThreadReconciliationPlan(
+    { actions: [action] },
+    {
+      async callApi<TResponse>(method: string) {
+        calls.push(method);
+        return {} as TResponse;
+      },
+      markStaleByTarget(target, syncStatus) {
+        staleTargets.push({ target, syncStatus });
+        return true;
+      },
+      removeCleanupIntentById(id) {
+        removed.push(id);
+        return true;
+      },
+      getCurrentLeaderEpoch: () => 7,
+      async persist() {
+        persisted += 1;
+      },
+    },
+  );
+
+  assert.deepEqual(calls, ["closeForumTopic", "deleteForumTopic"]);
+  assert.deepEqual(staleTargets, [
+    { target: { chatId: 7, threadId: 95 }, syncStatus: "deleted" },
+  ]);
+  assert.deepEqual(removed, ["cleanup:inst-95:runtime-1:7:95"]);
+  assert.equal(persisted, 1);
+  assert.equal(result.changed, true);
+});
+
+test("Thread reconciler preserves graceful cleanup intent after incomplete deletion", async () => {
+  let removed = false;
+  const action = {
+    kind: "close-delete-graceful-shutdown-topic" as const,
+    target: { chatId: 7, threadId: 95 },
+    reason: "graceful-shutdown" as const,
+    cleanupIntentId: "cleanup:inst-95:runtime-1:7:95",
+    instanceId: "inst-95",
+    runtimeGeneration: "runtime-1",
+    leaderEpoch: 7,
+  };
+  const result = await applyThreadReconciliationPlan(
+    { actions: [action] },
+    {
+      async callApi<TResponse>(method: string) {
+        if (method === "deleteForumTopic") throw new Error("temporary failure");
+        return {} as TResponse;
+      },
+      removeCleanupIntentById() {
+        removed = true;
+        return true;
+      },
+      getCurrentLeaderEpoch: () => 7,
+    },
+  );
+
+  assert.equal(removed, false);
+  assert.deepEqual(result.incompleteActions, [action]);
 });
 
 test("Thread reconciler apply closes replaced instance topics and marks them stale", async () => {

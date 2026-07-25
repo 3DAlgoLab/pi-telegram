@@ -133,7 +133,7 @@ export interface TelegramSettingsMenuRuntimeDeps<
 
 export const SETTINGS_MENU_TITLE = "<b>⚙️ Settings:</b>";
 export const AUTOMATIC_THREAD_CLEANUP_SETTINGS_TITLE =
-  "<b>🧹 Automatic thread cleanup:</b>";
+  "<b>🧹 Thread cleanup:</b>";
 export const PROACTIVE_PUSH_SETTINGS_TITLE = "<b>📌 Proactive push:</b>";
 export const DRAFT_PREVIEWS_SETTINGS_TITLE = "<b>📝 Draft previews:</b>";
 export const ASSISTANT_RENDERING_SETTINGS_TITLE =
@@ -172,7 +172,7 @@ export function buildAutomaticThreadCleanupSettingsText(
     "Delete this Pi instance's Telegram tab when Pi quits normally.",
     "",
     "<code>-</code> <code>on</code> (default): delete the bound thread and release Telegram authority on graceful quit.",
-    "<code>-</code> <code>off</code>: preserve the tab as a restart hint; manual /telegram-disconnect still confirms and deletes it.",
+    "<code>-</code> <code>off</code>: preserve the tab as a restart hint; manual <code>/telegram-disconnect</code> still confirms and deletes it.",
   ].join("\n");
 }
 
@@ -290,7 +290,7 @@ export function buildTelegramSettingsMenuReplyMarkup(
   rows.push(
     [
       {
-        text: `🧹 Auto thread cleanup: ${automaticThreadCleanupEnabled ? "on" : "off"}`,
+        text: `🧹 Thread cleanup: ${automaticThreadCleanupEnabled ? "on" : "off"}`,
         callback_data: "settings:open:automatic-thread-cleanup",
       },
     ],
@@ -669,7 +669,7 @@ export async function handleTelegramSettingsMenuCallbackAction(
     await updateAutomaticThreadCleanupSettingsMessage(deps);
     await deps.answerCallbackQuery(
       callbackQueryId,
-      `Automatic thread cleanup ${enabled ? "enabled" : "disabled"}`,
+      `Thread cleanup ${enabled ? "enabled" : "disabled"}`,
     );
     return true;
   }
@@ -709,8 +709,7 @@ export function createTelegramSettingsMenuRuntime<
           getVoiceReplyMode: deps.getVoiceReplyMode,
           isVoiceReplyModeConfigured: deps.isVoiceReplyModeConfigured,
           getTimeInjectionMode: deps.getTimeInjectionMode,
-          isAutomaticThreadCleanupEnabled:
-            deps.isAutomaticThreadCleanupEnabled,
+          isAutomaticThreadCleanupEnabled: deps.isAutomaticThreadCleanupEnabled,
           sendSettingsMenu: (state, text, replyMarkup) =>
             deps.sendInteractiveMessage(
               state.chatId,
@@ -733,8 +732,7 @@ export function createTelegramSettingsMenuRuntime<
           getVoiceReplyMode: deps.getVoiceReplyMode,
           isVoiceReplyModeConfigured: deps.isVoiceReplyModeConfigured,
           getTimeInjectionMode: deps.getTimeInjectionMode,
-          isAutomaticThreadCleanupEnabled:
-            deps.isAutomaticThreadCleanupEnabled,
+          isAutomaticThreadCleanupEnabled: deps.isAutomaticThreadCleanupEnabled,
           updateSettingsMessage: (text, replyMarkup) =>
             deps.editInteractiveMessage(
               state.chatId,
@@ -777,15 +775,13 @@ export function createTelegramSettingsMenuRuntime<
         getVoiceReplyMode: deps.getVoiceReplyMode,
         isVoiceReplyModeConfigured: deps.isVoiceReplyModeConfigured,
         getTimeInjectionMode: deps.getTimeInjectionMode,
-        isAutomaticThreadCleanupEnabled:
-          deps.isAutomaticThreadCleanupEnabled,
+        isAutomaticThreadCleanupEnabled: deps.isAutomaticThreadCleanupEnabled,
         setProactivePushEnabled: deps.setProactivePushEnabled,
         setDraftPreviewsEnabled: deps.setDraftPreviewsEnabled,
         setAssistantRenderingMode: deps.setAssistantRenderingMode,
         setVoiceReplyMode: deps.setVoiceReplyMode,
         setTimeInjectionMode: deps.setTimeInjectionMode,
-        setAutomaticThreadCleanupEnabled:
-          deps.setAutomaticThreadCleanupEnabled,
+        setAutomaticThreadCleanupEnabled: deps.setAutomaticThreadCleanupEnabled,
         updateSettingsMessage: (text, replyMarkup) =>
           deps.editInteractiveMessage(
             state.chatId,

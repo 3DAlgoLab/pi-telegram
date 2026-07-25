@@ -885,7 +885,7 @@ export function createTelegramAutomaticThreadCleanupResolver(
     await loadLatestTelegramConfig(configStore);
     if (configStore.didLastLoadRecoverInvalidConfig?.()) {
       throw new Error(
-        "Automatic thread cleanup setting is unavailable after invalid Telegram config recovery.",
+        "Thread cleanup setting is unavailable after invalid Telegram config recovery.",
       );
     }
     return createTelegramAutomaticThreadCleanupChecker(configStore)();

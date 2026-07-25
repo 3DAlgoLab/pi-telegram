@@ -81,14 +81,26 @@ test("Button prompt turn preserves prompt text and queue metadata", () => {
   assert.equal(turn.statusSummary, "Run");
 });
 
-test("Button callback handler enqueues owned actions and consumes expired buttons", async () => {
+test("Button callback handler enqueues owned actions, marks the selected button, and consumes expired buttons", async () => {
   const answered: string[] = [];
   const enqueued: unknown[] = [];
+  const edited: unknown[] = [];
   const handled = await handleTelegramButtonCallbackQuery(
     {
       id: "q1",
       data: "tgbtn:live",
-      message: { message_id: 2, chat: { id: 1 } },
+      message: {
+        message_id: 2,
+        chat: { id: 1 },
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "🚀 Run", callback_data: "tgbtn:live" },
+              { text: "Wait", callback_data: "tgbtn:wait" },
+            ],
+          ],
+        },
+      },
     },
     "ctx",
     {
@@ -99,12 +111,33 @@ test("Button callback handler enqueues owned actions and consumes expired button
       enqueueButtonPrompt: (query, action, ctx) => {
         enqueued.push({ query, action, ctx });
       },
+      editMessageReplyMarkup: async (chatId, messageId, replyMarkup) => {
+        edited.push({ chatId, messageId, replyMarkup });
+      },
     },
   );
 
   assert.equal(handled, true);
   assert.deepEqual(answered, ["Queued."]);
   assert.equal(enqueued.length, 1);
+  assert.deepEqual(edited, [
+    {
+      chatId: 1,
+      messageId: 2,
+      replyMarkup: {
+        inline_keyboard: [
+          [
+            {
+              text: "🚀 Run",
+              callback_data: "tgbtn:live",
+              style: "success",
+            },
+            { text: "Wait", callback_data: "tgbtn:wait" },
+          ],
+        ],
+      },
+    },
+  ]);
 
   const expired = await handleTelegramButtonCallbackQuery(
     { id: "q2", data: "tgbtn:expired" },
@@ -122,4 +155,37 @@ test("Button callback handler enqueues owned actions and consumes expired button
 
   assert.equal(expired, true);
   assert.deepEqual(answered, ["Queued.", "Button action expired."]);
+
+  const duplicate = await handleTelegramButtonCallbackQuery(
+    {
+      id: "q3",
+      data: "tgbtn:duplicate",
+      message: {
+        message_id: 3,
+        chat: { id: 1 },
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "Run", callback_data: "tgbtn:duplicate" }],
+          ],
+        },
+      },
+    },
+    "ctx",
+    {
+      resolveAction: () => ({ text: "Run", prompt: "Run it." }),
+      answerCallbackQuery: async (_id, text) => {
+        answered.push(text ?? "");
+      },
+      enqueueButtonPrompt: () => false,
+      editMessageReplyMarkup: async () => {
+        throw new Error("must not mark a prompt that was not queued");
+      },
+    },
+  );
+  assert.equal(duplicate, true);
+  assert.deepEqual(answered, [
+    "Queued.",
+    "Button action expired.",
+    "Already queued.",
+  ]);
 });

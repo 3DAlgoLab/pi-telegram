@@ -608,6 +608,11 @@ export interface TelegramInboundRouteRuntimeDeps<
     mode: "markdown" | "html" | "plain",
     replyMarkup: Menu.TelegramReplyMarkup,
   ) => Promise<void>;
+  editMessageReplyMarkup?: (
+    chatId: number,
+    messageId: number,
+    replyMarkup: OutboundHandlers.TelegramOutboundButtonMarkup,
+  ) => Promise<void>;
   sendInteractiveMessage?: (
     chatId: number,
     text: string,
@@ -1448,11 +1453,28 @@ export function createTelegramInboundRouteRuntime<
         {
           resolveAction: deps.buttonActionStore.resolve,
           answerCallbackQuery: deps.answerCallbackQuery,
+          editMessageReplyMarkup: deps.editMessageReplyMarkup
+            ? async (chatId, messageId, replyMarkup) => {
+                try {
+                  await deps.editMessageReplyMarkup?.(
+                    chatId,
+                    messageId,
+                    replyMarkup,
+                  );
+                } catch (error) {
+                  deps.recordRuntimeEvent?.("telegram", error, {
+                    phase: "button-selection-mark",
+                    chatId,
+                    messageId,
+                  });
+                }
+              }
+            : undefined,
           enqueueButtonPrompt: (buttonQuery, action, context) => {
             const chatId = buttonQuery.message?.chat?.id;
             const messageId = buttonQuery.message?.message_id;
             if (typeof chatId !== "number" || typeof messageId !== "number")
-              return;
+              return false;
             const queueOrder = deps.bridgeRuntime.queue.allocateItemOrder();
             const turn = OutboundHandlers.createTelegramButtonPromptTurn({
               chatId,
@@ -1471,10 +1493,11 @@ export function createTelegramInboundRouteRuntime<
               deps.telegramQueueStore.getQueuedItems(),
               turn,
             );
-            if (!result.appended) return;
+            if (!result.appended) return false;
             deps.telegramQueueStore.setQueuedItems(result.items);
             deps.updateStatus(context);
             requestDispatchNextQueuedTelegramTurn(context);
+            return true;
           },
         },
       );

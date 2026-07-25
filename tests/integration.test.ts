@@ -12,9 +12,11 @@ import testRoot, { mock, type TestContext } from "node:test";
 
 import { registerTelegramActivityHandler } from "../api/activity.ts";
 import * as BusApi from "../lib/bus-api.ts";
+import * as BusFollower from "../lib/bus-follower.ts";
 import * as BusLeader from "../lib/bus-leader.ts";
 import * as Bus from "../lib/bus.ts";
 import * as Delivery from "../lib/delivery.ts";
+import * as Threads from "../lib/threads.ts";
 import {
   createTelegramBridgeApiRuntime,
   type TelegramApiClient,
@@ -142,6 +144,19 @@ async function writeRuntimeTelegramLocks(
   await writeFile(
     join(telegramRuntimeDir, "owners.json"),
     JSON.stringify(locks, null, "\t") + "\n",
+    "utf8",
+  );
+}
+
+async function writeRuntimeTelegramState(
+  state: Record<string, unknown>,
+): Promise<void> {
+  const agentDir = await ensureRuntimeAgentDir();
+  const telegramRuntimeDir = join(agentDir, "tmp", "telegram");
+  await mkdir(telegramRuntimeDir, { recursive: true });
+  await writeFile(
+    join(telegramRuntimeDir, "state.json"),
+    JSON.stringify(state, null, "\t") + "\n",
     "utf8",
   );
 }
@@ -310,6 +325,195 @@ function createRuntimePiHarness(options: RuntimePiHarnessOptions = {}) {
     getActiveTools: () => [...activeTools],
   };
 }
+
+test("Graceful leader quit deletes its exact Threaded Mode tab before releasing transport", async () => {
+  const telegramConfig = await createRuntimeTelegramConfigFixture();
+  const { handlers, commands, pi } = createRuntimePiHarness();
+  const methods: Array<{ method: string; body?: Record<string, unknown> }> = [];
+  const restoreFetch = setRuntimeTestFetch(async (input, init) => {
+    const method = getRuntimeTelegramApiMethod(input);
+    const body = parseJsonRequestBody(init);
+    methods.push({ method, ...(body ? { body } : {}) });
+    if (method === "deleteWebhook" || method === "setMyCommands") {
+      return createRuntimeTelegramApiResponse(true);
+    }
+    if (method === "getMe") {
+      return createRuntimeTelegramApiResponse({
+        id: 123,
+        username: "test_bot",
+        has_topics_enabled: true,
+      });
+    }
+    if (method === "getUpdates") {
+      return await new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new DOMException("stop", "AbortError"));
+        });
+      });
+    }
+    if (method === "createForumTopic") {
+      return createRuntimeTelegramApiResponse({
+        message_thread_id: 42,
+        name: "Atlas",
+      });
+    }
+    if (
+      method === "sendMessage" ||
+      method === "closeForumTopic" ||
+      method === "deleteForumTopic"
+    ) {
+      return createRuntimeTelegramApiResponse(true);
+    }
+    throw new Error(`Unexpected Telegram API method: ${method}`);
+  });
+  try {
+    await telegramConfig.write({
+      botToken: "123:abc",
+      botId: 123,
+      botUsername: "test_bot",
+      allowedUserId: 77,
+      lastUpdateId: 0,
+    });
+    await writeRuntimeTelegramLocks({});
+    await writeRuntimeTelegramState({
+      version: 1,
+      source: "snapshot",
+      writtenAtMs: 0,
+      bot: { threadMode: "enabled" },
+      threads: [],
+      pendingCleanups: [],
+    });
+    (await getRuntimeTelegramExtension())(pi);
+    const ctx = createRuntimeExtensionContext({ cwd: "/repo/graceful-leader" });
+    await handlers.get("session_start")?.({}, ctx);
+    await commands.get("telegram-connect")?.handler("", ctx);
+    await waitForCondition(() =>
+      methods.some((entry) => entry.method === "createForumTopic"),
+    );
+
+    await handlers.get("session_shutdown")?.(
+      { type: "session_shutdown", reason: "quit" },
+      ctx,
+    );
+
+    const deleteCall = methods.find(
+      (entry) => entry.method === "deleteForumTopic",
+    );
+    assert.deepEqual(deleteCall?.body, {
+      chat_id: 77,
+      message_thread_id: 42,
+    });
+    const agentDir = await ensureRuntimeAgentDir();
+    const state = JSON.parse(
+      await readFile(join(agentDir, "tmp", "telegram", "state.json"), "utf8"),
+    ) as {
+      threads?: unknown[];
+      pendingCleanups?: unknown[];
+    };
+    assert.deepEqual(state.threads, []);
+    assert.deepEqual(state.pendingCleanups, []);
+  } finally {
+    restoreFetch();
+    await telegramConfig.restore();
+  }
+});
+
+test("Graceful follower disconnect persists intent and deletes through its live leader", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-follower-cleanup-integration-"));
+  const socketPath = join(dir, "bus.sock");
+  const store = Threads.createTelegramTopicTargetStore({
+    path: join(dir, "state.json"),
+    getNowMs: () => 2000,
+  });
+  const registry = Bus.createTelegramBusFollowerRegistry();
+  const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
+  let syncState = {};
+  const disconnectFollower =
+    BusLeader.createTelegramBusFollowerDisconnectHandler({
+      topicTargetStore: store,
+      async callApi<TResponse>(method: string, body: Record<string, unknown>) {
+        calls.push({ method, body });
+        return { ok: true } as TResponse;
+      },
+      getCurrentLeaderEpoch: () => 7,
+      getSyncState: () => syncState,
+      setSyncState: (state) => {
+        syncState = state;
+      },
+      getNowMs: () => 2000,
+      recordRuntimeEvent: () => undefined,
+    });
+  const server = Bus.createTelegramBusLocalServer({
+    socketPath,
+    handleEnvelope: BusLeader.createTelegramBusLeaderEnvelopeHandler({
+      followerRegistry: registry,
+      authSecret: "leader-secret",
+      getNowMs: () => 2000,
+      async provisionFollowerTarget(registration) {
+        store.upsert({
+          profileKey: registration.profileKey ?? "manual:follower-a",
+          owner: {
+            kind: "manual-follower",
+            instanceId: registration.instanceId,
+          },
+          target: { chatId: 77, threadId: 43 },
+          status: "active",
+          createdAtMs: 1900,
+          updatedAtMs: 1900,
+          instanceId: registration.instanceId,
+          slot: "B",
+          threadName: "Beacon",
+        });
+        await store.persist();
+        return {
+          chatId: 77,
+          threadId: 43,
+          slot: "B",
+          threadName: "Beacon",
+        };
+      },
+      onFollowerDisconnected: disconnectFollower,
+      getCurrentLeaderEpoch: () => 7,
+    }),
+  });
+  let requestSequence = 0;
+  const follower = BusFollower.createTelegramBusFollowerRegistrationRuntime({
+    instanceId: "follower-a",
+    createRequestId: () => `follower-a:${++requestSequence}`,
+    getLeaderAuthSecret: (leader) => leader.busSecret,
+    getNowMs: () => 2000,
+    registrationTimeoutMs: 500,
+  });
+  try {
+    await server.start();
+    assert.equal(
+      await follower.registerWithLeader(
+        { cwd: "/repo/follower-a" },
+        { busSocketPath: socketPath, busSecret: "leader-secret" },
+      ),
+      true,
+    );
+    assert.equal(await follower.disconnectFromLeader?.(), true);
+
+    assert.deepEqual(calls, [
+      {
+        method: "closeForumTopic",
+        body: { chat_id: 77, message_thread_id: 43 },
+      },
+      {
+        method: "deleteForumTopic",
+        body: { chat_id: 77, message_thread_id: 43 },
+      },
+    ]);
+    assert.equal(registry.get("follower-a"), undefined);
+    assert.equal(store.getActiveByInstanceId("follower-a"), undefined);
+    assert.deepEqual(store.listPendingCleanups(), []);
+  } finally {
+    follower.stop();
+    await server.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 test("Public activity delivery reaches the classic instance without blocking agent start", async () => {
   const telegramConfig = await createRuntimeTelegramConfigFixture();

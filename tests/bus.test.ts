@@ -629,7 +629,7 @@ test("Bus follower API allowlist permits scoped own-thread Rich media uploads", 
   );
 });
 
-test("Bus follower API allowlist permits chat message edit/delete operations", () => {
+test("Bus follower API allowlist permits owned message markup/edit/delete operations", () => {
   const follower = {
     instanceId: "inst-a",
     connectedAtMs: 1000,
@@ -641,6 +641,22 @@ test("Bus follower API allowlist permits chat message edit/delete operations", (
       follower,
       method: "call",
       args: ["editMessageText", { chat_id: 100, message_id: 9, text: "Next" }],
+      isMessageOwned: (chatId, messageId) => chatId === 100 && messageId === 9,
+    }),
+    true,
+  );
+  assert.equal(
+    isTelegramFollowerApiCallAllowed({
+      follower,
+      method: "call",
+      args: [
+        "editMessageReplyMarkup",
+        {
+          chat_id: 100,
+          message_id: 9,
+          reply_markup: { inline_keyboard: [] },
+        },
+      ],
       isMessageOwned: (chatId, messageId) => chatId === 100 && messageId === 9,
     }),
     true,

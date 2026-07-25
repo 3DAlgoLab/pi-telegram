@@ -49,7 +49,7 @@ test("Settings menu text and reply markup expose built-in controls", () => {
   );
   assert.equal(
     markup.inline_keyboard[1]?.[0]?.text,
-    "🧹 Auto thread cleanup: on",
+    "🧹 Thread cleanup: on",
   );
   assert.equal(markup.inline_keyboard[2]?.[0]?.text, "👄 Voice reply: hidden");
   assert.equal(
@@ -64,7 +64,10 @@ test("Settings menu text and reply markup expose built-in controls", () => {
 test("Settings detail markups show active values", () => {
   const cleanupText = buildAutomaticThreadCleanupSettingsText(true);
   assert.match(cleanupText, /<code>on<\/code>/);
-  assert.match(cleanupText, /manual \/telegram-disconnect still confirms/);
+  assert.match(
+    cleanupText,
+    /manual <code>\/telegram-disconnect<\/code> still confirms/,
+  );
   assert.equal(
     buildAutomaticThreadCleanupSettingsReplyMarkup(false).inline_keyboard[1]?.[1]
       ?.text,
@@ -222,8 +225,8 @@ test("Settings callback action mutates voice, time, and proactive settings", asy
     "update:<b>📌 Proactive push:</b> <code>off</code>",
     "answer:Proactive push enabled",
     "automatic-thread-cleanup:false",
-    "update:<b>🧹 Automatic thread cleanup:</b> <code>on</code>",
-    "answer:Automatic thread cleanup disabled",
+    "update:<b>🧹 Thread cleanup:</b> <code>on</code>",
+    "answer:Thread cleanup disabled",
   ]);
 });
 
