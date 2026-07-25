@@ -52,7 +52,7 @@ test("Button reply planner supplies visible text and stores selected style for a
     },
   );
 
-  assert.equal(plan.markdown, "Choose an option:");
+  assert.equal(plan.markdown, "☑️ **Choose an option:**");
   assert.deepEqual(actions, [
     { text: "Continue", prompt: "Continue now.", selectedStyle: "danger" },
   ]);

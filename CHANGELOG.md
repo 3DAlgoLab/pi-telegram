@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.24.9: Button-Only Heading Hotfix
+
+- `Prompt Buttons`: The automatic parent text for button-only assistant replies now follows the bridge-owned dialog heading grammar as `☑️ **Choose an option:**`. Impact: fallback button prompts match reasoning, model, and settings choice surfaces with a semantic icon, bold title, and trailing colon instead of appearing as unformatted assistant text.
+
 ## 0.24.8: Prompt Button Reliability Hotfix
 
 - `Prompt Buttons`: Button-only assistant replies now receive `Choose an option:` as visible fallback text after hidden markup extraction. Accepted choices use Telegram's blue `primary` style by default; agents may set `selected_style` to `success`, `danger`, or `primary` so quiz-like choices become green, red, or blue while preserving their labels and always queueing the selected prompt. Impact: Telegram can reliably create the keyboard message and retain agent-authored visual feedback instead of silently dropping an empty visible reply or forcing every accepted choice to appear green.

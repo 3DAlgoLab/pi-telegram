@@ -183,7 +183,7 @@ Voice notes, audio, images, PDFs, and other media can pass through configured in
 
 ### Buttons And Callbacks
 
-Assistant replies can include top-level hidden `telegram_button` comments. The bridge strips the comments from visible text, renders inline buttons, and routes callbacks back into Pi as queued prompts or extension-owned callback actions. Button-only replies receive `Choose an option:` as automatic visible fallback text. Once a generated prompt button is accepted, only that exact button switches to its optional `selected_style` (`primary` blue by default, `success` green, or `danger` red) without altering its agent-authored label or emoji; every style still queues the selected prompt.
+Assistant replies can include top-level hidden `telegram_button` comments. The bridge strips the comments from visible text, renders inline buttons, and routes callbacks back into Pi as queued prompts or extension-owned callback actions. Button-only replies receive the standard `☑️ **Choose an option:**` heading as automatic visible fallback text. Once a generated prompt button is accepted, only that exact button switches to its optional `selected_style` (`primary` blue by default, `success` green, or `danger` red) without altering its agent-authored label or emoji; every style still queues the selected prompt.
 
 ### Threaded Mode And Multi-Instance Bus
 
