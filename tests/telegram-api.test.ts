@@ -221,6 +221,35 @@ test("Telegram bridge API runtime includes thread target on chat actions", async
   ]);
 });
 
+test("Telegram bridge API runtime owns reply-markup edits", async () => {
+  const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
+  const runtime = createTelegramBridgeApiRuntime({
+    client: createApiRuntimeClient({
+      call: async <TResponse>(
+        method: string,
+        body: Record<string, unknown>,
+      ) => {
+        calls.push({ method, body });
+        return true as TResponse;
+      },
+    }),
+    tempDir: "/tmp",
+    maxFileSizeBytes: 1,
+    tempFileMaxAgeMs: 1,
+    recordRuntimeEvent: () => {},
+  });
+  const replyMarkup = { inline_keyboard: [[{ text: "Run" }]] };
+
+  await runtime.editMessageReplyMarkup(7, 42, replyMarkup);
+
+  assert.deepEqual(calls, [
+    {
+      method: "editMessageReplyMarkup",
+      body: { chat_id: 7, message_id: 42, reply_markup: replyMarkup },
+    },
+  ]);
+});
+
 test("Telegram bridge API runtime coalesces and spaces identical chat actions", async () => {
   let nowMs = 1000;
   let releaseFirst: (value: boolean) => void = () => {};

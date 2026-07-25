@@ -99,7 +99,7 @@ test("Outbound text handler preserves inline buttons on transformed replies", as
   const sent: Array<{ markdown: string; replyMarkup: unknown }> = [];
   const actions: unknown[] = [];
   const plan = planTelegramButtonReply(
-    ["Answer.", "", "<!-- telegram_button: Continue -->"].join("\n"),
+    ["Answer.", "", '<!-- telegram_button: {"value":"Continue"} -->'].join("\n"),
     {
       registerAction: (action) => {
         actions.push(action);
@@ -207,14 +207,16 @@ test("Outbound text handler keeps original reply on failure", async () => {
   assert.deepEqual(events, ["outbound-text-handler"]);
 });
 
-test("Voice reply planner extracts multiline telegram_voice comments", () => {
+test("Voice reply planner extracts multiline JSON telegram_voice comments", () => {
   const plan = planTelegramVoiceReply(
     [
       "Technical answer.",
       "",
-      "<!-- telegram_voice lang=ru rate=+20%",
-      "Short speakable summary.",
-      "-->",
+      "<!-- telegram_voice: {",
+      '  "text": "Short speakable summary.",',
+      '  "lang": "ru",',
+      '  "rate": "+20%"',
+      "} -->",
     ].join("\n"),
   );
   assert.deepEqual(plan, {
@@ -228,15 +230,12 @@ test("Voice reply planner extracts multiline telegram_voice comments", () => {
   });
 });
 
-test("Voice reply planner supports paired voice comments", () => {
+test("Voice reply planner supports escaped lines in JSON comments", () => {
   const plan = planTelegramVoiceReply(
     [
       "Visible answer.",
       "",
-      "<!-- telegram_voice lang=ru rate=+5% -->",
-      "Первая строка.",
-      "Вторая строка.",
-      "<!-- /telegram_voice -->",
+      '<!-- telegram_voice: {"text":"Первая строка.\\nВторая строка.","lang":"ru","rate":"+5%"} -->',
     ].join("\n"),
   );
   assert.deepEqual(plan, {
@@ -250,9 +249,9 @@ test("Voice reply planner supports paired voice comments", () => {
   });
 });
 
-test("Voice reply planner supports compact inline comments", () => {
+test("Voice reply planner supports compact JSON comments", () => {
   const plan = planTelegramVoiceReply(
-    "Text before.\n\n<!-- telegram_voice: Inline summary. -->",
+    'Text before.\n\n<!-- telegram_voice: {"text":"Inline summary."} -->',
   );
   assert.deepEqual(plan, {
     markdown: "Text before.",
@@ -263,7 +262,7 @@ test("Voice reply planner supports compact inline comments", () => {
 
 test("Voice reply planner supports text attribute comments", () => {
   const plan = planTelegramVoiceReply(
-    'Text before.\n\n<!-- telegram_voice lang=ru rate=+10% text="Inline spoken summary." -->',
+    'Text before.\n\n<!-- telegram_voice lang="ru" rate="+10%" text="Inline spoken summary." -->',
   );
   assert.deepEqual(plan, {
     markdown: "Text before.",
@@ -276,14 +275,12 @@ test("Voice reply planner supports text attribute comments", () => {
   });
 });
 
-test("Voice reply planner recovers one-line action bodies", () => {
+test("Voice reply planner accepts complete attribute actions", () => {
   const plan = planTelegramVoiceReply(
     [
       "Text before.",
       "",
-      "<!-- telegram_voice lang=ru rate=+30% -->",
-      "Speak this instead of leaking it as text.",
-      "-->",
+      '<!-- telegram_voice text="Speak this instead of leaking it as text." lang="ru" rate="+30%" -->',
     ].join("\n"),
   );
   assert.deepEqual(plan, {
@@ -306,13 +303,9 @@ test("Voice reply planner keeps multiple telegram_voice blocks as independent ar
     [
       "Technical answer.",
       "",
-      "<!-- telegram_voice lang=ru rate=+20%",
-      "First summary.",
-      "-->",
+      '<!-- telegram_voice text="First summary." lang="ru" rate="+20%" -->',
       "",
-      "<!-- telegram_voice lang=en rate=+10%",
-      "Second summary.",
-      "-->",
+      '<!-- telegram_voice: {"text":"Second summary.","lang":"en","rate":"+10%"} -->',
     ].join("\n"),
   );
   assert.deepEqual(plan, {
@@ -378,9 +371,7 @@ test("Comment preview stripping hides generic and partial comments", () => {
       [
         "Visible text.",
         "",
-        '<!-- telegram_button label="Hidden" -->',
-        "Hidden prompt.",
-        "-->",
+        '<!-- telegram_button: {"label":"Hidden","prompt":"Hidden prompt."} -->',
       ].join("\n"),
     ),
     "Visible text.",
@@ -442,7 +433,7 @@ test("Outbound comments resume after indented and longer closing fences", () => 
     "<!-- telegram_button label=Skip -->",
     "   ````",
     "",
-    "<!-- telegram_button: OK -->",
+    '<!-- telegram_button: {"value":"OK"} -->',
   ].join("\n");
   const actions: unknown[] = [];
   const plan = planTelegramButtonReply(markdown, {
@@ -490,19 +481,15 @@ test("Outbound action comments require top-level column-zero markers", () => {
   assert.deepEqual(actions, []);
 });
 
-test("Button reply planner supports independent label blocks", () => {
+test("Button reply planner supports independent action comments", () => {
   const actions: unknown[] = [];
   const plan = planTelegramButtonReply(
     [
       "Visible answer.",
       "",
-      '<!-- telegram_button label="OK"',
-      "PROMPT",
-      "-->",
+      '<!-- telegram_button: {"label":"OK","prompt":"PROMPT"} -->',
       "",
-      "<!-- telegram_button label='More'",
-      "Continue with more detail",
-      "-->",
+      '<!-- telegram_button label="More" prompt="Continue with more detail" -->',
     ].join("\n"),
     {
       registerAction: (action) => {
@@ -535,9 +522,9 @@ test("Outbound reply planner strips voice and button markup without losing artif
     [
       "Visible answer.",
       "",
-      "<!-- telegram_voice: Speak this summary. -->",
+      '<!-- telegram_voice: {"text":"Speak this summary."} -->',
       "",
-      '<!-- telegram_button label=Continue prompt="Continue with context." -->',
+      '<!-- telegram_button label="Continue" prompt="Continue with context." -->',
     ].join("\n"),
   );
   assert.equal(plan.markdown, "Visible answer.");
@@ -551,10 +538,10 @@ test("Outbound reply planner strips voice and button markup without losing artif
   });
 });
 
-test("Button reply planner supports colon label-only shortcut", () => {
+test("Button reply planner supports compact value payload", () => {
   const actions: unknown[] = [];
   const plan = planTelegramButtonReply(
-    ["Visible answer.", "", "<!-- telegram_button: OK -->"].join("\n"),
+    ["Visible answer.", "", '<!-- telegram_button: {"value":"OK"} -->'].join("\n"),
     {
       registerAction: (action) => {
         actions.push(action);
@@ -575,7 +562,7 @@ test("Button reply planner supports prompt attribute shortcut", () => {
     [
       "Visible answer.",
       "",
-      '<!-- telegram_button label=Continue prompt="Continue with the current plan." -->',
+      '<!-- telegram_button label="Continue" prompt="Continue with the current plan." -->',
     ].join("\n"),
     {
       registerAction: (action) => {
@@ -593,19 +580,15 @@ test("Button reply planner supports prompt attribute shortcut", () => {
   });
 });
 
-test("Button reply planner recovers one-line action bodies", () => {
+test("Button reply planner accepts complete JSON actions", () => {
   const actions: unknown[] = [];
   const plan = planTelegramButtonReply(
     [
       "Visible answer.",
       "",
-      '<!-- telegram_button label="Boundary" -->',
-      "Where does JAM end and DEOS begin?",
-      "-->",
+      '<!-- telegram_button: {"label":"Boundary","prompt":"Where does JAM end and DEOS begin?"} -->',
       "",
-      '<!-- telegram_button label="Sources" -->',
-      "Which DEOS sources are canonical?",
-      "-->",
+      '<!-- telegram_button: {"label":"Sources","prompt":"Which DEOS sources are canonical?"} -->',
     ].join("\n"),
     {
       registerAction: (action) => {
@@ -648,7 +631,7 @@ test("Button reply planner requires prompt attribute for closed heads", () => {
   assert.deepEqual(actions, []);
 });
 
-test("Button reply planner bounds inline-closed body recovery", () => {
+test("Button reply planner does not recover body syntax", () => {
   const actions: unknown[] = [];
   const plan = planTelegramButtonReply(
     [

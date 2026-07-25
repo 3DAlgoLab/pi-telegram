@@ -11,7 +11,7 @@ import type {
   TelegramInlineKeyboardMarkup,
 } from "./keyboard.ts";
 import {
-  parseTelegramCommentAttributes,
+  parseTelegramActionPayload,
   parseTopLevelTelegramComment,
   replaceTopLevelHtmlComments,
 } from "./outbound-markup.ts";
@@ -87,65 +87,33 @@ function normalizeMarkdownAfterButtonExtraction(markdown: string): string {
   return markdown.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-function parseButtonsCommentAttributes(input: string): {
-  label?: string;
-  prompt?: string;
-  selectedStyle?: TelegramInlineKeyboardButtonStyle;
-} {
-  const attributes = parseTelegramCommentAttributes(input);
-  const selectedStyle = attributes.selected_style;
+function getTelegramButtonString(
+  payload: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  const value = payload[key];
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+function parseTelegramButtonAction(
+  payload: Record<string, unknown>,
+): TelegramOutboundButtonAction | undefined {
+  const value = getTelegramButtonString(payload, "value");
+  const label = getTelegramButtonString(payload, "label") ?? value;
+  const prompt = getTelegramButtonString(payload, "prompt") ?? value;
+  if (!label || !prompt) return undefined;
+  const selectedStyle = payload.selected_style;
   return {
-    ...(attributes.label ? { label: attributes.label } : {}),
-    ...(attributes.prompt ? { prompt: attributes.prompt } : {}),
+    text: label,
+    prompt,
     ...(selectedStyle === "success" ||
     selectedStyle === "danger" ||
     selectedStyle === "primary"
       ? { selectedStyle }
       : {}),
   };
-}
-
-function parseButtonsCommentRows(
-  head: string,
-  body: string | undefined,
-): TelegramOutboundButtonAction[][] {
-  const trimmedHead = head.trim();
-
-  if (body === undefined) {
-    if (trimmedHead.startsWith(":")) {
-      const label = trimmedHead.slice(1).trim();
-      return label ? [[{ text: label, prompt: label }]] : [];
-    }
-    const attributes = parseButtonsCommentAttributes(head);
-    return attributes.label && attributes.prompt
-      ? [
-          [
-            {
-              text: attributes.label,
-              prompt: attributes.prompt,
-              ...(attributes.selectedStyle
-                ? { selectedStyle: attributes.selectedStyle }
-                : {}),
-            },
-          ],
-        ]
-      : [];
-  }
-
-  const attributes = parseButtonsCommentAttributes(head);
-  const prompt = body.trim();
-  if (!attributes.label || !prompt) return [];
-  return [
-    [
-      {
-        text: attributes.label,
-        prompt,
-        ...(attributes.selectedStyle
-          ? { selectedStyle: attributes.selectedStyle }
-          : {}),
-      },
-    ],
-  ];
 }
 
 export function createTelegramButtonActionStore(
@@ -197,14 +165,15 @@ export function planTelegramButtonReply(
   const stripped = replaceTopLevelHtmlComments(markdown, (comment) => {
     const command = parseTopLevelTelegramComment(comment, "telegram_button");
     if (!command) return comment.raw;
-    const rows = parseButtonsCommentRows(command.head, command.body);
-    for (const row of rows) {
-      keyboard.push(
-        row.map((button) => ({
-          text: button.text,
-          callback_data: deps.registerAction(button),
-        })),
-      );
+    const payload = parseTelegramActionPayload(comment, "telegram_button");
+    const action = payload ? parseTelegramButtonAction(payload) : undefined;
+    if (action) {
+      keyboard.push([
+        {
+          text: action.text,
+          callback_data: deps.registerAction(action),
+        },
+      ]);
     }
     return "";
   });

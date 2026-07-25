@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.24.11: Assistant Action Markup Hotfix
+
+- `Assistant Action Markup`: Standardized `telegram_button` and `telegram_voice` on two model-facing payload forms: JSON objects and compact double-quoted attributes. The separator colon after either action name is optional and format-neutral, so mixed model output such as colon-prefixed attributes or colonless JSON parses identically. Buttons may use compact `value` when `label` and `prompt` are identical, while voice treats `text` and `value` as equivalent payload keys; explicit fields take precedence. Removed shorthand, body, paired-comment, unquoted-attribute, and single-quoted-attribute parsing so one complete comment owns each action. Impact: models use one shared action grammar without duplicating equal button text or navigating hidden legacy variants.
+- `Composition Root Cooling`: Moved current-process bus identity defaults into `bus`, moved generated-button reply-markup edits into the direct/bus-aware Telegram API runtimes, and removed the always-true bus-configuration callback from Threaded Mode orchestration. Impact: `index.ts` loses low-level process/time/API payload work and dormant policy branching while retaining visible high-level port wiring.
+
 ## 0.24.10: Compact Thread Role Hotfix
 
 - `Status`: Threaded Mode status again appends only `@leader` or `@follower` to the execution status instead of repeating the visible Telegram tab name on a separate `Thread` row. Impact: compact `/status` output avoids redundant thread identity while retaining the transport role.

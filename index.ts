@@ -67,11 +67,8 @@ export default function (pi: Pi.ExtensionAPI) {
   const getActiveTelegramThreadProfile = function (): string | undefined {
     return configStore.getActiveProfileName();
   };
-  const busProcessRuntime = Bus.createTelegramBusProcessRuntime({
+  const busProcessRuntime = Bus.createCurrentTelegramBusProcessRuntime({
     getActiveProfileName: getActiveTelegramThreadProfile,
-    pid: process.pid,
-    parentPid: process.ppid,
-    createdAtMs: Date.now(),
   });
   const {
     instanceId: telegramInstanceId,
@@ -119,14 +116,8 @@ export default function (pi: Pi.ExtensionAPI) {
   const runtimeEvents = runtimeDiagnostics.events;
   const recordRuntimeEvent = runtimeDiagnostics.recordRuntimeEvent;
   const configStore = Config.createTelegramConfigStore({ recordRuntimeEvent });
-  const isTelegramBusConfigured = function (): boolean {
-    return true;
-  };
   const isTelegramBusRuntimeEnabled = function (): boolean {
-    return (
-      isTelegramBusConfigured() &&
-      !telegramThreadCapabilityState.isTopicModeUnavailable()
-    );
+    return !telegramThreadCapabilityState.isTopicModeUnavailable();
   };
   Config.bindGlobalTelegramConfigRuntime(configStore);
   const configControls = Config.createTelegramConfigControls(configStore);
@@ -397,6 +388,7 @@ export default function (pi: Pi.ExtensionAPI) {
     sendRichMessageDraft,
     downloadFile: downloadTelegramBridgeFile,
     editMessageText: editTelegramMessageText,
+    editMessageReplyMarkup: editTelegramMessageReplyMarkup,
     answerCallbackQuery,
     answerGuestQuery,
     deleteMessage: deleteTelegramMessage,
@@ -741,13 +733,7 @@ export default function (pi: Pi.ExtensionAPI) {
     stopTypingLoop: typing.stop,
     answerCallbackQuery,
     editInteractiveMessage,
-    async editMessageReplyMarkup(chatId, messageId, replyMarkup) {
-      await callTelegramApi("editMessageReplyMarkup", {
-        chat_id: chatId,
-        message_id: messageId,
-        reply_markup: replyMarkup,
-      });
-    },
+    editMessageReplyMarkup: editTelegramMessageReplyMarkup,
     sendInteractiveMessage,
     deleteMessage: deleteTelegramMessage,
     answerGuestQuery,
@@ -932,7 +918,6 @@ export default function (pi: Pi.ExtensionAPI) {
       getAllowedUserId: configStore.getAllowedUserId,
       callApi: callTelegramApi,
       topicTargetStore: threadStore,
-      isBusConfigured: isTelegramBusConfigured,
       isBusRuntimeEnabled: isTelegramBusRuntimeEnabled,
       ownsLock: lockRuntime.owns,
       startClassicPolling: pollingRuntime.start,

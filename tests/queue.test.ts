@@ -1657,7 +1657,7 @@ test("Agent end runtime passes assistant button markup to final text delivery", 
   await handleTelegramAgentEndRuntime({
     turn,
     assistant: {
-      text: 'Answer\n\n<!-- telegram_button label="Continue"\nContinue\n-->',
+      text: 'Answer\n\n<!-- telegram_button value="Continue" -->',
     },
     foldQueuedPromptsIntoHistory: false,
     resetRuntimeState: () => {
@@ -1709,9 +1709,7 @@ test("Agent end runtime splits assistant voice markup into text and voice delive
       text: [
         "Full technical text.",
         "",
-        "<!-- telegram_voice lang=ru rate=+20%",
-        "Short voice summary.",
-        "-->",
+        '<!-- telegram_voice text="Short voice summary." lang="ru" rate="+20%" -->',
       ].join("\n"),
     },
     foldQueuedPromptsIntoHistory: false,

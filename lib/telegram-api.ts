@@ -497,6 +497,11 @@ export interface TelegramBridgeApiRuntime {
   editMessageText: (
     body: TelegramEditMessageTextBody,
   ) => Promise<"edited" | "unchanged">;
+  editMessageReplyMarkup: (
+    chatId: number,
+    messageId: number,
+    replyMarkup: unknown,
+  ) => Promise<void>;
   answerCallbackQuery: (
     callbackQueryId: string,
     text?: string,
@@ -1568,6 +1573,13 @@ export function createTelegramBridgeApiRuntime(
         );
         throw error;
       }
+    },
+    editMessageReplyMarkup: async (chatId, messageId, replyMarkup) => {
+      await callRecorded("editMessageReplyMarkup", {
+        chat_id: chatId,
+        message_id: messageId,
+        reply_markup: replyMarkup,
+      });
     },
     answerCallbackQuery: async (callbackQueryId, text) => {
       try {

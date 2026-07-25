@@ -72,6 +72,20 @@ export function getTelegramProcessBirthIdentity(
   return `${pid}:generation:${fallbackGeneration}`;
 }
 
+export function createCurrentTelegramBusProcessRuntime(input: {
+  getActiveProfileName: () => string | undefined;
+  pid?: number;
+  parentPid?: number;
+  createdAtMs?: number;
+}): TelegramBusProcessRuntime {
+  return createTelegramBusProcessRuntime({
+    getActiveProfileName: input.getActiveProfileName,
+    pid: input.pid ?? process.pid,
+    parentPid: input.parentPid ?? process.ppid,
+    createdAtMs: input.createdAtMs ?? Date.now(),
+  });
+}
+
 export function createTelegramBusProcessRuntime(input: {
   getActiveProfileName: () => string | undefined;
   pid: number;

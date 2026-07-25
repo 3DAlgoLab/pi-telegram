@@ -16,16 +16,6 @@ interface TelegramTopLevelFenceState {
   length: number;
 }
 
-function isTelegramActionCommentContent(content: string): boolean {
-  const normalizedContent = content.replace(/^\s+/, "");
-  const [head = ""] = normalizedContent.split(/\r?\n/, 1);
-  return ["telegram_voice", "telegram_button"].some((command) => {
-    if (!head.startsWith(command)) return false;
-    const nextChar = head[command.length];
-    return nextChar === undefined || /\s|:/.test(nextChar);
-  });
-}
-
 function getMarkdownLineEnd(markdown: string, offset: number): number {
   const newlineIndex = markdown.indexOf("\n", offset);
   return newlineIndex === -1 ? markdown.length : newlineIndex + 1;
@@ -64,58 +54,6 @@ function isTopLevelClosingFence(
   );
 }
 
-function collectPairedTelegramVoiceActionBody(
-  markdown: string,
-  bodyStart: number,
-  commentContent: string,
-): { content: string; end: number } | undefined {
-  const normalizedContent = commentContent.trim();
-  if (
-    !normalizedContent.startsWith("telegram_voice") ||
-    !isTelegramActionCommentContent(commentContent)
-  ) {
-    return undefined;
-  }
-  let offset = bodyStart;
-  while (offset < markdown.length) {
-    const lineEnd = getMarkdownLineEnd(markdown, offset);
-    const line = getMarkdownLineText(markdown, offset, lineEnd);
-    if (line === "<!-- /telegram_voice -->") {
-      const body = markdown.slice(bodyStart, offset).trim();
-      if (!body) return undefined;
-      return {
-        content: `${commentContent.trimEnd()}\n${body}`,
-        end: lineEnd,
-      };
-    }
-    if (line.startsWith("<!--")) return undefined;
-    offset = lineEnd;
-  }
-  return undefined;
-}
-
-function collectInlineClosedTelegramActionBody(
-  markdown: string,
-  bodyStart: number,
-  commentContent: string,
-): { content: string; end: number } | undefined {
-  const bodyLineEnd = getMarkdownLineEnd(markdown, bodyStart);
-  const bodyLine = getMarkdownLineText(markdown, bodyStart, bodyLineEnd);
-  const closeLineEnd = getMarkdownLineEnd(markdown, bodyLineEnd);
-  const closeLine = getMarkdownLineText(markdown, bodyLineEnd, closeLineEnd);
-  const hasRecoverableBody =
-    isTelegramActionCommentContent(commentContent) &&
-    bodyLine.trim() !== "" &&
-    !bodyLine.startsWith("<!--") &&
-    !bodyLine.startsWith("-->") &&
-    closeLine === "-->";
-  if (!hasRecoverableBody) return undefined;
-  return {
-    content: `${commentContent.trimEnd()}\n${bodyLine}`,
-    end: bodyLineEnd + 3,
-  };
-}
-
 export function collectTopLevelHtmlComments(markdown: string): {
   comments: TelegramTopLevelHtmlComment[];
   openCommentStart?: number;
@@ -140,27 +78,9 @@ export function collectTopLevelHtmlComments(markdown: string): {
     if (line.startsWith("<!--")) {
       const closeIndex = markdown.indexOf("-->", offset + 4);
       if (closeIndex === -1) return { comments, openCommentStart: offset };
-      let end = closeIndex + 3;
-      let raw = markdown.slice(offset, end);
-      let content = raw.slice(4, -3);
-      const closeColumn = closeIndex - offset;
-      const closesOnOpeningLine = closeIndex < lineEnd;
-      const hasOnlyWhitespaceAfterClose =
-        line.slice(closeColumn + 3).trim() === "";
-      const pairedVoiceBody =
-        closesOnOpeningLine && hasOnlyWhitespaceAfterClose
-          ? collectPairedTelegramVoiceActionBody(markdown, lineEnd, content)
-          : undefined;
-      const inlineBody =
-        !pairedVoiceBody && closesOnOpeningLine && hasOnlyWhitespaceAfterClose
-          ? collectInlineClosedTelegramActionBody(markdown, lineEnd, content)
-          : undefined;
-      const recoveredBody = pairedVoiceBody ?? inlineBody;
-      if (recoveredBody) {
-        end = recoveredBody.end;
-        raw = markdown.slice(offset, end);
-        content = recoveredBody.content;
-      }
+      const end = closeIndex + 3;
+      const raw = markdown.slice(offset, end);
+      const content = raw.slice(4, -3);
       comments.push({ raw, content, start: offset, end });
       offset = getMarkdownLineEnd(markdown, end);
       continue;
@@ -233,18 +153,47 @@ export function parseTopLevelTelegramComment(
   };
 }
 
-export function parseTelegramCommentAttributes(
-  input: string,
-): Record<string, string> {
+function parseCanonicalTelegramActionAttributes(
+  source: string,
+): Record<string, string> | undefined {
   const attributes: Record<string, string> = {};
-  for (const match of input.matchAll(
-    /([A-Za-z_][A-Za-z0-9_-]*)=(?:"([^"]*)"|'([^']*)'|(\S+))/g,
-  )) {
-    const key = match[1];
-    const value = (match[2] ?? match[3] ?? match[4] ?? "").trim();
-    if (value) attributes[key] = value;
+  const pattern = /\s*([A-Za-z_][A-Za-z0-9_-]*)="([^"]*)"/y;
+  let offset = 0;
+  while (offset < source.length) {
+    pattern.lastIndex = offset;
+    const match = pattern.exec(source);
+    if (!match) return undefined;
+    const value = match[2].trim();
+    if (value) attributes[match[1]] = value;
+    offset = pattern.lastIndex;
   }
-  return attributes;
+  return Object.keys(attributes).length > 0 ? attributes : undefined;
+}
+
+export function parseTelegramActionPayload(
+  comment: TelegramTopLevelHtmlComment,
+  command: string,
+): Record<string, unknown> | undefined {
+  const parsed = parseTopLevelTelegramComment(comment, command);
+  if (!parsed) return undefined;
+  const source = [parsed.head, parsed.body]
+    .filter((part): part is string => part !== undefined)
+    .join("\n")
+    .trim()
+    .replace(/^:\s*/, "");
+  if (!source) return undefined;
+  if (source.startsWith("{")) {
+    try {
+      const value: unknown = JSON.parse(source);
+      return value !== null && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  if (parsed.body !== undefined) return undefined;
+  return parseCanonicalTelegramActionAttributes(source);
 }
 
 export function normalizeMarkdownAfterVoiceExtraction(
@@ -295,58 +244,14 @@ export interface TelegramVoiceReplyPlan {
   rate?: string;
 }
 
-function parseVoiceReplyAttributes(input: string): {
-  lang?: string;
-  rate?: string;
-  text?: string;
-} {
-  const attributes = parseTelegramCommentAttributes(input);
-  return {
-    ...(attributes.lang ? { lang: attributes.lang } : {}),
-    ...(attributes.rate ? { rate: attributes.rate } : {}),
-    ...(attributes.text ? { text: attributes.text } : {}),
-  };
-}
-
-function parseVoiceCommentBody(
-  head: string,
-  body: string | undefined,
-): {
-  attrs: string;
-  text: string;
-} {
-  const trimmedHead = head.trim();
-  if (body !== undefined) {
-    return { attrs: trimmedHead.replace(/^:/, "").trim(), text: body.trim() };
-  }
-  let colonIndex = -1;
-  let inQuote = false;
-  let quoteChar = "";
-  for (let i = 0; i < trimmedHead.length; i++) {
-    const char = trimmedHead[i];
-    if (inQuote) {
-      if (char === quoteChar) inQuote = false;
-    } else {
-      if (char === '"' || char === "'") {
-        inQuote = true;
-        quoteChar = char;
-      } else if (char === ":") {
-        colonIndex = i;
-        break;
-      }
-    }
-  }
-  if (colonIndex > 0) {
-    const attrsPart = trimmedHead.slice(0, colonIndex).trim();
-    const textPart = trimmedHead.slice(colonIndex + 1).trim();
-    const attrs = parseVoiceReplyAttributes(attrsPart);
-    return { attrs: attrsPart, text: textPart || attrs.text || "", ...attrs };
-  }
-  if (trimmedHead.startsWith(":")) {
-    return { attrs: "", text: trimmedHead.slice(1).trim() };
-  }
-  const attrs = parseVoiceReplyAttributes(trimmedHead);
-  return { attrs: trimmedHead, text: attrs.text ?? "" };
+function getTelegramActionString(
+  payload: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  const value = payload[key];
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
 }
 
 export function planTelegramVoiceReply(
@@ -356,26 +261,24 @@ export function planTelegramVoiceReply(
   let lang: string | undefined;
   let rate: string | undefined;
   const stripped = replaceTopLevelHtmlComments(markdown, (comment) => {
-    let command = parseTopLevelTelegramComment(comment, "telegram_voice");
-    if (!command) {
-      let content = comment.content.replace(/^\s+/, "").replace(/^!/, "");
-      if (content.startsWith("telegram_voice")) {
-        const headPart = content.slice("telegram_voice".length).trim();
-        command = { head: headPart, body: undefined };
-      }
-    }
-    if (!command) return "";
-    const parsed = parseVoiceCommentBody(command.head, command.body);
-    const attrs = parseVoiceReplyAttributes(parsed.attrs);
-    if (parsed.text) {
+    const command = parseTopLevelTelegramComment(comment, "telegram_voice");
+    if (!command) return comment.raw;
+    const payload = parseTelegramActionPayload(comment, "telegram_voice");
+    if (!payload) return "";
+    const text =
+      getTelegramActionString(payload, "text") ??
+      getTelegramActionString(payload, "value");
+    const itemLang = getTelegramActionString(payload, "lang");
+    const itemRate = getTelegramActionString(payload, "rate");
+    if (text) {
       voiceReplies.push({
-        text: parsed.text,
-        ...(attrs.lang ? { lang: attrs.lang } : {}),
-        ...(attrs.rate ? { rate: attrs.rate } : {}),
+        text,
+        ...(itemLang ? { lang: itemLang } : {}),
+        ...(itemRate ? { rate: itemRate } : {}),
       });
     }
-    if (attrs.lang) lang = attrs.lang;
-    if (attrs.rate) rate = attrs.rate;
+    if (itemLang) lang = itemLang;
+    if (itemRate) rate = itemRate;
     return "";
   });
   const voiceText = voiceReplies

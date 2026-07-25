@@ -319,7 +319,6 @@ export interface TelegramThreadCapabilityRuntimeDeps<
   TContext,
 > extends TelegramThreadCapabilityReaderDeps {
   topicTargetStore: TelegramThreadCapabilityStore;
-  isBusConfigured: () => boolean;
   ownsLock: (ctx: TContext) => boolean;
   getPollingStartedWithTelegramBus: () => boolean;
   setPollingStartedWithTelegramBus: (started: boolean) => void;
@@ -394,7 +393,6 @@ export interface TelegramThreadAwarePollingDeps<
   TContext,
   TOwner,
 > extends TelegramStartupThreadCapabilityProbeDeps {
-  isBusConfigured: () => boolean;
   isBusRuntimeEnabled: () => boolean;
   isTopicModeUnavailableError: (error: unknown) => boolean;
   getPollingStartedWithTelegramBus: () => boolean;
@@ -419,7 +417,6 @@ export interface TelegramThreadCapabilityOrchestrationDeps<
 > extends TelegramThreadCapabilityReaderDeps {
   state: TelegramThreadCapabilityStateRuntime;
   topicTargetStore: TelegramThreadCapabilityStore;
-  isBusConfigured: () => boolean;
   isBusRuntimeEnabled: () => boolean;
   ownsLock: (ctx: TContext) => boolean;
   startClassicPolling: (ctx: TContext) => MaybePromise<void>;
@@ -475,7 +472,6 @@ export function createTelegramThreadCapabilityOrchestration<TContext, TOwner>(
     getAllowedUserId: deps.getAllowedUserId,
     callApi: deps.callApi,
     topicTargetStore: deps.topicTargetStore,
-    isBusConfigured: deps.isBusConfigured,
     ownsLock: deps.ownsLock,
     getPollingStartedWithTelegramBus: deps.state.isBusPollingStarted,
     setPollingStartedWithTelegramBus: deps.state.setBusPollingStarted,
@@ -498,7 +494,6 @@ export function createTelegramThreadCapabilityOrchestration<TContext, TOwner>(
       getAllowedUserId: deps.getAllowedUserId,
       callApi: deps.callApi,
       topicTargetStore: deps.topicTargetStore,
-      isBusConfigured: deps.isBusConfigured,
       isBusRuntimeEnabled: deps.isBusRuntimeEnabled,
       isTopicModeUnavailableError: deps.isTopicModeUnavailableError,
       getPollingStartedWithTelegramBus: deps.state.isBusPollingStarted,
@@ -590,7 +585,6 @@ export async function applyTelegramThreadCapability<TContext>(
   deps: TelegramThreadCapabilityRuntimeDeps<TContext>,
 ): Promise<void> {
   await deps.topicTargetStore.load();
-  if (!deps.isBusConfigured()) return;
   const nowMs = (deps.getNowMs ?? Date.now)();
   const previousBotState = deps.topicTargetStore.getBotState();
   if (!threadModeEnabled) {
@@ -691,17 +685,14 @@ export function createTelegramThreadAwarePollingPorts<TContext, TOwner>(
     ctx: TContext,
     options?: { forceFreshLeaderThread?: boolean },
   ): Promise<void> => {
-    if (deps.isBusConfigured()) {
-      await deps.topicTargetStore.load();
-      let startupThreadCapability: boolean | undefined;
-      try {
-        startupThreadCapability =
-          await probeTelegramStartupThreadCapability(deps);
-      } catch (error) {
-        deps.recordEvent("bus", error, { phase: "startup-thread-mode-probe" });
-      }
-      deps.setTopicModeUnavailable(startupThreadCapability !== true);
+    await deps.topicTargetStore.load();
+    let startupThreadCapability: boolean | undefined;
+    try {
+      startupThreadCapability = await probeTelegramStartupThreadCapability(deps);
+    } catch (error) {
+      deps.recordEvent("bus", error, { phase: "startup-thread-mode-probe" });
     }
+    deps.setTopicModeUnavailable(startupThreadCapability !== true);
     if (deps.isBusRuntimeEnabled()) {
       deps.setTopicModeUnavailable(false);
       try {
@@ -886,7 +877,6 @@ export function createTelegramThreadCapabilityMonitor<TContext>(
   return {
     start(ctx) {
       stop();
-      if (!deps.isBusConfigured()) return;
       interval = setInterval(() => {
         check(ctx);
       }, intervalMs);
