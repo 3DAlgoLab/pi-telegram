@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.24.10: Compact Thread Role Hotfix
+
+- `Status`: Threaded Mode status again appends only `@leader` or `@follower` to the execution status instead of repeating the visible Telegram tab name on a separate `Thread` row. Impact: compact `/status` output avoids redundant thread identity while retaining the transport role.
+
 ## 0.24.9: Button-Only Heading Hotfix
 
 - `Prompt Buttons`: The automatic parent text for button-only assistant replies now follows the bridge-owned dialog heading grammar as `☑️ **Choose an option:**`. Impact: fallback button prompts match reasoning, model, and settings choice surfaces with a semantic icon, bold title, and trailing colon instead of appearing as unformatted assistant text.
