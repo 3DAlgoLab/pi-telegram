@@ -50,7 +50,7 @@ Use emoji as stable semantic markers, not decoration. Emoji carry transportable 
 | `↪️` | Reroute to an existing target | Thread chooser buttons that send a captured command/message from one thread to another live thread | Curved arrow means the message arrived here but bends to another target. |
 | `🔁` | Replace/restore mode | Thread replace/restore chooser entrypoints | Opens a second step for moving a Pi instance binding to the current source thread. |
 | `➡️` | Choose replacement target | Thread replace/restore target buttons that select which Pi instance should move to the current thread | Use inside the second replace/restore chooser, not for ordinary reroutes. |
-| `☑️` | Activate / choose this item | Model detail activation action | Positive action; use `🟢 Active` for already-current state. |
+| `☑️` | Activate / choose this item | Model detail activation action, generated button-only choice heading | Positive selection cue; use `🟢 Active` for already-current state. |
 | `❌` | No / cancel | Confirmation cancel buttons | Use for safe cancellation, not destructive removal. |
 | `🗑` | Delete / remove | Queue delete actions, destructive confirmations, remove reaction | Use only when something is removed/closed/deleted. |
 
@@ -177,7 +177,7 @@ Examples:
 
 ## Generated Prompt Buttons
 
-Assistant-generated prompt buttons use the default app style before selection. After queue admission, edit only the selected button to its agent-configured `selected_style`: `primary` (default/blue), `success` (green), or `danger` (red). Preserve its agent-authored text and emoji, leave other choices at their default style, and always queue the selected prompt regardless of color. The callback acknowledgement remains the compatibility fallback when a client does not render button styles.
+A button-only assistant reply uses the standard Rich Markdown heading `☑️ **Choose an option:**`: semantic icon first, one space, bold heading text, and a final colon. Assistant-generated prompt buttons use the default app style before selection. After queue admission, edit only the selected button to its agent-configured `selected_style`: `primary` (default/blue), `success` (green), or `danger` (red). Preserve its agent-authored text and emoji, leave other choices at their default style, and always queue the selected prompt regardless of color. The callback acknowledgement remains the compatibility fallback when a client does not render button styles.
 
 ## Navigation
 

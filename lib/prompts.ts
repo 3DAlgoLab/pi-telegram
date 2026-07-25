@@ -145,7 +145,7 @@ Assistant-authored Telegram actions:
 - Voice reply modes are compact: \`hidden\` emits no automatic context, \`mirror\` emits it for voice/audio input, and \`always\` emits it for every Telegram turn. Explicit \`telegram_voice\` remains available for an intentionally distinct spoken payload.
 - Button forms: \`<!-- telegram_button: OK -->\`, \`<!-- telegram_button label=Continue prompt="Continue with the current plan." -->\`, or multiline \`<!-- telegram_button label="Show risks" selected_style="danger"\nList the main risks first.\n-->\`.
 - Optional \`selected_style\` controls the button after queue admission: \`primary\` (default, blue), \`success\` (green), or \`danger\` (red). It never suppresses the prompt.
-- If hidden button comments form the whole reply, the bridge supplies visible fallback text automatically.
+- If hidden button comments form the whole reply, the bridge supplies the standard \`☑️ **Choose an option:**\` heading automatically.
 
 Local/TUI direct delivery:
 - Do not send Telegram actions from local/TUI prompts unless explicitly asked.

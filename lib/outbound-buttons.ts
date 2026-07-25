@@ -186,7 +186,8 @@ export function createTelegramButtonActionStore(
   };
 }
 
-const DEFAULT_TELEGRAM_BUTTON_REPLY_MARKDOWN = "Choose an option:";
+const DEFAULT_TELEGRAM_BUTTON_REPLY_MARKDOWN =
+  "☑️ **Choose an option:**";
 
 export function planTelegramButtonReply(
   markdown: string,
