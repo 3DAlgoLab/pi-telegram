@@ -5,6 +5,7 @@
 ## 0.24.10: Compact Thread Role Hotfix
 
 - `Status`: Threaded Mode status again appends only `@leader` or `@follower` to the execution status instead of repeating the visible Telegram tab name on a separate `Thread` row. Impact: compact `/status` output avoids redundant thread identity while retaining the transport role.
+- `Validation`: Graceful-cleanup integration now accepts both fully committed removal and the safe ownership-fenced fallback of retaining the exact target plus durable cleanup intent after Telegram already confirmed deletion. Impact: Windows validation tests the recovery invariant instead of requiring one filesystem commit timing outcome.
 
 ## 0.24.9: Button-Only Heading Hotfix
 
