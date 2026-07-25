@@ -19,9 +19,7 @@ test("Button reply planner strips telegram_button markup and registers actions",
     [
       "Visible answer.",
       "",
-      '<!-- telegram_button label="Run" -->',
-      "Run the workflow.",
-      "-->",
+      '<!-- telegram_button: {"label":"Run","prompt":"Run the workflow."} -->',
       "",
       "Tail.",
     ].join("\n"),
@@ -38,6 +36,71 @@ test("Button reply planner strips telegram_button markup and registers actions",
   assert.deepEqual(plan.replyMarkup, {
     inline_keyboard: [[{ text: "Run", callback_data: "btn:1" }]],
   });
+});
+
+test("Button reply planner accepts JSON and attributes with optional separators", () => {
+  const actions: unknown[] = [];
+  const plan = planTelegramButtonReply(
+    [
+      '<!-- telegram_button {"label":"JSON","prompt":"Run JSON."} -->',
+      '<!-- telegram_button: {"label":"Colon JSON","prompt":"Run colon JSON.","selected_style":"success"} -->',
+      '<!-- telegram_button: label="Attributes" prompt="Run attributes." -->',
+      '<!-- telegram_button {"value":"JSON value"} -->',
+      '<!-- telegram_button: value="Attribute value" -->',
+      '<!-- telegram_button {"value":"Fallback prompt","label":"Explicit label"} -->',
+    ].join("\n"),
+    {
+      registerAction: (action) => {
+        actions.push(action);
+        return `btn:${actions.length}`;
+      },
+    },
+  );
+
+  assert.deepEqual(actions, [
+    { text: "JSON", prompt: "Run JSON." },
+    {
+      text: "Colon JSON",
+      prompt: "Run colon JSON.",
+      selectedStyle: "success",
+    },
+    { text: "Attributes", prompt: "Run attributes." },
+    { text: "JSON value", prompt: "JSON value" },
+    { text: "Attribute value", prompt: "Attribute value" },
+    { text: "Explicit label", prompt: "Fallback prompt" },
+  ]);
+  assert.deepEqual(plan.replyMarkup, {
+    inline_keyboard: [
+      [{ text: "JSON", callback_data: "btn:1" }],
+      [{ text: "Colon JSON", callback_data: "btn:2" }],
+      [{ text: "Attributes", callback_data: "btn:3" }],
+      [{ text: "JSON value", callback_data: "btn:4" }],
+      [{ text: "Attribute value", callback_data: "btn:5" }],
+      [{ text: "Explicit label", callback_data: "btn:6" }],
+    ],
+  });
+});
+
+test("Button reply planner rejects legacy payload forms", () => {
+  const actions: unknown[] = [];
+  const plan = planTelegramButtonReply(
+    [
+      "<!-- telegram_button: Continue -->",
+      '<!-- telegram_button label=Continue prompt="Continue." -->',
+      "<!-- telegram_button label='Continue' prompt='Continue.' -->",
+      '<!-- telegram_button label="Continue"\nContinue.\n-->',
+    ].join("\n"),
+    {
+      registerAction: (action) => {
+        actions.push(action);
+        return `btn:${actions.length}`;
+      },
+    },
+  );
+
+  assert.equal(plan.markdown, "");
+  assert.deepEqual(plan.replyMarkup, undefined);
+  assert.deepEqual(actions, []);
 });
 
 test("Button reply planner supplies visible text and stores selected style for a button-only reply", () => {

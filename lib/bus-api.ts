@@ -265,6 +265,24 @@ export function createTelegramBusAwareApiRuntime(
       await deps.callFollowerApi("call", ["editMessageText", body]);
       return "edited";
     },
+    async editMessageReplyMarkup(
+      chatId: number,
+      messageId: number,
+      replyMarkup: unknown,
+    ): Promise<void> {
+      if (deps.ownsDirect()) {
+        await deps.directRuntime.editMessageReplyMarkup(
+          chatId,
+          messageId,
+          replyMarkup,
+        );
+        return;
+      }
+      await deps.callFollowerApi("call", [
+        "editMessageReplyMarkup",
+        { chat_id: chatId, message_id: messageId, reply_markup: replyMarkup },
+      ]);
+    },
     async answerCallbackQuery(
       callbackQueryId: string,
       text?: string,

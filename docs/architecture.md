@@ -279,7 +279,7 @@ Final delivery attaches reply metadata only where requested. Reply parameters ap
 
 Outbound files staged during an active Telegram turn are delivered after that turn completes. They use `telegram_attach`, are checked atomically per tool call, and use configurable size limits before photo/document upload. When no Telegram turn is active, `telegram_attach` sends files immediately to the paired/default chat, an assigned follower thread, or an explicit `chat_id` plus optional `thread_id`; `telegram_message` provides direct local/TUI Markdown text delivery for explicit user requests and runs the same `telegram_button` markup planner so buttons attach to that text message. Direct local/TUI delivery is singleton-controlled: classic mode requires this Pi instance to own `/telegram-connect`, while Threaded Mode followers must be registered and route through the leader-owned transport. Already accepted active-turn reply/attachment delivery remains session-local.
 
-Assistant-authored final-message actions use hidden top-level comments:
+Assistant-authored final-message actions use hidden top-level comments. Both actions accept a JSON object or double-quoted HTML-like attributes; an optional colon after the action name is format-neutral and stripped before payload detection:
 
 - `telegram_voice` creates voice reply artifacts through configured outbound handlers, programmatic voice handlers, or registered synthesis providers.
 - `telegram_button` creates inline buttons whose callbacks enqueue the configured prompt text as a normal Telegram prompt turn.

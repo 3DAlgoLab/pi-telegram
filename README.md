@@ -179,11 +179,11 @@ Inbound files land under `<agent-dir>/tmp/telegram` and default to a 50 MiB limi
 
 ### Voice And Media
 
-Voice notes, audio, images, PDFs, and other media can pass through configured inbound handlers, programmatic handlers, or registered STT providers. Outbound voice can use configured `outboundHandlers` or registered TTS providers; `pi-telegram` owns reply policy and Telegram transport, while providers own synthesis.
+Voice notes, audio, images, PDFs, and other media can pass through configured inbound handlers, programmatic handlers, or registered STT providers. Outbound voice can use configured `outboundHandlers` or registered TTS providers; `pi-telegram` owns reply policy and Telegram transport, while providers own synthesis. Explicit `telegram_voice` actions accept either a JSON object or compact double-quoted attributes, with equivalent `text` and `value` payload keys and an optional format-neutral colon after the action name.
 
 ### Buttons And Callbacks
 
-Assistant replies can include top-level hidden `telegram_button` comments. The bridge strips the comments from visible text, renders inline buttons, and routes callbacks back into Pi as queued prompts or extension-owned callback actions. Button-only replies receive the standard `☑️ **Choose an option:**` heading as automatic visible fallback text. Once a generated prompt button is accepted, only that exact button switches to its optional `selected_style` (`primary` blue by default, `success` green, or `danger` red) without altering its agent-authored label or emoji; every style still queues the selected prompt.
+Assistant replies can include top-level hidden `telegram_button` comments using either a JSON object or compact double-quoted attributes. Buttons use `label` plus `prompt`, or the compact `value` key when both are identical. The optional colon after the action name never changes format detection. The bridge strips the comments from visible text, renders inline buttons, and routes callbacks back into Pi as queued prompts or extension-owned callback actions. Button-only replies receive the standard `☑️ **Choose an option:**` heading as automatic visible fallback text. Once a generated prompt button is accepted, only that exact button switches to its optional `selected_style` (`primary` blue by default, `success` green, or `danger` red) without altering its agent-authored label or emoji; every style still queues the selected prompt.
 
 ### Threaded Mode And Multi-Instance Bus
 

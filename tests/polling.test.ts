@@ -115,7 +115,6 @@ test("Thread-aware polling blocks follower takeover during Threaded Mode downgra
     getAllowedUserId: () => 42,
     callApi,
     topicTargetStore: store,
-    isBusConfigured: () => true,
     isBusRuntimeEnabled: () => false,
     isTopicModeUnavailableError: () => false,
     getPollingStartedWithTelegramBus: () => false,
@@ -187,7 +186,6 @@ test("Thread capability downgrade retries classic restore after failure", async 
     getAllowedUserId: () => 42,
     callApi: async <TResponse,>(): Promise<TResponse> => ({}) as TResponse,
     topicTargetStore: store,
-    isBusConfigured: () => true,
     ownsLock: () => true,
     getPollingStartedWithTelegramBus: () => pollingStartedWithBus,
     setPollingStartedWithTelegramBus(started: boolean) {
@@ -253,7 +251,6 @@ test("Thread-aware polling still allows classic takeover path without thread bin
     getAllowedUserId: () => 42,
     callApi,
     topicTargetStore: store,
-    isBusConfigured: () => true,
     isBusRuntimeEnabled: () => false,
     isTopicModeUnavailableError: () => false,
     getPollingStartedWithTelegramBus: () => false,

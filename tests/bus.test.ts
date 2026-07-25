@@ -24,6 +24,7 @@ import {
   probeTelegramBusEndpoint,
 } from "../lib/bus-transport.ts";
 import {
+  createCurrentTelegramBusProcessRuntime,
   createTelegramBusFollowerRegistry,
   createTelegramBusForeignOwnedUpdateForwarder,
   createTelegramFollowerApiCallAuthorizer,
@@ -42,6 +43,17 @@ import {
   stripTelegramBusApiMetadata,
   sendTelegramBusLocalEnvelope,
 } from "../lib/bus.ts";
+
+test("Current bus process runtime owns process identity defaults", () => {
+  const runtime = createCurrentTelegramBusProcessRuntime({
+    getActiveProfileName: () => undefined,
+    pid: 42,
+    parentPid: 7,
+    createdAtMs: 1000,
+  });
+  assert.equal(runtime.instanceId, "42:1000");
+  assert.match(runtime.manualFollowerOwnerId, /^7:/u);
+});
 
 test("Bus process runtime resolves live profile endpoints", () => {
   let profileName: string | undefined;

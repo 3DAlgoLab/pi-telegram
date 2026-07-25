@@ -147,8 +147,11 @@ test("Prompt helpers expose detailed Telegram guidance through agent help tool",
   assert.match(help, /Assistant-authored Telegram actions/);
   assert.match(help, /\[voice\] delivery: automatic voice/);
   assert.match(help, /hidden.*mirror.*always/);
-  assert.match(help, /telegram_voice text="Short summary"/);
-  assert.match(help, /telegram_button: OK/);
+  assert.match(help, /telegram_voice: \{"value":"Short summary"/);
+  assert.match(help, /equivalent `text` or `value`/);
+  assert.match(help, /telegram_button: \{"label":"Continue"/);
+  assert.match(help, /telegram_button value="Continue"/);
+  assert.match(help, /colon after the action name is optional/);
   assert.match(help, /inboundHandlers/);
   assert.match(help, /speech-to-text/);
   assert.match(help, /state\.json/);

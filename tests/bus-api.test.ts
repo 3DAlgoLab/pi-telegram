@@ -80,6 +80,9 @@ function createDirectRuntime(calls: unknown[]): TelegramBridgeApiRuntime {
       calls.push({ kind: "edit", body });
       return "edited";
     },
+    editMessageReplyMarkup: async (chatId, messageId, replyMarkup) => {
+      calls.push({ kind: "edit-reply-markup", chatId, messageId, replyMarkup });
+    },
     answerCallbackQuery: async (callbackQueryId, text) => {
       calls.push({ kind: "answer-callback", callbackQueryId, text });
     },

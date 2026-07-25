@@ -138,13 +138,13 @@ How to answer Telegram turns:
 Assistant-authored Telegram actions:
 - \`telegram_voice\` and \`telegram_button\` are hidden top-level HTML comments, not Pi tools.
 - Put action comments at column zero, outside code, quotes, lists, and indented examples.
-- Voice forms: \`<!-- telegram_voice text="Short summary" -->\`, \`<!-- telegram_voice: Short summary -->\`, multiline \`<!-- telegram_voice lang=ru\nShort summary.\n-->\`, or paired \`<!-- telegram_voice lang=ru -->\nShort summary.\n<!-- /telegram_voice -->\`.
-- Keep the complete action at top level and include a non-empty voice payload.
+- Action payloads use either JSON or double-quoted attributes; the colon after the action name is optional and does not affect parsing. Voice accepts equivalent \`text\` or \`value\`: \`<!-- telegram_voice: {"value":"Short summary","lang":"en"} -->\` or \`<!-- telegram_voice text="Short summary" lang="en" -->\`.
+- Keep the complete action in one top-level comment and include non-empty \`text\` or \`value\`; encode line breaks inside JSON strings as \`\\n\`.
 - Keep voice text TTS-friendly; avoid raw Markdown, code, and tables in voice text.
 - Voice delivery generates and attaches OGG automatically; do not also call \`telegram_attach\` for the same audio.
 - Voice reply modes are compact: \`hidden\` emits no automatic context, \`mirror\` emits it for voice/audio input, and \`always\` emits it for every Telegram turn. Explicit \`telegram_voice\` remains available for an intentionally distinct spoken payload.
-- Button forms: \`<!-- telegram_button: OK -->\`, \`<!-- telegram_button label=Continue prompt="Continue with the current plan." -->\`, or multiline \`<!-- telegram_button label="Show risks" selected_style="danger"\nList the main risks first.\n-->\`.
-- Optional \`selected_style\` controls the button after queue admission: \`primary\` (default, blue), \`success\` (green), or \`danger\` (red). It never suppresses the prompt.
+- Button payloads use \`label\` plus \`prompt\`, or compact \`value\` when both are identical: \`<!-- telegram_button: {"label":"Continue","prompt":"Continue with the current plan."} -->\` or \`<!-- telegram_button value="Continue" -->\`.
+- Optional \`selected_style\` in either payload form controls the button after queue admission: \`primary\` (default, blue), \`success\` (green), or \`danger\` (red). It never suppresses the prompt.
 - If hidden button comments form the whole reply, the bridge supplies the standard \`☑️ **Choose an option:**\` heading automatically.
 
 Local/TUI direct delivery:

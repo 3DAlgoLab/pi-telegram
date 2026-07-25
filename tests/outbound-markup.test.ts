@@ -8,7 +8,6 @@ import test from "node:test";
 
 import {
   collectTopLevelHtmlComments,
-  parseTelegramCommentAttributes,
   planTelegramVoiceReply,
   stripTelegramCommentMarkupForDelivery,
   stripTelegramCommentMarkupForPreview,
@@ -42,18 +41,47 @@ test("Markup stripping removes closed and partial top-level comments", () => {
   );
 });
 
-test("Comment attribute parser supports quoted and unquoted values", () => {
-  assert.deepEqual(
-    parseTelegramCommentAttributes(
-      'label="Run now" prompt=continue lang=ru rate=+20%',
-    ),
-    {
-      label: "Run now",
-      prompt: "continue",
-      lang: "ru",
-      rate: "+20%",
-    },
+test("Voice reply planner accepts JSON and attributes with optional separators", () => {
+  const plan = planTelegramVoiceReply(
+    [
+      "Visible answer.",
+      "",
+      '<!-- telegram_voice {"text":"JSON voice.","lang":"ru"} -->',
+      '<!-- telegram_voice: {"text":"Colon JSON voice.","rate":"+10%"} -->',
+      '<!-- telegram_voice: text="Attribute voice." lang="en" -->',
+      '<!-- telegram_voice {"value":"JSON value voice."} -->',
+      '<!-- telegram_voice: value="Attribute value voice." -->',
+      '<!-- telegram_voice {"value":"Fallback voice.","text":"Explicit voice."} -->',
+    ].join("\n"),
   );
+
+  assert.equal(plan.markdown, "Visible answer.");
+  assert.deepEqual(plan.voiceReplies, [
+    { text: "JSON voice.", lang: "ru" },
+    { text: "Colon JSON voice.", rate: "+10%" },
+    { text: "Attribute voice.", lang: "en" },
+    { text: "JSON value voice." },
+    { text: "Attribute value voice." },
+    { text: "Explicit voice." },
+  ]);
+});
+
+test("Voice reply planner rejects legacy payload forms", () => {
+  const plan = planTelegramVoiceReply(
+    [
+      "<!-- telegram_voice: Speak this. -->",
+      '<!-- telegram_voice text="Speak this." lang=ru -->',
+      "<!-- telegram_voice text='Speak this.' -->",
+      '<!-- telegram_voice lang="ru"\nSpeak this.\n-->',
+      '<!-- telegram_voice lang="ru" -->',
+      "Paired body.",
+      "<!-- /telegram_voice -->",
+    ].join("\n"),
+  );
+
+  assert.equal(plan.voiceText, undefined);
+  assert.equal(plan.voiceReplies, undefined);
+  assert.equal(plan.markdown, "Paired body.");
 });
 
 test("Voice reply planner extracts multiple voice replies and cleans markdown", () => {
@@ -61,11 +89,9 @@ test("Voice reply planner extracts multiple voice replies and cleans markdown", 
     [
       "Visible answer.",
       "",
-      "<!-- telegram_voice lang=ru rate=+20% -->",
-      "Первый ответ.",
-      "-->",
+      '<!-- telegram_voice: {"text":"Первый ответ.","lang":"ru","rate":"+20%"} -->',
       "",
-      '<!-- telegram_voice lang=en text="Second answer." -->',
+      '<!-- telegram_voice lang="en" text="Second answer." -->',
       "",
       "Tail.",
     ].join("\n"),
