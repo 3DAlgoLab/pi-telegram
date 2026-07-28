@@ -132,10 +132,13 @@ function createApiRuntimeClient(
   };
 }
 
-test("Outgoing Rich Message type excludes explicit structured blocks", () => {
-  // @ts-expect-error Core output supports Markdown/HTML only; blocks include draft-only Thinking.
-  const unsupported: TelegramInputRichMessage = { blocks: [] };
-  assert.deepEqual(unsupported, { blocks: [] });
+test("Outgoing Rich Message type supports explicit structured blocks", () => {
+  const structured: TelegramInputRichMessage = {
+    blocks: [{ type: "pre", text: "Working" }],
+  };
+  assert.deepEqual(structured, {
+    blocks: [{ type: "pre", text: "Working" }],
+  });
 });
 
 test("Telegram API byte-limit helpers expose the inbound file default", () => {

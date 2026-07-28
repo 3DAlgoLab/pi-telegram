@@ -55,6 +55,7 @@ export interface ResolvedTelegramTimeConfig {
 }
 
 export type TelegramAssistantRenderingMode = "rich" | "html";
+export type TelegramActivityVerbosity = "quiet" | "verbose";
 
 export interface TelegramConfig {
   /** @deprecated persisted identity belongs in profiles.default; retained for effective/legacy views */
@@ -74,6 +75,9 @@ export interface TelegramConfig {
     draftPreviews?: boolean;
     rendering?: TelegramAssistantRenderingMode;
     proactivePush?: boolean;
+    activity?: TelegramActivityVerbosity;
+    /** @deprecated use activity */
+    activityVerbosity?: TelegramActivityVerbosity;
   };
   /** @deprecated use assistant.draftPreviews */
   draftPreviews?: boolean;
@@ -678,7 +682,7 @@ export function createTelegramProactivePushSetter(
   return async (enabled) => {
     await loadLatestTelegramConfig(configStore);
     const current = configStore.get();
-    const config = {
+    const config: TelegramConfig = {
       ...current,
       assistant: { ...current.assistant, proactivePush: enabled },
     };
@@ -740,6 +744,40 @@ export function createTelegramAssistantRenderingModeSetter(
     const config = {
       ...current,
       assistant: { ...current.assistant, rendering: mode },
+    };
+    configStore.set(config);
+    await configStore.persist(config);
+  };
+}
+
+export function createTelegramActivityVerbosityGetter(
+  configStore: Pick<TelegramConfigStore, "get">,
+): () => TelegramActivityVerbosity {
+  return () => {
+    const assistant = configStore.get().assistant;
+    if (assistant?.activity !== undefined) {
+      return assistant.activity === "verbose" ? "verbose" : "quiet";
+    }
+    return assistant?.activityVerbosity === "verbose" ? "verbose" : "quiet";
+  };
+}
+
+export function createTelegramActivityVerbositySetter(
+  configStore: TelegramMutableConfigStore,
+): (verbosity: TelegramActivityVerbosity) => Promise<void> {
+  return async (verbosity) => {
+    await loadLatestTelegramConfig(configStore);
+    const current = configStore.get();
+    const {
+      activityVerbosity: _legacyActivityVerbosity,
+      ...assistant
+    } = current.assistant ?? {};
+    const config = {
+      ...current,
+      assistant: {
+        ...assistant,
+        activity: verbosity,
+      },
     };
     configStore.set(config);
     await configStore.persist(config);
@@ -919,6 +957,10 @@ export function createTelegramConfigControls(
       createTelegramAssistantRenderingModeGetter(configStore),
     setAssistantRenderingMode:
       createTelegramAssistantRenderingModeSetter(configStore),
+    getActivityVerbosity:
+      createTelegramActivityVerbosityGetter(configStore),
+    setActivityVerbosity:
+      createTelegramActivityVerbositySetter(configStore),
     getVoiceReplyMode: createTelegramVoiceReplyModeGetter(configStore),
     isVoiceReplyModeConfigured:
       createTelegramVoiceReplyModeConfiguredChecker(configStore),

@@ -641,8 +641,18 @@ test("buildTelegramSettingsMenuReplyMarkup injects extension settings rows", asy
   registry.register(
     stubSection("@test/a", "A", {
       settings: {
-        label: "🔧 Extension A",
+        label: "🔧 Core · Beta",
+        order: 2,
         open: async () => ({ text: "A settings" }),
+      },
+    }),
+  );
+  registry.register(
+    stubSection("@test/b", "B", {
+      settings: {
+        label: "🧪 Core · Alpha",
+        order: 1,
+        open: async () => ({ text: "B settings" }),
       },
     }),
   );
@@ -658,14 +668,20 @@ test("buildTelegramSettingsMenuReplyMarkup injects extension settings rows", asy
 
   // First row: Main menu back
   assert.equal(rows[0][0].callback_data, "menu:back");
-  // Second row: extension settings
-  assert.equal(rows[1][0].text, "🔧 Extension A");
-  assert.ok(rows[1][0].callback_data.startsWith("section:"));
-  // Built-in rows follow extension settings
-  assert.ok(rows[2][0].text.includes("Thread cleanup"));
-  assert.ok(rows[3][0].text.includes("Voice reply"));
-  assert.ok(rows[4][0].text.includes("Time"));
-  assert.ok(rows[5][0].text.includes("Draft previews"));
-  assert.ok(rows[6][0].text.includes("Rendering"));
-  assert.ok(rows[7][0].text.includes("Proactive push"));
+  assert.deepEqual(
+    rows.slice(1).map((row) => row[0].text),
+    [
+      "📝 Draft previews: off",
+      "🧾 Rendering: rich",
+      "👄 Voice reply: hidden",
+      "🔬 Activity: quiet",
+      "📌 Proactive push: off",
+      "🕒 Time injection: hidden",
+      "🧹 Thread cleanup: on",
+      "🧪 Core · Alpha",
+      "🔧 Core · Beta",
+    ],
+  );
+  assert.ok(rows[8][0].callback_data.startsWith("section:"));
+  assert.ok(rows[9][0].callback_data.startsWith("section:"));
 });

@@ -5,6 +5,7 @@
  */
 
 import * as Activity from "./activity.ts";
+import type { TelegramActivityVerbosityRuntime } from "./activity-verbosity.ts";
 import * as CommandTemplates from "./command-templates.ts";
 import * as Commands from "./commands.ts";
 import * as Config from "./config.ts";
@@ -61,19 +62,24 @@ export function createTelegramAssistantOutputBindingRuntime<
   sender: Parameters<
     typeof OutboundHandlers.createTelegramAssistantOutputSender<TTransportStamp>
   >[0];
+  waitForActivityIdle?: () => Promise<void>;
   recordRuntimeEvent: TelegramRuntimeEventRecorder;
 }): TelegramAssistantOutputBindingRuntime<TTransportStamp> {
   const authority = Routing.createTelegramAssistantOutputAuthorityRuntime(
     deps.authority,
   );
-  const send =
+  const sendOutput =
     OutboundHandlers.createTelegramAssistantOutputSender<TTransportStamp>(
       deps.sender,
     );
   const runtime = Activity.createTelegramAssistantOutputRuntime({
     isEnabled: deps.isEnabled,
     ...authority,
-    send,
+    async send(event, authority, isAuthorityActive) {
+      await deps.waitForActivityIdle?.();
+      if (!isAuthorityActive()) return;
+      await sendOutput(event, authority, isAuthorityActive);
+    },
     recordFailure(event, error) {
       deps.recordRuntimeEvent("proactive-push", error, {
         activityId: event.activityId,
@@ -278,6 +284,7 @@ export function registerTelegramCommandsAndTools({
 interface TelegramLifecycleBindingDeps {
   pi: Pi.ExtensionAPI;
   activityRuntime: Activity.TelegramActivityRuntime;
+  activityVerbosityRuntime?: TelegramActivityVerbosityRuntime;
   assistantOutputRuntime: Pick<
     Activity.TelegramAssistantOutputRuntime,
     "start" | "stop"
@@ -363,6 +370,7 @@ interface TelegramLifecycleBindingDeps {
 export function registerTelegramLifecycleRuntimeHooks({
   pi,
   activityRuntime,
+  activityVerbosityRuntime,
   assistantOutputRuntime,
   sessionLifecycleRuntime,
   configStore,
@@ -556,6 +564,7 @@ export function registerTelegramLifecycleRuntimeHooks({
     isSessionActive: isSessionContextActive,
     isTurnTransportActive,
     waitForTypingIdle: typing.waitForIdle,
+    waitForActivityIdle: activityVerbosityRuntime?.waitForIdle,
     dispatchNextQueuedTelegramTurn,
     requestDeferredDispatchNextQueuedTelegramTurn:
       deferredQueueDispatchRuntime.request,
@@ -638,6 +647,7 @@ export function registerTelegramLifecycleRuntimeHooks({
       previewRuntime.invalidate();
       assistantOutputRuntime.start();
       activityRuntime.onSessionStart?.();
+      activityVerbosityRuntime?.reset();
       modelContextAvailabilityRuntime.reconcile();
       await sessionLifecycleRuntime.onSessionStart(event, ctx);
     },
@@ -645,6 +655,7 @@ export function registerTelegramLifecycleRuntimeHooks({
       if (!isSessionContextActive(ctx)) return;
       agentLifecycleHooks.clearRetainedAgentEnd();
       activityRuntime.onSessionShutdown();
+      activityVerbosityRuntime?.reset();
       assistantOutputRuntime.stop();
       compactionObserver.onSessionShutdown();
       if (event.reason === "quit" && disconnectOnQuit) {

@@ -11,11 +11,13 @@ import { setTimeout as waitForTimeout } from "node:timers/promises";
 import testRoot, { mock, type TestContext } from "node:test";
 
 import { registerTelegramActivityHandler } from "../api/activity.ts";
+import { createTelegramActivityVerbosityRuntime } from "../lib/activity-verbosity.ts";
 import * as BusApi from "../lib/bus-api.ts";
 import * as BusFollower from "../lib/bus-follower.ts";
 import * as BusLeader from "../lib/bus-leader.ts";
 import * as Bus from "../lib/bus.ts";
 import * as Delivery from "../lib/delivery.ts";
+import * as Routing from "../lib/routing.ts";
 import * as Threads from "../lib/threads.ts";
 import {
   createTelegramBridgeApiRuntime,
@@ -617,6 +619,292 @@ test("Public activity delivery reaches the classic instance without blocking age
     restoreFetch();
     await telegramConfig.restore();
   }
+});
+
+test("Verbose activity reaches classic transport before the final assistant answer", async () => {
+  const telegramConfig = await createRuntimeTelegramConfigFixture();
+  const { handlers, commands, pi } = createRuntimePiHarness();
+  const calls: Array<{
+    method: string;
+    body: Record<string, unknown>;
+  }> = [];
+  let nextMessageId = 100;
+  const restoreFetch = setRuntimeTestFetch(async (input, init) => {
+    const method = getRuntimeTelegramApiMethod(input);
+    const body = parseJsonRequestBody(init) ?? {};
+    if (method === "deleteWebhook" || method === "setMyCommands") {
+      return createRuntimeTelegramApiResponse(true);
+    }
+    if (method === "getUpdates") {
+      return await new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new DOMException("stop", "AbortError"));
+        });
+      });
+    }
+    if (method === "sendChatAction") {
+      return createRuntimeTelegramApiResponse(true);
+    }
+    calls.push({ method, body });
+    if (method === "sendRichMessageDraft" || method === "editMessageText") {
+      return createRuntimeTelegramApiResponse(true);
+    }
+    if (method === "sendMessage" || method === "sendRichMessage") {
+      return createRuntimeTelegramApiResponse({
+        message_id: nextMessageId++,
+      });
+    }
+    throw new Error(`Unexpected Telegram API method: ${method}`);
+  });
+  try {
+    await telegramConfig.write({
+      botToken: "123:abc",
+      allowedUserId: 77,
+      lastUpdateId: 0,
+      assistant: {
+        activity: "verbose",
+        proactivePush: true,
+      },
+    });
+    await writeRuntimeTelegramLocks({});
+    (await getRuntimeTelegramExtension())(pi);
+    const ctx = createRuntimeExtensionContext({
+      cwd: "/repo/verbose-classic",
+    });
+    await handlers.get("session_start")?.({}, ctx);
+    await commands.get("telegram-connect")?.handler("", ctx);
+    await handlers.get("input")?.(
+      { source: "interactive", text: "verbose probe" },
+      ctx,
+    );
+    await handlers.get("agent_start")?.({}, ctx);
+    await handlers.get("message_update")?.(
+      {
+        message: {},
+        assistantMessageEvent: {
+          type: "thinking_delta",
+          contentIndex: 0,
+          delta: "provider-exposed reasoning",
+        },
+      },
+      ctx,
+    );
+    for (const [toolCallId, toolName] of [
+      ["one", "read"],
+      ["two", "exec"],
+    ] as const) {
+      await handlers.get("tool_execution_start")?.(
+        {
+          type: "tool_execution_start",
+          toolCallId,
+          toolName,
+          args: { path: `${toolCallId}.txt` },
+        },
+        ctx,
+      );
+      await handlers.get("tool_execution_end")?.(
+        {
+          type: "tool_execution_end",
+          toolCallId,
+          toolName,
+          result: `${toolCallId} result`,
+          isError: false,
+        },
+        ctx,
+      );
+    }
+    const assistantMessage = {
+      role: "assistant",
+      content: [{ type: "text", text: "Semantic **answer**" }],
+    };
+    await handlers.get("message_update")?.(
+      {
+        message: assistantMessage,
+        assistantMessageEvent: {
+          type: "text_end",
+          contentIndex: 0,
+          content: "Semantic **answer**",
+          partial: assistantMessage,
+        },
+      },
+      ctx,
+    );
+    await handlers.get("message_update")?.(
+      {
+        message: assistantMessage,
+        assistantMessageEvent: {
+          type: "done",
+          reason: "stop",
+          message: assistantMessage,
+        },
+      },
+      ctx,
+    );
+    await handlers.get("agent_end")?.(
+      { messages: [assistantMessage] },
+      ctx,
+    );
+    await waitForCondition(() =>
+      calls.some((call) => {
+        const richMessage = call.body.rich_message as
+          | { markdown?: string }
+          | undefined;
+        return richMessage?.markdown?.includes("Semantic **answer**") ?? false;
+      }),
+    );
+
+    const reasoningCall = calls.find(
+      (call) => call.method === "sendRichMessageDraft",
+    );
+    assert.equal(reasoningCall?.body.chat_id, 77);
+    assert.deepEqual(
+      (
+        reasoningCall?.body.rich_message as
+          | { blocks?: Array<{ type?: string }> }
+          | undefined
+      )?.blocks?.map((block) => block.type),
+      ["thinking"],
+    );
+    const toolSendIndex = calls.findIndex(
+      (call) =>
+        call.method === "sendMessage" &&
+        typeof call.body.text === "string" &&
+        call.body.text.includes("<blockquote expandable>"),
+    );
+    const toolEditIndex = calls.findIndex(
+      (call) =>
+        call.method === "editMessageText" &&
+        typeof call.body.text === "string" &&
+        call.body.text.includes("<blockquote expandable>"),
+    );
+    const finalIndex = calls.findIndex((call) => {
+      const richMessage = call.body.rich_message as
+        | { markdown?: string }
+        | undefined;
+      return richMessage?.markdown?.includes("Semantic **answer**") ?? false;
+    });
+    assert.ok(toolSendIndex >= 0);
+    assert.ok(
+      toolEditIndex > toolSendIndex,
+      JSON.stringify(calls, undefined, 2),
+    );
+    assert.ok(finalIndex > toolEditIndex);
+    const editedText = calls[toolEditIndex]?.body.text;
+    assert.equal(typeof editedText, "string");
+    assert.match(editedText as string, /read/);
+    assert.match(editedText as string, /exec/);
+    assert.equal(calls[toolEditIndex]?.body.rich_message, undefined);
+    await handlers.get("agent_settled")?.({}, ctx);
+    await commands.get("telegram-disconnect")?.handler("", ctx);
+    await handlers.get("session_shutdown")?.({}, ctx);
+  } finally {
+    restoreFetch();
+    await telegramConfig.restore();
+  }
+});
+
+test("Verbose activity uses follower transport and loses stale registration authority", async () => {
+  let followerGeneration = "follower-1";
+  const followerCalls: Array<{
+    operation: string;
+    args: unknown[];
+  }> = [];
+  const directRuntime = createTelegramBridgeApiRuntime({
+    client: {
+      call: async <TResponse>() => {
+        return Promise.reject(
+          new Error("Direct transport must not be used by a follower."),
+        ) as Promise<TResponse>;
+      },
+      callMultipart: async <TResponse>() => {
+        return Promise.reject(
+          new Error("Multipart transport is not expected."),
+        ) as Promise<TResponse>;
+      },
+      downloadFile: async () => "/tmp/file",
+      answerCallbackQuery: async () => {},
+    } satisfies TelegramApiClient,
+    tempDir: "/tmp",
+    maxFileSizeBytes: 1,
+    tempFileMaxAgeMs: 1,
+    recordRuntimeEvent: () => {},
+  });
+  const api = BusApi.createTelegramBusAwareApiRuntime({
+    directRuntime,
+    ownsDirect: () => false,
+    getDefaultTarget: () => ({ chatId: 77, threadId: 43 }),
+    async callFollowerApi(operation: string, args: unknown[]) {
+      followerCalls.push({ operation, args });
+      const method = args[0];
+      return method === "sendMessage" ? { message_id: 501 } : true;
+    },
+  });
+  const authority = Routing.createTelegramAssistantOutputAuthorityRuntime({
+    getPreferredTarget: () => ({ chatId: 77, threadId: 43 }),
+    getFallbackChatId: () => 77,
+    getTransportStamp: () => "profile-1",
+    isTransportStampActive: (stamp) => stamp === "profile-1",
+    ownsDirect: () => false,
+    getDirectEpoch: () => undefined,
+    isFollowerRegistered: () => followerGeneration !== "",
+    getFollowerGeneration: () => followerGeneration || undefined,
+  });
+  const runtime = createTelegramActivityVerbosityRuntime({
+    isVerbose: () => true,
+    resolveTarget: () => ({ chatId: 77, threadId: 43 }),
+    captureAuthority: authority.captureAuthority,
+    isAuthorityActive: authority.isAuthorityActive,
+    sendMessage: api.sendMessage,
+    sendRichMessageDraft: api.sendRichMessageDraft,
+    editMessageText: api.editMessageText,
+  });
+  const base = {
+    activityId: "follower-activity",
+    source: "telegram",
+    target: { chatId: 77, threadId: 43 },
+    timestamp: 1,
+  } as const;
+  runtime.accept({ ...base, sequence: 1, type: "agent-start" });
+  runtime.accept({
+    ...base,
+    sequence: 2,
+    type: "reasoning-delta",
+    contentIndex: 0,
+    delta: "follower reasoning",
+  });
+  runtime.accept({
+    ...base,
+    sequence: 3,
+    type: "tool-end",
+    toolCallId: "tool-1",
+    toolName: "read",
+    result: "done",
+    isError: false,
+  });
+  await runtime.waitForIdle();
+  assert.deepEqual(
+    followerCalls.map((call) => call.args[0]),
+    ["sendRichMessageDraft", "sendMessage"],
+  );
+  const draftBody = followerCalls[0]?.args[1] as
+    | Record<string, unknown>
+    | undefined;
+  assert.equal(draftBody?.chat_id, 77);
+  assert.equal(draftBody?.message_thread_id, 43);
+
+  followerGeneration = "follower-2";
+  runtime.accept({
+    ...base,
+    sequence: 4,
+    type: "tool-end",
+    toolCallId: "tool-2",
+    toolName: "exec",
+    result: "stale",
+    isError: false,
+  });
+  await runtime.waitForIdle();
+  assert.equal(followerCalls.length, 2);
+  runtime.stop();
 });
 
 test("Follower aggregate delivery crosses the authorized leader transport", async () => {

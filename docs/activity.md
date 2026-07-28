@@ -180,7 +180,7 @@ Pi provider events use `thinking_*`; the public product term is `reasoning`. The
 
 Tool activity uses Pi's executed-tool lifecycle (`tool_execution_start/update/end`), not provider `toolcall_*` payloads. Provider tool-call boundaries are used only to classify preceding assistant prose. This prevents duplicate tool rows and reports actual execution results.
 
-`args`, `update`, and `result` may contain paths, source text, command output, or other sensitive data. They are available to trusted local extension code but must not be rendered wholesale by default. Reference UI should summarize tool name/state and expose bounded details only through explicit policy.
+`args`, `update`, and `result` may contain paths, source text, command output, or other sensitive data. They are available to trusted local extension code but must not be rendered wholesale by default. Core `quiet` mode renders none of them. Explicit `verbose` mode redacts known secret shapes, truncates every evidence field, and places completed tool evidence in ordinary HTML messages with standard expandable blockquotes rather than Rich Messages.
 
 ## Delivery Context
 
@@ -263,12 +263,12 @@ The first implementation has no public Activity diagnostics getter because handl
 
 ## Security And Non-Goals
 
-The Activity API does not:
+The Activity API itself does not:
 
 - Enable reasoning visibility by default.
 - Guarantee reasoning availability across providers.
 - Expose signed/redacted reasoning metadata.
-- Render raw tool arguments or results automatically.
+- Render raw tool arguments or results for public handlers automatically. The separate bridge-owned verbose projector renders only bounded redacted evidence after explicit operator opt-in.
 - Replace assistant final replies or Rich Draft previews.
 - Mutate queues, models, thinking levels, sessions, or process state.
 - Expose Telegram clients, bot tokens, Pi contexts, or private runtime objects.
@@ -289,13 +289,15 @@ The implementation must cover:
 - Handler error isolation, non-blocking lifecycle, shutdown fencing, and redacted diagnostics.
 - Public package import without `/lib` reach-through.
 
-## Consumer Policy Pattern
+## Core Verbosity And Consumer Policy
 
-The registration and delivery examples above provide the complete public building blocks for issue #126-style visibility policy:
+The bridge now owns the minimal global `quiet`/`verbose` policy. Quiet is the default. Verbose streams available reasoning through an ephemeral Rich Thinking draft and emits bounded tool evidence through ordinary HTML expandable blockquotes without changing public assistant-segment projection or final replies.
 
-- Reasoning can default off and send completed `reasoning-end` blocks only when enabled.
+The registration and delivery examples above remain the public building blocks for companion-specific policy:
+
+- Companion reasoning must still default off unless its own explicit policy enables it.
 - Intermediate prose can default off and send only `assistant-segment` events with `placement: "intermediate"`, never the final assistant segment.
-- Tool rows can default on, show only tool name/state, and edit generation-bound logical handles from running to done/failed without exposing arguments or results.
+- Companion tool rows should avoid duplicating the core verbose projection and must retain their own generation-bound handles and disclosure policy.
 - Interactive toggles belong in a registered Section and Settings row; activity messages can remain non-interactive.
 - `session_shutdown` should dispose stable registrations and drop retained delivery handles, so reload/session replacement cannot reuse old contexts or handles.
 

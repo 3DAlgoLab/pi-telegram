@@ -968,6 +968,7 @@ export interface TelegramAgentEndRuntimeDeps<
   isSessionActive?: () => boolean;
   isTurnTransportActive?: (turn: TTurn) => boolean;
   waitForTypingIdle?: () => Promise<void>;
+  waitForActivityIdle?: () => Promise<void>;
   updateStatus: () => void;
   dispatchNextQueuedTelegramTurn: () => void;
   scheduleActiveTurnDelivery?: (task: () => Promise<void>) => void;
@@ -1047,6 +1048,7 @@ export interface TelegramAgentEndHookRuntimeDeps<
   isSessionActive?: (ctx: TContext) => boolean;
   isTurnTransportActive?: (turn: TTurn) => boolean;
   waitForTypingIdle?: () => Promise<void>;
+  waitForActivityIdle?: () => Promise<void>;
   updateStatus: (ctx: TContext) => void;
   dispatchNextQueuedTelegramTurn: (ctx: TContext) => void;
   requestDeferredDispatchNextQueuedTelegramTurn: (
@@ -1188,6 +1190,7 @@ export function createTelegramAgentEndHook<
       isSessionActive: () => deps.isSessionActive?.(ctx) ?? true,
       isTurnTransportActive: deps.isTurnTransportActive,
       waitForTypingIdle: deps.waitForTypingIdle,
+      waitForActivityIdle: deps.waitForActivityIdle,
       updateStatus: () => deps.updateStatus(ctx),
       dispatchNextQueuedTelegramTurn: () => {
         deps.requestDeferredDispatchNextQueuedTelegramTurn(
@@ -1358,6 +1361,7 @@ export async function handleTelegramAgentEndRuntime<
     return;
   }
   const deliverActiveTurn = async () => {
+    await deps.waitForActivityIdle?.();
     if (!isDeliveryActive()) return;
     if (finalText) deps.setPreviewPendingText(finalText);
     if (!finalText && hasOutboundArtifacts)
