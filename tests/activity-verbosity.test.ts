@@ -113,9 +113,9 @@ test("tool evidence renders as ordinary expandable HTML", () => {
     /^<b>🛠&#160; exec&lt;script&gt;:<\/b> <code>done<\/code>/,
   );
   assert.match(html, /<blockquote expandable>/);
-  assert.match(html, /arguments: \{\n  "command"/);
-  assert.match(html, /update 1: \{\n  "content": \[\]/);
-  assert.match(html, /result: \{\n  "content": \[\]/);
+  assert.match(html, /"arguments": \{\n  "command"/);
+  assert.match(html, /"update 1": \{\n  "content": \[\]/);
+  assert.match(html, /"result": \{\n  "content": \[\]/);
   assert.doesNotMatch(html, /rich_message|<pre>/);
 
   const statuses = renderTelegramToolActivityHtml([
@@ -226,6 +226,51 @@ test("completed consecutive tools coalesce as collapsed redacted details", async
   assert.doesNotMatch(serialized, /abcdefghijklmnopqrstuvwxyzABCDEFGHIJK/);
   assert.equal(harness.edits[0]?.parse_mode, "HTML");
   assert.equal(harness.edits[0]?.rich_message, undefined);
+});
+
+test("tool evidence quotes labels and compacts arrays of objects", async () => {
+  const harness = createHarness();
+  harness.runtime.accept(event(1, { type: "agent-start" }));
+  harness.runtime.accept(
+    event(2, {
+      type: "tool-start",
+      toolCallId: "compact",
+      toolName: "ffgrep",
+      args: { pattern: "CORE_SERVICE_URL", path: "apps/admin/", limit: 30 },
+    }),
+  );
+  harness.runtime.accept(
+    event(3, {
+      type: "tool-update",
+      toolCallId: "compact",
+      toolName: "ffgrep",
+      update: {
+        content: [
+          { type: "text", text: "\n" },
+          { type: "text", text: "\n" },
+        ],
+        details: {},
+      },
+    }),
+  );
+  harness.runtime.accept(
+    event(4, {
+      type: "tool-end",
+      toolCallId: "compact",
+      toolName: "ffgrep",
+      result: { content: [] },
+      isError: false,
+    }),
+  );
+  await harness.runtime.waitForIdle();
+
+  const html = harness.sends[0]?.text ?? "";
+  assert.match(html, /"arguments": \{/);
+  assert.match(
+    html,
+    /"update 1": \{\n  "content": \[\{\n    "type": "text",\n    "text": "\\n"\n  \}, \{\n    "type": "text",\n    "text": "\\n"\n  \}\],\n  "details": \{\}\n\}/,
+  );
+  assert.match(html, /"result": \{\n  "content": \[\]\n\}/);
 });
 
 test("assistant boundaries, capacity, and authority replacement fence batches", async () => {

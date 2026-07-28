@@ -2,24 +2,17 @@
 
 _This backlog tracks only open release-relevant work: hotfixes, bounded maintenance, live runtime verification, evidence-gated Telegram client follow-ups, and upstream Pi API blockers. Completed outcomes and validation evidence belong in `CHANGELOG.md`, not in this queue._
 
-## P1 — 0.25.0 Configurable Activity Verbosity
+## P1 — Configurable Activity Live Smoke
 
-Context: Start the next minor release with an operator-controlled Telegram activity surface. Current behavior remains the quiet default: users receive assistant previews, intermediate public prose, and final answers without model reasoning or tool traffic. A new verbose mode should add compact technical reasoning and tool activity without turning bridge-owned UI into Markdown or mixing it into the semantic answer stream.
+Context: `0.25.0` shipped quiet-by-default configurable activity verbosity. The remaining work is live Telegram client verification of verbose reasoning and compact technical tool activity.
 
 Bot API evidence: Bot API 10.2 exposes explicit outgoing Rich Message blocks. `InputRichBlockThinking` is draft-only and disappears when the draft lifecycle ends; `InputRichBlockDetails` provides a collapsed disclosure container, and `InputRichBlockPreformatted` provides nested `<pre><code>` content. Exact mobile/Desktop rendering, edit behavior, and practical limits remain live-verification gates.
 
 Open work:
 
-- [x] Add a persisted `Activity` Settings option backed by `assistant.activity`, with exactly two initial values: `quiet` (default/current behavior) and `verbose` (reasoning plus tool activity). Omitted or invalid configuration must resolve to `quiet`; legacy `assistant.activityVerbosity` is read only when the canonical key is absent and removed on the next write. Settings must follow the existing nested list-option UI and callback/persistence concurrency contracts.
-- [x] In `verbose`, stream reasoning content exposed by supported Pi lifecycle events through a short-lived Telegram Rich Draft `Thinking` block bound to the exact chat/thread, profile, session generation, and direct-owner or follower authority. Finalization, cancellation, failure, replacement, and disconnect must clear local draft ownership without creating a persisted reasoning message or projecting unavailable provider-private chain-of-thought.
-- [x] Persist completed tool activity as bridge-owned compact ordinary HTML messages rather than assistant Markdown or Rich Messages. Render each tool call under one registered semantic icon and tool name with bounded, escaped arguments, updates, result, and error evidence inside a standard expandable blockquote.
-- [x] Coalesce consecutive tool calls from one ordered run into the same editable ordinary message while it remains within Telegram HTML message limits, with one independent expandable blockquote per call. Start a new message when the current message cannot safely accept another block; never reorder tools across assistant prose, reasoning boundaries, targets, runs, or lifecycle generations.
-- [x] Define bounded output, redaction, truncation, retry, edit-ambiguity, and transport-failure behavior so verbose mode cannot leak known secrets, flood the target, replay a possibly committed message, block Pi lifecycle completion, or disturb quiet-mode preview/final ordering. Record failures through existing diagnostics.
-- [x] Reconcile the current no-hidden-reasoning invariant and Rich rendering boundary in `AGENTS.md`, then update README, Settings/configuration docs, architecture/outbound docs, public activity guidance, UI emoji registry, and focused config/menu/activity/delivery/rendering/integration regressions.
-- [x] Order first-level `Settings` by operator meaning while keeping `⬆️ Main menu` first: message presentation (`Draft previews`, `Rendering`, `Voice reply`), technical/public activity (`Activity`, `Proactive push`), prompt context (`Time injection`), then lifecycle (`Thread cleanup`). Append extension-provided rows using their explicit `settings.order` and stable section-id tie-break, preserve each detail submenu's semantic option order, and add focused menu/section regressions.
 - [ ] Live-smoke both modes in classic and Threaded Mode on Telegram mobile and Desktop, including multiple sequential tools, oversized output rollover, cancellation during reasoning, tool failure, session replacement, follower transport, and final-answer ordering.
 
-Done when: `quiet` remains behaviorally unchanged, `verbose` shows ephemeral reasoning plus durable collapsed tool-call evidence with exact routing and bounded safe output, first-level Settings entries follow the documented semantic groups with deterministic extension ordering, Settings survives reload and concurrent persistence, all automated validation passes, and live clients confirm the intended draft/disclosure UX.
+Done when: live mobile and Desktop clients confirm the intended quiet/verbose draft, disclosure, routing, rollover, cancellation, failure, and final-answer ordering behavior in classic and Threaded Mode.
 
 ## P1 — Native Windows Runtime Smoke
 

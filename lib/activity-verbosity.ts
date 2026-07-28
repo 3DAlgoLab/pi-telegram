@@ -86,11 +86,71 @@ function renderReasoningRichText(text: string): TelegramRichText {
   return parts.length === 1 ? parts[0]! : parts;
 }
 
+function formatActivityJson(value: unknown, depth = 0): string[] {
+  const indent = "  ".repeat(depth);
+  if (Array.isArray(value)) {
+    if (value.length === 0) return [`${indent}[]`];
+    if (
+      value.every(
+        (entry) =>
+          entry !== null && typeof entry === "object" && !Array.isArray(entry),
+      )
+    ) {
+      const lines = [`${indent}[{`];
+      value.forEach((entry, index) => {
+        const fields = Object.entries(entry as Record<string, unknown>);
+        fields.forEach(([key, nested], fieldIndex) => {
+          const nestedLines = formatActivityJson(nested, depth + 1);
+          const nestedIndent = "  ".repeat(depth + 1);
+          lines.push(
+            `${nestedIndent}${JSON.stringify(key)}: ${nestedLines[0]!.slice(nestedIndent.length)}`,
+            ...nestedLines.slice(1),
+          );
+          if (fieldIndex < fields.length - 1) {
+            lines[lines.length - 1] += ",";
+          }
+        });
+        lines.push(
+          index < value.length - 1 ? `${indent}}, {` : `${indent}}]`,
+        );
+      });
+      return lines;
+    }
+    const lines = [`${indent}[`];
+    value.forEach((entry, index) => {
+      const nestedLines = formatActivityJson(entry, depth + 1);
+      if (index < value.length - 1) {
+        nestedLines[nestedLines.length - 1] += ",";
+      }
+      lines.push(...nestedLines);
+    });
+    lines.push(`${indent}]`);
+    return lines;
+  }
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length === 0) return [`${indent}{}`];
+    const lines = [`${indent}{`];
+    entries.forEach(([key, nested], index) => {
+      const nestedLines = formatActivityJson(nested, depth + 1);
+      const nestedIndent = "  ".repeat(depth + 1);
+      lines.push(
+        `${nestedIndent}${JSON.stringify(key)}: ${nestedLines[0]!.slice(nestedIndent.length)}`,
+        ...nestedLines.slice(1),
+      );
+      if (index < entries.length - 1) lines[lines.length - 1] += ",";
+    });
+    lines.push(`${indent}}`);
+    return lines;
+  }
+  return [`${indent}${JSON.stringify(value)}`];
+}
+
 function serializeActivityValue(value: unknown): string {
   const seen = new WeakSet<object>();
   let text: string;
   try {
-    text =
+    const normalized =
       JSON.stringify(
         value,
         (_key, nested) => {
@@ -101,8 +161,8 @@ function serializeActivityValue(value: unknown): string {
           }
           return nested;
         },
-        2,
       ) ?? JSON.stringify(String(value));
+    text = formatActivityJson(JSON.parse(normalized)).join("\n");
   } catch {
     text = JSON.stringify(String(value));
   }
@@ -113,17 +173,17 @@ function serializeActivityValue(value: unknown): string {
 }
 
 function renderToolActivityHtml(tool: ToolActivity): string {
-  const evidence = [`arguments: ${tool.args}`];
+  const evidence = [`"arguments": ${tool.args}`];
   if (tool.droppedUpdates > 0) {
     evidence.push(`… [${tool.droppedUpdates} earlier updates omitted]`);
   }
   tool.updates.forEach((update, index) => {
     evidence.push(
-      `update ${tool.droppedUpdates + index + 1}: ${update}`,
+      `"update ${tool.droppedUpdates + index + 1}": ${update}`,
     );
   });
   if (tool.complete && tool.result !== undefined) {
-    evidence.push(`${tool.isError ? "error" : "result"}: ${tool.result}`);
+    evidence.push(`"${tool.isError ? "error" : "result"}": ${tool.result}`);
   }
   const status = tool.complete
     ? tool.isError
