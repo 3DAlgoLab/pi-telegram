@@ -228,8 +228,10 @@ export function buildActivityVerbositySettingsText(
     "",
     "Choose how much technical model activity Telegram shows.",
     "",
-    "<code>-</code> <code>quiet</code> (default): show public assistant output without reasoning or tool traffic.",
-    "<code>-</code> <code>verbose</code>: add ephemeral available reasoning and durable collapsed tool details.",
+    "<code>-</code> <code>quiet</code> (default): show no thinking or tool traffic.",
+    "<code>-</code> <code>thinking</code>: show persistent collapsed thinking.",
+    "<code>-</code> <code>tools</code>: show persistent collapsed tool details.",
+    "<code>-</code> <code>verbose</code>: show both thinking and tools.",
   ].join("\n");
 }
 
@@ -459,7 +461,12 @@ export function buildAssistantRenderingSettingsReplyMarkup(
 export function buildActivityVerbositySettingsReplyMarkup(
   verbosity: TelegramActivityVerbosity,
 ): TelegramSettingsMenuReplyMarkup {
-  const values: TelegramActivityVerbosity[] = ["quiet", "verbose"];
+  const values: TelegramActivityVerbosity[] = [
+    "quiet",
+    "thinking",
+    "tools",
+    "verbose",
+  ];
   return {
     inline_keyboard: [
       [{ text: "⬆️ Back", callback_data: "settings:list" }],
@@ -712,7 +719,12 @@ export async function handleTelegramSettingsMenuCallbackAction(
   }
   if (data.startsWith("settings:set:activity-verbosity:")) {
     const verbosity = data.slice("settings:set:activity-verbosity:".length);
-    if (verbosity === "quiet" || verbosity === "verbose") {
+    if (
+      verbosity === "quiet" ||
+      verbosity === "thinking" ||
+      verbosity === "tools" ||
+      verbosity === "verbose"
+    ) {
       await deps.setActivityVerbosity(verbosity);
       await updateActivityVerbositySettingsMessage(deps);
       await deps.answerCallbackQuery(

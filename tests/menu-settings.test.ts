@@ -7,6 +7,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildActivityVerbositySettingsReplyMarkup,
+  buildActivityVerbositySettingsText,
   buildAssistantRenderingSettingsReplyMarkup,
   buildAssistantRenderingSettingsText,
   buildAutomaticThreadCleanupSettingsReplyMarkup,
@@ -119,6 +121,22 @@ test("Settings detail markups show active values", () => {
   );
 });
 
+test("Activity settings expose quiet, thinking, tools, and verbose", () => {
+  const text = buildActivityVerbositySettingsText("thinking");
+  assert.match(text, /<code>thinking<\/code>/);
+  assert.match(text, /persistent collapsed thinking/);
+  const labels = buildActivityVerbositySettingsReplyMarkup("tools")
+    .inline_keyboard.flat()
+    .map((button) => button.text);
+  assert.deepEqual(labels, [
+    "⬆️ Back",
+    "quiet",
+    "thinking",
+    "🟢 tools",
+    "verbose",
+  ]);
+});
+
 test("Settings callback action mutates voice, time, and proactive settings", async () => {
   const calls: string[] = [];
   const deps = {
@@ -139,7 +157,9 @@ test("Settings callback action mutates voice, time, and proactive settings", asy
     setAssistantRenderingMode: async (mode: "rich" | "html") => {
       calls.push(`rendering:${mode}`);
     },
-    setActivityVerbosity: async (verbosity: "quiet" | "verbose") => {
+    setActivityVerbosity: async (
+      verbosity: "quiet" | "thinking" | "tools" | "verbose",
+    ) => {
       calls.push(`activity:${verbosity}`);
     },
     setVoiceReplyMode: async (

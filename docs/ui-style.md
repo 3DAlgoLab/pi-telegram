@@ -33,8 +33,9 @@ Use emoji as stable semantic markers, not decoration. Emoji carry transportable 
 | `👄` | Voice reply policy | Voice reply settings row and detail card | Not a generic audio attachment marker. |
 | `🕒` | Time injection / wall-clock context | Time injection settings row and detail card | Clock-face marker with hands; not a generic duration/progress marker. |
 | `📌` | Proactive push / pinned behavior | Proactive push settings row and detail card | Not generic active/selected state. |
-| `🔬` | Activity / technical detail | Activity settings row and detail card | Chooses quiet versus verbose bridge activity; not a generic diagnostics marker. |
-| `🛠` | Executed tool activity | Collapsed verbose tool disclosure summaries | One marker per tool summary; tool result state remains text (`done`/`failed`). |
+| `🔬` | Activity / technical detail | Activity settings row and detail card | Chooses quiet, thinking, tools, or verbose bridge activity; not a generic diagnostics marker. |
+| `🧠` | Model thinking activity | Collapsed persistent thinking disclosure summaries | One marker per thinking message; completion state remains text (`running`/`done`). |
+| `🛠` | Executed tool activity | Collapsed tool disclosure summaries | One marker per tool summary; tool result state remains text (`done`/`failed`). |
 | `📎` | Attachment | Attachment summaries, queue rows for attachment-only turns | Not for thread binding. |
 
 ### Command And Control Actions

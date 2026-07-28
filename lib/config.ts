@@ -54,7 +54,11 @@ export interface ResolvedTelegramTimeConfig {
 }
 
 export type TelegramAssistantRenderingMode = "rich" | "html";
-export type TelegramActivityVerbosity = "quiet" | "verbose";
+export type TelegramActivityVerbosity =
+  | "quiet"
+  | "thinking"
+  | "tools"
+  | "verbose";
 
 export interface TelegramConfig {
   /** @deprecated persisted identity belongs in profiles.default; retained for effective/legacy views */
@@ -756,7 +760,14 @@ export function createTelegramActivityVerbosityGetter(
   return () => {
     const assistant = configStore.get().assistant;
     if (assistant?.activity !== undefined) {
-      return assistant.activity === "verbose" ? "verbose" : "quiet";
+      if (
+        assistant.activity === "thinking" ||
+        assistant.activity === "tools" ||
+        assistant.activity === "verbose"
+      ) {
+        return assistant.activity;
+      }
+      return "quiet";
     }
     return assistant?.activityVerbosity === "verbose" ? "verbose" : "quiet";
   };

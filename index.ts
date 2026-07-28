@@ -506,9 +506,7 @@ export default function (pi: Pi.ExtensionAPI) {
   const assistantOutputRuntime = assistantOutputBindingRuntime.runtime;
   activityVerbosityRuntime =
     ActivityVerbosity.createTelegramActivityVerbosityRuntime({
-      isVerbose() {
-        return configControls.getActivityVerbosity() === "verbose";
-      },
+      getActivityMode: configControls.getActivityVerbosity,
       resolveTarget(event) {
         return event.target ?? proactivePushTargetGetter();
       },
@@ -516,7 +514,6 @@ export default function (pi: Pi.ExtensionAPI) {
       isAuthorityActive:
         assistantOutputBindingRuntime.authority.isAuthorityActive,
       sendMessage,
-      sendRichMessageDraft,
       editMessageText: editTelegramMessageText,
       recordFailure(operation, event, error) {
         recordRuntimeEvent("activity", error, {

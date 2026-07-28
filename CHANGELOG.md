@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.25.2: Persistent Thinking Activity Hotfix
+
+- `Activity Modes`: Expanded `assistant.activity` to `quiet`, `thinking`, `tools`, and `verbose`; thinking now uses persistent ordinary HTML messages with a `🧠` header and collapsed bounded disclosure instead of ephemeral Rich drafts, while tools retain `🛠` disclosures. Every activity send/edit disables Telegram link previews. Impact: operators can inspect thinking-only, tools-only, or combined technical history without Telegram removing thinking when the final answer arrives or URL-like evidence expanding into distracting previews.
+
 ## 0.25.1: Config And Activity Presentation
 
 - `Time Injection Config`: Moved the Settings-owned mode to `assistant.timeInjection`, while retaining `time.interval` as the independent interval duration. The old `time.injectionMode` key is ignored without fallback, migration, or automatic rewriting. Impact: assistant presentation controls share one config domain without silently mutating historical user data.
