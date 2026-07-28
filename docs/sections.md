@@ -163,7 +163,7 @@ Built-in core rows keep priority. Section errors do not break menu rendering —
 
 ### Settings submenu
 
-Extensions with a `settings` block inject rows **before built-in Proactive push**. The `getLabel()` function (if present) is called on every render to produce a dynamic label — use it for status indicators:
+Extensions with a `settings` block follow the semantically grouped built-in settings. The `getLabel()` function (if present) is called on every render to produce a dynamic label — use it for status indicators:
 
 ```ts
 getLabel: () => `${flag ? "🟢" : "⚫️"} Demo settings`;
@@ -171,11 +171,12 @@ getLabel: () => `${flag ? "🟢" : "⚫️"} Demo settings`;
 
 ```
 ⬆️ Main menu
+📝 Draft previews: on
+🧾 Rendering: rich
 🟢 Demo settings          ← extension settings (dynamic label)
-🟢 Proactive push
 ```
 
-Ordered by `settings.order` (lower first), then `id` alphabetically.
+The final Settings menu keeps `⬆️ Main menu` first, then groups built-ins by operator meaning: message presentation, technical/public activity, prompt context, and lifecycle. Extension rows follow those groups and retain their explicit `settings.order` (lower first), then section id as a stable tie-break. Detail-submenu choices keep their own semantic order.
 
 ## 7. Callback Routing
 

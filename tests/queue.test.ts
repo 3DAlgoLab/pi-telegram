@@ -1230,6 +1230,9 @@ test("Agent end runtime can schedule active-turn final delivery without blocking
       events.push("scheduled");
       scheduledTask = task;
     },
+    waitForActivityIdle: async () => {
+      events.push("activity-idle");
+    },
     clearPreview: async (chatId) => {
       events.push(`clear:${chatId}`);
     },
@@ -1257,6 +1260,7 @@ test("Agent end runtime can schedule active-turn final delivery without blocking
     "reset",
     "status",
     "scheduled",
+    "activity-idle",
     "preview:final",
     "finalize:final",
     "attachments:1",

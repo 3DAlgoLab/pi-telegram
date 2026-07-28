@@ -47,6 +47,7 @@ function createBindingApiHarness() {
 
 test("Assistant output binding composes admission, delivery, and observation", async () => {
   const sent: string[] = [];
+  const order: string[] = [];
   const binding = createTelegramAssistantOutputBindingRuntime({
     isEnabled: () => true,
     authority: {
@@ -62,6 +63,7 @@ test("Assistant output binding composes admission, delivery, and observation", a
     sender: {
       sendMessage: async () => ({ message_id: 1 }),
       sendRichMessage: async (body) => {
+        order.push("send");
         sent.push(body.rich_message.markdown ?? "");
         return { message_id: 2 };
       },
@@ -73,6 +75,9 @@ test("Assistant output binding composes admission, delivery, and observation", a
         code: 0,
         killed: false,
       }),
+    },
+    waitForActivityIdle: async () => {
+      order.push("activity-idle");
     },
     recordRuntimeEvent: () => undefined,
   });
@@ -89,6 +94,7 @@ test("Assistant output binding composes admission, delivery, and observation", a
   });
   await binding.runtime.waitForIdle();
   assert.deepEqual(sent, ["public output"]);
+  assert.deepEqual(order, ["activity-idle", "send"]);
 });
 
 function getRequiredBindingHandler(

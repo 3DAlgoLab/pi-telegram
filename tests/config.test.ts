@@ -76,6 +76,34 @@ test("Telegram config helper returns empty config when file is absent", async ()
   );
 });
 
+test("activity defaults invalid values to quiet and migrates legacy verbosity on write", async () => {
+  const agentDir = await mkdtemp(join(tmpdir(), "pi-telegram-verbosity-"));
+  const configPath = join(agentDir, "telegram.json");
+  const store = createTelegramConfigStore({
+    agentDir,
+    configPath,
+    initialConfig: {
+      assistant: {
+        activityVerbosity: "verbose",
+      },
+    },
+  });
+  const controls = createTelegramConfigControls(store);
+  assert.equal(controls.getActivityVerbosity(), "verbose");
+  store.set({
+    assistant: {
+      activity: "unexpected" as "quiet",
+      activityVerbosity: "verbose",
+    },
+  });
+  assert.equal(controls.getActivityVerbosity(), "quiet");
+  await controls.setActivityVerbosity("verbose");
+  assert.equal(controls.getActivityVerbosity(), "verbose");
+  const persisted = JSON.parse(await readFile(configPath, "utf8"));
+  assert.equal(persisted.assistant.activity, "verbose");
+  assert.equal(persisted.assistant.activityVerbosity, undefined);
+});
+
 test("Telegram config reads valid atomic snapshots without acquiring the transaction guard", async () => {
   const agentDir = await mkdtemp(join(tmpdir(), "pi-telegram-config-read-"));
   const configPath = join(agentDir, "telegram.json");
@@ -658,6 +686,7 @@ test("Telegram settings setters reload before scoped writes to preserve shared c
   await controls.setProactivePushEnabled(true);
   await controls.setDraftPreviewsEnabled(true);
   await controls.setAssistantRenderingMode("html");
+  await controls.setActivityVerbosity("verbose");
   await controls.setAutomaticThreadCleanupEnabled(false);
   assert.equal(staleReaderControls.isAutomaticThreadCleanupEnabled(), true);
   assert.equal(
@@ -671,11 +700,13 @@ test("Telegram settings setters reload before scoped writes to preserve shared c
       draftPreviews: true,
       rendering: "html",
       proactivePush: true,
+      activity: "verbose",
     },
     voice: { replyMode: "mirror" },
     threads: { automaticCleanup: false },
   });
   assert.equal(controls.getAssistantRenderingMode(), "html");
+  assert.equal(controls.getActivityVerbosity(), "verbose");
   assert.equal(controls.isAutomaticThreadCleanupEnabled(), false);
   assert.deepEqual(secondStore.get().voice, { replyMode: "mirror" });
 });

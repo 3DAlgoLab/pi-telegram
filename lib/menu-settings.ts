@@ -5,6 +5,7 @@
  */
 
 import type {
+  TelegramActivityVerbosity,
   TelegramAssistantRenderingMode,
   TelegramTimeMode,
 } from "./config.ts";
@@ -23,6 +24,7 @@ export interface TelegramSettingsStateDeps {
   isProactivePushEnabled: () => boolean;
   areDraftPreviewsEnabled: () => boolean;
   getAssistantRenderingMode: () => TelegramAssistantRenderingMode;
+  getActivityVerbosity: () => TelegramActivityVerbosity;
   getTimeInjectionMode: () => TelegramTimeMode;
   getVoiceReplyMode: () => TelegramVoiceReplyMode;
   isVoiceReplyModeConfigured: () => boolean;
@@ -34,6 +36,9 @@ export interface TelegramSettingsMutationDeps extends TelegramSettingsStateDeps 
   setDraftPreviewsEnabled: (enabled: boolean) => Promise<void>;
   setAssistantRenderingMode: (
     mode: TelegramAssistantRenderingMode,
+  ) => Promise<void>;
+  setActivityVerbosity: (
+    verbosity: TelegramActivityVerbosity,
   ) => Promise<void>;
   setVoiceReplyMode: (
     mode: TelegramVoiceReplyMode | undefined,
@@ -138,6 +143,8 @@ export const PROACTIVE_PUSH_SETTINGS_TITLE = "<b>📌 Proactive push:</b>";
 export const DRAFT_PREVIEWS_SETTINGS_TITLE = "<b>📝 Draft previews:</b>";
 export const ASSISTANT_RENDERING_SETTINGS_TITLE =
   "<b>🧾 Assistant rendering:</b>";
+export const ACTIVITY_VERBOSITY_SETTINGS_TITLE =
+  "<b>🔬 Activity:</b>";
 export const TIME_INJECTION_MODE_SETTINGS_TITLE =
   "<b>🕒 Time injection mode:</b>";
 export const VOICE_REPLY_MODE_SETTINGS_TITLE = "<b>👄 Voice reply mode:</b>";
@@ -213,6 +220,19 @@ export function buildAssistantRenderingSettingsText(
   ].join("\n");
 }
 
+export function buildActivityVerbositySettingsText(
+  verbosity: TelegramActivityVerbosity,
+): string {
+  return [
+    `${ACTIVITY_VERBOSITY_SETTINGS_TITLE} <code>${verbosity}</code>`,
+    "",
+    "Choose how much technical model activity Telegram shows.",
+    "",
+    "<code>-</code> <code>quiet</code> (default): show public assistant output without reasoning or tool traffic.",
+    "<code>-</code> <code>verbose</code>: add ephemeral available reasoning and durable collapsed tool details.",
+  ].join("\n");
+}
+
 export function buildVoiceReplyModeSettingsText(
   mode: TelegramVoiceReplyMode,
   configured = true,
@@ -255,6 +275,7 @@ export function buildTelegramSettingsMenuReplyMarkup(
   sectionRegistryOrVoiceReplyModeConfigured?: TelegramSectionRegistry | boolean,
   voiceReplyModeConfigured = true,
   automaticThreadCleanupEnabled = true,
+  activityVerbosity: TelegramActivityVerbosity = "quiet",
 ): TelegramSettingsMenuReplyMarkup {
   const hasRenderingMode =
     assistantRenderingModeOrVoiceReplyMode === "rich" ||
@@ -280,23 +301,17 @@ export function buildTelegramSettingsMenuReplyMarkup(
   const rows: Array<Array<{ text: string; callback_data: string }>> = [
     [{ text: "⬆️ Main menu", callback_data: "menu:back" }],
   ];
-  // Extension settings rows before built-in controls
-  if (sectionRegistry) {
-    const settingsRows = getTelegramExtensionSettingsRows(sectionRegistry);
-    for (const row of settingsRows) {
-      rows.push([{ text: row.label, callback_data: row.callback_data }]);
-    }
-  }
-  rows.push(
-    [
-      {
-        text: `🧹 Thread cleanup: ${automaticThreadCleanupEnabled ? "on" : "off"}`,
-        callback_data: "settings:open:automatic-thread-cleanup",
-      },
-    ],
-    [
-      {
-        text: `👄 Voice reply: ${getTelegramSettingsStateValueLabel(
+  const settingsButtons: Array<{ text: string; callback_data: string }> = [
+    {
+      text: `📝 Draft previews: ${draftPreviewsEnabled ? "on" : "off"}`,
+      callback_data: "settings:open:draft-previews",
+    },
+    {
+      text: `🧾 Rendering: ${assistantRenderingMode}`,
+      callback_data: "settings:open:assistant-rendering",
+    },
+    {
+      text: `👄 Voice reply: ${getTelegramSettingsStateValueLabel(
           getVoiceReplyModeLabel(
             getVoiceReplyModeSetting(
               voiceReplyMode,
@@ -304,34 +319,35 @@ export function buildTelegramSettingsMenuReplyMarkup(
             ),
           ),
         )}`,
-        callback_data: "settings:open:voice-reply",
-      },
-    ],
-    [
-      {
-        text: `🕒 Time injection: ${getTelegramSettingsStateValueLabel(timeInjectionMode)}`,
-        callback_data: "settings:open:time-injection",
-      },
-    ],
-    [
-      {
-        text: `📝 Draft previews: ${draftPreviewsEnabled ? "on" : "off"}`,
-        callback_data: "settings:open:draft-previews",
-      },
-    ],
-    [
-      {
-        text: `🧾 Rendering: ${assistantRenderingMode}`,
-        callback_data: "settings:open:assistant-rendering",
-      },
-    ],
-    [
-      {
-        text: `📌 Proactive push: ${proactivePushEnabled ? "on" : "off"}`,
-        callback_data: "settings:open:proactive",
-      },
-    ],
-  );
+      callback_data: "settings:open:voice-reply",
+    },
+    {
+      text: `🔬 Activity: ${activityVerbosity}`,
+      callback_data: "settings:open:activity-verbosity",
+    },
+    {
+      text: `📌 Proactive push: ${proactivePushEnabled ? "on" : "off"}`,
+      callback_data: "settings:open:proactive",
+    },
+    {
+      text: `🕒 Time injection: ${getTelegramSettingsStateValueLabel(timeInjectionMode)}`,
+      callback_data: "settings:open:time-injection",
+    },
+    {
+      text: `🧹 Thread cleanup: ${automaticThreadCleanupEnabled ? "on" : "off"}`,
+      callback_data: "settings:open:automatic-thread-cleanup",
+    },
+  ];
+  if (sectionRegistry) {
+    const extensionRows = getTelegramExtensionSettingsRows(sectionRegistry);
+    settingsButtons.push(
+      ...extensionRows.map((row) => ({
+        text: row.label,
+        callback_data: row.callback_data,
+      })),
+    );
+  }
+  rows.push(...settingsButtons.map((button) => [button]));
   return { inline_keyboard: rows };
 }
 
@@ -354,6 +370,7 @@ export async function openTelegramSettingsMenu<
       sectionRegistry,
       deps.isVoiceReplyModeConfigured(),
       deps.isAutomaticThreadCleanupEnabled(),
+      deps.getActivityVerbosity(),
     ),
   );
   if (messageId === undefined) return;
@@ -439,6 +456,23 @@ export function buildAssistantRenderingSettingsReplyMarkup(
   };
 }
 
+export function buildActivityVerbositySettingsReplyMarkup(
+  verbosity: TelegramActivityVerbosity,
+): TelegramSettingsMenuReplyMarkup {
+  const values: TelegramActivityVerbosity[] = ["quiet", "verbose"];
+  return {
+    inline_keyboard: [
+      [{ text: "⬆️ Back", callback_data: "settings:list" }],
+      ...values.map((value) => [
+        {
+          text: `${value === verbosity ? "🟢 " : ""}${value}`,
+          callback_data: `settings:set:activity-verbosity:${value}`,
+        },
+      ]),
+    ],
+  };
+}
+
 export function buildTimeInjectionModeSettingsReplyMarkup(
   mode: TelegramTimeMode,
 ): TelegramSettingsMenuReplyMarkup {
@@ -490,6 +524,7 @@ export async function updateTelegramSettingsMenuMessage(
       sectionRegistry,
       deps.isVoiceReplyModeConfigured(),
       deps.isAutomaticThreadCleanupEnabled(),
+      deps.getActivityVerbosity(),
     ),
   );
 }
@@ -531,6 +566,16 @@ export async function updateAssistantRenderingSettingsMessage(
   await deps.updateSettingsMessage(
     buildAssistantRenderingSettingsText(mode),
     buildAssistantRenderingSettingsReplyMarkup(mode),
+  );
+}
+
+export async function updateActivityVerbositySettingsMessage(
+  deps: TelegramSettingsMenuCallbackDeps,
+): Promise<void> {
+  const verbosity = deps.getActivityVerbosity();
+  await deps.updateSettingsMessage(
+    buildActivityVerbositySettingsText(verbosity),
+    buildActivityVerbositySettingsReplyMarkup(verbosity),
   );
 }
 
@@ -586,6 +631,11 @@ export async function handleTelegramSettingsMenuCallbackAction(
   }
   if (data === "settings:open:assistant-rendering") {
     await updateAssistantRenderingSettingsMessage(deps);
+    await deps.answerCallbackQuery(callbackQueryId);
+    return true;
+  }
+  if (data === "settings:open:activity-verbosity") {
+    await updateActivityVerbositySettingsMessage(deps);
     await deps.answerCallbackQuery(callbackQueryId);
     return true;
   }
@@ -660,6 +710,18 @@ export async function handleTelegramSettingsMenuCallbackAction(
       return true;
     }
   }
+  if (data.startsWith("settings:set:activity-verbosity:")) {
+    const verbosity = data.slice("settings:set:activity-verbosity:".length);
+    if (verbosity === "quiet" || verbosity === "verbose") {
+      await deps.setActivityVerbosity(verbosity);
+      await updateActivityVerbositySettingsMessage(deps);
+      await deps.answerCallbackQuery(
+        callbackQueryId,
+        `Activity: ${verbosity}`,
+      );
+      return true;
+    }
+  }
   if (
     data === "settings:set:automatic-thread-cleanup:on" ||
     data === "settings:set:automatic-thread-cleanup:off"
@@ -706,6 +768,7 @@ export function createTelegramSettingsMenuRuntime<
           isProactivePushEnabled: deps.isProactivePushEnabled,
           areDraftPreviewsEnabled: deps.areDraftPreviewsEnabled,
           getAssistantRenderingMode: deps.getAssistantRenderingMode,
+          getActivityVerbosity: deps.getActivityVerbosity,
           getVoiceReplyMode: deps.getVoiceReplyMode,
           isVoiceReplyModeConfigured: deps.isVoiceReplyModeConfigured,
           getTimeInjectionMode: deps.getTimeInjectionMode,
@@ -729,6 +792,7 @@ export function createTelegramSettingsMenuRuntime<
           isProactivePushEnabled: deps.isProactivePushEnabled,
           areDraftPreviewsEnabled: deps.areDraftPreviewsEnabled,
           getAssistantRenderingMode: deps.getAssistantRenderingMode,
+          getActivityVerbosity: deps.getActivityVerbosity,
           getVoiceReplyMode: deps.getVoiceReplyMode,
           isVoiceReplyModeConfigured: deps.isVoiceReplyModeConfigured,
           getTimeInjectionMode: deps.getTimeInjectionMode,
@@ -772,6 +836,7 @@ export function createTelegramSettingsMenuRuntime<
         isProactivePushEnabled: deps.isProactivePushEnabled,
         areDraftPreviewsEnabled: deps.areDraftPreviewsEnabled,
         getAssistantRenderingMode: deps.getAssistantRenderingMode,
+        getActivityVerbosity: deps.getActivityVerbosity,
         getVoiceReplyMode: deps.getVoiceReplyMode,
         isVoiceReplyModeConfigured: deps.isVoiceReplyModeConfigured,
         getTimeInjectionMode: deps.getTimeInjectionMode,
@@ -779,6 +844,7 @@ export function createTelegramSettingsMenuRuntime<
         setProactivePushEnabled: deps.setProactivePushEnabled,
         setDraftPreviewsEnabled: deps.setDraftPreviewsEnabled,
         setAssistantRenderingMode: deps.setAssistantRenderingMode,
+        setActivityVerbosity: deps.setActivityVerbosity,
         setVoiceReplyMode: deps.setVoiceReplyMode,
         setTimeInjectionMode: deps.setTimeInjectionMode,
         setAutomaticThreadCleanupEnabled: deps.setAutomaticThreadCleanupEnabled,

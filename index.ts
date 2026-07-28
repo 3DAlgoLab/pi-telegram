@@ -5,6 +5,7 @@
  */
 
 import * as Activity from "./lib/activity.ts";
+import * as ActivityVerbosity from "./lib/activity-verbosity.ts";
 import * as Bindings from "./lib/bindings.ts";
 import * as BusApi from "./lib/bus-api.ts";
 import * as BusFollower from "./lib/bus-follower.ts";
@@ -470,6 +471,9 @@ export default function (pi: Pi.ExtensionAPI) {
       getHandlers: configStore.getOutboundHandlers,
       recordRuntimeEvent,
     });
+  let activityVerbosityRuntime:
+    | ActivityVerbosity.TelegramActivityVerbosityRuntime
+    | undefined;
   const assistantOutputBindingRuntime =
     Bindings.createTelegramAssistantOutputBindingRuntime({
       isEnabled: configControls.isProactivePushEnabled,
@@ -494,12 +498,40 @@ export default function (pi: Pi.ExtensionAPI) {
         getHandlers: configStore.getOutboundHandlers,
         recordRuntimeEvent,
       },
+      waitForActivityIdle() {
+        return activityVerbosityRuntime?.waitForIdle() ?? Promise.resolve();
+      },
       recordRuntimeEvent,
     });
   const assistantOutputRuntime = assistantOutputBindingRuntime.runtime;
+  activityVerbosityRuntime =
+    ActivityVerbosity.createTelegramActivityVerbosityRuntime({
+      isVerbose() {
+        return configControls.getActivityVerbosity() === "verbose";
+      },
+      resolveTarget(event) {
+        return event.target ?? proactivePushTargetGetter();
+      },
+      captureAuthority: assistantOutputBindingRuntime.authority.captureAuthority,
+      isAuthorityActive:
+        assistantOutputBindingRuntime.authority.isAuthorityActive,
+      sendMessage,
+      sendRichMessageDraft,
+      editMessageText: editTelegramMessageText,
+      recordFailure(operation, event, error) {
+        recordRuntimeEvent("activity", error, {
+          operation,
+          eventType: event.type,
+          activityId: event.activityId,
+        });
+      },
+    });
   const activityRuntime = Activity.createTelegramActivityBridgeRuntime({
     generation: deliveryGenerationSeed,
-    observeEvent: assistantOutputBindingRuntime.observeEvent,
+    observeEvent(event) {
+      assistantOutputBindingRuntime.observeEvent(event);
+      activityVerbosityRuntime.accept(event);
+    },
     recordFailure(handlerId, event, error) {
       recordRuntimeEvent("activity", error, {
         handlerId,
@@ -1054,6 +1086,7 @@ export default function (pi: Pi.ExtensionAPI) {
     },
     onTransportChanged() {
       deliveryLifecycleRuntime.onSessionStart();
+      activityVerbosityRuntime.reset();
       modelContextAvailabilityRuntime.reconcile();
     },
     getStatusLines,
@@ -1081,6 +1114,7 @@ export default function (pi: Pi.ExtensionAPI) {
       onModelSelect: currentModelRuntime.onModelSelect,
     },
     activityRuntime,
+    activityVerbosityRuntime,
     assistantOutputRuntime,
     configStore,
     abort,

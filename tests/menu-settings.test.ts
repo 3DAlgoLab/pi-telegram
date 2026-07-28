@@ -39,26 +39,28 @@ test("Settings menu text and reply markup expose built-in controls", () => {
     markup.inline_keyboard.map((row) => row[0]?.callback_data),
     [
       "menu:back",
-      "settings:open:automatic-thread-cleanup",
-      "settings:open:voice-reply",
-      "settings:open:time-injection",
       "settings:open:draft-previews",
       "settings:open:assistant-rendering",
+      "settings:open:voice-reply",
+      "settings:open:activity-verbosity",
       "settings:open:proactive",
+      "settings:open:time-injection",
+      "settings:open:automatic-thread-cleanup",
     ],
   );
   assert.equal(
     markup.inline_keyboard[1]?.[0]?.text,
-    "🧹 Thread cleanup: on",
+    "📝 Draft previews: off",
   );
-  assert.equal(markup.inline_keyboard[2]?.[0]?.text, "👄 Voice reply: hidden");
+  assert.equal(markup.inline_keyboard[2]?.[0]?.text, "🧾 Rendering: rich");
   assert.equal(
     markup.inline_keyboard[3]?.[0]?.text,
-    "🕒 Time injection: hidden",
+    "👄 Voice reply: hidden",
   );
-  assert.equal(markup.inline_keyboard[4]?.[0]?.text, "📝 Draft previews: off");
-  assert.equal(markup.inline_keyboard[5]?.[0]?.text, "🧾 Rendering: rich");
-  assert.equal(markup.inline_keyboard[6]?.[0]?.text, "📌 Proactive push: on");
+  assert.equal(markup.inline_keyboard[4]?.[0]?.text, "🔬 Activity: quiet");
+  assert.equal(markup.inline_keyboard[5]?.[0]?.text, "📌 Proactive push: on");
+  assert.equal(markup.inline_keyboard[6]?.[0]?.text, "🕒 Time injection: hidden");
+  assert.equal(markup.inline_keyboard[7]?.[0]?.text, "🧹 Thread cleanup: on");
 });
 
 test("Settings detail markups show active values", () => {
@@ -127,6 +129,7 @@ test("Settings callback action mutates voice, time, and proactive settings", asy
     isAutomaticThreadCleanupEnabled: () => true,
     areDraftPreviewsEnabled: () => false,
     getAssistantRenderingMode: () => "rich" as const,
+    getActivityVerbosity: () => "quiet" as const,
     setProactivePushEnabled: async (enabled: boolean) => {
       calls.push(`proactive:${enabled}`);
     },
@@ -135,6 +138,9 @@ test("Settings callback action mutates voice, time, and proactive settings", asy
     },
     setAssistantRenderingMode: async (mode: "rich" | "html") => {
       calls.push(`rendering:${mode}`);
+    },
+    setActivityVerbosity: async (verbosity: "quiet" | "verbose") => {
+      calls.push(`activity:${verbosity}`);
     },
     setVoiceReplyMode: async (
       mode: "hidden" | "mirror" | "always" | undefined,
@@ -190,7 +196,7 @@ test("Settings callback action mutates voice, time, and proactive settings", asy
   assert.equal(
     await handleTelegramSettingsMenuCallbackAction(
       "q5",
-      "settings:set:proactive:on",
+      "settings:set:activity-verbosity:verbose",
       deps,
     ),
     true,
@@ -198,13 +204,21 @@ test("Settings callback action mutates voice, time, and proactive settings", asy
   assert.equal(
     await handleTelegramSettingsMenuCallbackAction(
       "q6",
+      "settings:set:proactive:on",
+      deps,
+    ),
+    true,
+  );
+  assert.equal(
+    await handleTelegramSettingsMenuCallbackAction(
+      "q7",
       "settings:set:automatic-thread-cleanup:off",
       deps,
     ),
     true,
   );
   assert.equal(
-    await handleTelegramSettingsMenuCallbackAction("q7", "other", deps),
+    await handleTelegramSettingsMenuCallbackAction("q8", "other", deps),
     false,
   );
 
@@ -221,6 +235,9 @@ test("Settings callback action mutates voice, time, and proactive settings", asy
     "rendering:html",
     "update:<b>🧾 Assistant rendering:</b> <code>rich</code>",
     "answer:Rendering: html",
+    "activity:verbose",
+    "update:<b>🔬 Activity:</b> <code>quiet</code>",
+    "answer:Activity: verbose",
     "proactive:true",
     "update:<b>📌 Proactive push:</b> <code>off</code>",
     "answer:Proactive push enabled",
@@ -242,6 +259,7 @@ test("Settings runtime opens menus and rehydrates stale callback state", async (
   };
   const calls: string[] = [];
   let storedState: typeof state | undefined;
+  let editedActivityLabel = "";
   const runtime = createTelegramSettingsMenuRuntime({
     reloadConfig: async () => {
       calls.push("reload-config");
@@ -253,6 +271,7 @@ test("Settings runtime opens menus and rehydrates stale callback state", async (
     isAutomaticThreadCleanupEnabled: () => true,
     areDraftPreviewsEnabled: () => false,
     getAssistantRenderingMode: () => "rich",
+    getActivityVerbosity: () => "verbose",
     setProactivePushEnabled: async (enabled) => {
       calls.push(`proactive:${enabled}`);
     },
@@ -261,6 +280,9 @@ test("Settings runtime opens menus and rehydrates stale callback state", async (
     },
     setAssistantRenderingMode: async (mode) => {
       calls.push(`rendering:${mode}`);
+    },
+    setActivityVerbosity: async (activity) => {
+      calls.push(`activity:${activity}`);
     },
     setVoiceReplyMode: async (mode) => {
       calls.push(`voice:${mode ?? "hidden"}`);
@@ -280,7 +302,20 @@ test("Settings runtime opens menus and rehydrates stale callback state", async (
       storedState = nextState;
       calls.push(`store:${nextState.mode}`);
     },
-    editInteractiveMessage: async () => {
+    editInteractiveMessage: async (
+      _chatId,
+      _messageId,
+      _text,
+      _mode,
+      markup,
+    ) => {
+      editedActivityLabel =
+        markup.inline_keyboard
+          .flat()
+          .find(
+            (button) =>
+              button.callback_data === "settings:open:activity-verbosity",
+          )?.text ?? "";
       calls.push("edit");
     },
     sendInteractiveMessage: async (_chatId, _text, mode) => {
@@ -304,6 +339,7 @@ test("Settings runtime opens menus and rehydrates stale callback state", async (
   calls.length = 0;
   await runtime.updateSettingsMenuMessage(state, "ctx");
   assert.deepEqual(calls, ["reload-config", "edit"]);
+  assert.equal(editedActivityLabel, "🔬 Activity: verbose");
 
   storedState = undefined;
   calls.length = 0;

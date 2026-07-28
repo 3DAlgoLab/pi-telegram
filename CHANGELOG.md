@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.25.0: Configurable Activity
+
+- `Activity`: Added a persisted quiet-by-default `assistant.activity` Settings control. Verbose mode streams only provider-exposed reasoning through ephemeral target-fenced Rich Thinking drafts, projects inline Markdown bold/code markers to native Rich Text, and records completed executed tools through memory/transport-bounded ordinary HTML messages with standard expandable blockquotes; tool activity never uses Rich Messages. Tool headers use `🛠  <tool>: <status>` with a monospace `running`, `done`, or `failed` status, while argument, update, result, and error labels sit directly before their serialized values (`arguments: {`, `result: {`) for compact scanning. Settings refreshes always read the live value; legacy `assistant.activityVerbosity` is accepted only when the canonical key is absent and removed on the next write. Consecutive ordered tools coalesce without crossing assistant/reasoning, target, activity, or transport-generation boundaries. Final delivery waits behind admitted technical activity inside the background delivery task, while replacement sessions abandon queued old-generation work immediately. Impact: operators can inspect compact redacted technical activity without stale menu state, mixing it into assistant answers, exposing it by default, replaying ambiguous sends, reordering the final answer, or delaying Pi lifecycle completion.
+- `Settings Ordering`: Grouped first-level built-in Settings by operator meaning while keeping Main menu first and detail choices semantically ordered: message presentation places Draft previews, Rendering, and Voice reply together; activity, prompt-context, and lifecycle controls follow as distinct clusters. Extension settings retain their explicit order and stable section-id tie-break after the built-ins. Impact: related controls stay adjacent instead of forcing users to reconstruct product domains from an alphabetical list.
 
 ## 0.24.11: Assistant Action Markup Hotfix
 

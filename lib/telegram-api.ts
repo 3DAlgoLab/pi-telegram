@@ -274,6 +274,24 @@ type TelegramInputRichMessageCommon = {
   skip_entity_detection?: boolean;
 };
 
+export type TelegramRichText =
+  | string
+  | TelegramRichText[]
+  | { type: "bold" | "code"; text: TelegramRichText };
+
+export type TelegramInputRichBlock =
+  | { type: "pre"; text: TelegramRichText; language?: string }
+  | {
+      type: "details";
+      summary: TelegramRichText;
+      blocks: TelegramInputRichBlock[];
+      is_open?: true;
+    };
+
+export type TelegramInputRichDraftBlock =
+  | TelegramInputRichBlock
+  | { type: "thinking"; text: TelegramRichText };
+
 export type TelegramInputRichMessage = TelegramInputRichMessageCommon &
   (
     | {
@@ -287,6 +305,12 @@ export type TelegramInputRichMessage = TelegramInputRichMessageCommon &
         markdown?: never;
         blocks?: never;
         media?: TelegramInputRichMessageMedia[];
+      }
+    | {
+        blocks: TelegramInputRichBlock[];
+        markdown?: never;
+        html?: never;
+        media?: never;
       }
   );
 
@@ -318,7 +342,14 @@ export type TelegramSendMessageDraftBody = Record<string, unknown> & {
 export type TelegramSendRichMessageDraftBody = Record<string, unknown> & {
   chat_id: number;
   draft_id: number;
-  rich_message: TelegramInputRichMessage;
+  rich_message:
+    | TelegramInputRichMessage
+    | (TelegramInputRichMessageCommon & {
+        blocks: TelegramInputRichDraftBlock[];
+        markdown?: never;
+        html?: never;
+        media?: never;
+      });
   message_thread_id?: number;
 };
 

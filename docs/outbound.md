@@ -12,6 +12,28 @@ Proactive projection defaults on. With `assistant.proactivePush` omitted or set 
 
 Proactive blocks use `assistant.rendering` independently of voice policy. Rich mode sends native Rich Markdown and HTML mode keeps the established HTML renderer; proactive projection does not synthesize voice or attach queued files merely because Rich rendering is active. The queue revalidates exact target, profile/token transport generation, leader epoch or follower registration generation, and session generation before each send. Telegram-owned turns remain on their ordinary reply path, and `commit-unknown` never permits proactive replay.
 
+## Verbose Technical Activity
+
+`assistant.activity` defaults to `quiet`. In `verbose`, the bridge consumes the same normalized Activity stream without mixing technical UI into assistant Markdown:
+
+- Provider-exposed reasoning deltas update a bounded ephemeral `sendRichMessageDraft` containing one `Thinking` block. Inline Markdown bold and code markers are projected to native Rich Text so their delimiters do not appear literally; unmatched streaming delimiters remain plain text until a later complete draft. The draft is fenced to its captured chat/thread and transport generation; settlement, cancellation, replacement, disconnect, or authority loss drops local ownership. It is never converted into a persisted reasoning message, and providers that expose no reasoning produce none.
+- Completed executed tools use ordinary `sendMessage` HTML, never `sendRichMessage`. Each tool header renders as `🛠  <tool>: <status>`, with a stable two-space visual gap after the icon and the `running`, `done`, or `failed` status in monospace. One standard Telegram `<blockquote expandable>` then contains bounded redacted evidence in chronological order. Labels share a line with their serialized value opening, for example `arguments: {`, `update 1: {`, and `result: {` or `error: {`.
+- Consecutive tools coalesce by editing one message only while target, activity, generation, ordering boundary, tool count, and serialized-size bounds still match. Assistant or reasoning content closes the batch. A non-idempotent send with unknown commit state is never replayed; failed or ambiguous edits start no fallback send.
+
+Reasoning retains only a bounded latest-text window, tool updates retain only a bounded latest-entry window, and a session reset abandons queued old-generation work without making the replacement session wait for an old transport call. Final-answer delivery waits for the admitted verbose activity queue inside the extension-owned background delivery task, so completed tool evidence cannot be overtaken by the semantic answer and Pi lifecycle completion remains non-blocking.
+
+Verbose activity is operational evidence, not part of the semantic answer stream. Final-answer rendering, voice policy, artifacts, and quiet behavior remain unchanged.
+
+### Live Activity Smoke
+
+Exercise one classic chat and one Threaded Mode follower target on both Telegram mobile and Desktop:
+
+1. Leave `Activity` on `quiet`; run a reasoning-capable request with two tools and confirm only normal preview/public/final output appears in established order.
+2. Switch to `verbose`; confirm reasoning appears only as a temporary Thinking draft, two sequential tools become two independently collapsed disclosures in one message, and the final answer follows the completed tool UI.
+3. Produce oversized arguments, multiple updates, and oversized result/error output; confirm redaction/truncation markers, latest-update retention, and safe rollover to another message without flood or reordering.
+4. Cancel during reasoning, fail a tool, replace the Pi session, and disconnect/reconnect transport; confirm reasoning never persists, stale activity does not cross generations, failure remains collapsed technical evidence, and subsequent work uses only the current target/authority.
+5. Repeat through a registered follower and confirm every draft/send/edit stays in its assigned thread. Capture client/version, mode, target role, observed block behavior, and any Bot API/runtime diagnostic for each result.
+
 ## Standard
 
 An outbound handler is selected by `type`. Text replies and assistant markup map to handler types:
@@ -32,7 +54,7 @@ The optimization is deliberately narrow. HTML rendering, empty final text, multi
 
 This behavior does not generate media or alter voice policy. `telegram_attach` still represents an explicit assistant artifact decision, while `hidden`, `mirror`, and `always` continue to decide voice synthesis independently.
 
-Core assistant output accepts only the Markdown or HTML `InputRichMessage` forms and does not construct explicit block arrays or `InputRichBlockThinking`. Telegram's Thinking block is draft-only and must never become a projection of hidden reasoning or chain-of-thought. Any future use for Activity would require an explicitly public user-visible summary rather than provider reasoning content.
+Core assistant output accepts only the Markdown or HTML `InputRichMessage` forms. `InputRichBlockThinking` is reserved for ephemeral verbose reasoning drafts; durable tool evidence uses ordinary HTML messages and never Rich Message blocks. Reasoning drafts consume only lifecycle content actually exposed by the active provider and never synthesize unavailable private reasoning.
 
 ### Guest Mode media boundary
 
