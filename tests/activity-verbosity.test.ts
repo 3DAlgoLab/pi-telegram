@@ -1,12 +1,13 @@
 /**
  * Telegram activity verbosity projection regressions
- * Covers quiet default, ephemeral reasoning, bounded tool disclosures, ordering, redaction, and authority fencing
+ * Covers four activity modes, persistent reasoning, bounded tool disclosures, ordering, redaction, and authority fencing
  */
 
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createTelegramActivityVerbosityRuntime,
+  renderTelegramThinkingActivityHtml,
   renderTelegramToolActivityHtml,
   TELEGRAM_ACTIVITY_MESSAGE_MAX_TOOLS,
   TELEGRAM_REASONING_BUFFER_MAX_CHARS,
@@ -19,7 +20,6 @@ import type {
 import type {
   TelegramEditMessageTextBody,
   TelegramSendMessageBody,
-  TelegramSendRichMessageDraftBody,
 } from "../lib/telegram-api.ts";
 
 function event(
@@ -36,21 +36,18 @@ function event(
   } as TelegramActivityEvent;
 }
 
-function createHarness(options: { verbose?: boolean } = {}) {
-  let verbose = options.verbose ?? true;
+type ActivityMode = "quiet" | "thinking" | "tools" | "verbose";
+
+function createHarness(options: { mode?: ActivityMode } = {}) {
+  let mode = options.mode ?? "verbose";
   let authority = 1;
-  const drafts: TelegramSendRichMessageDraftBody[] = [];
   const sends: TelegramSendMessageBody[] = [];
   const edits: TelegramEditMessageTextBody[] = [];
   const runtime = createTelegramActivityVerbosityRuntime({
-    isVerbose: () => verbose,
+    getActivityMode: () => mode,
     resolveTarget: (activity) => activity.target,
     captureAuthority: () => authority,
     isAuthorityActive: (captured) => captured === authority,
-    async sendRichMessageDraft(body) {
-      drafts.push(body);
-      return true;
-    },
     async sendMessage(body) {
       sends.push(body);
       return { message_id: sends.length };
@@ -62,11 +59,10 @@ function createHarness(options: { verbose?: boolean } = {}) {
   });
   return {
     runtime,
-    drafts,
     sends,
     edits,
-    setVerbose(value: boolean) {
-      verbose = value;
+    setMode(value: ActivityMode) {
+      mode = value;
     },
     replaceAuthority() {
       authority += 1;
@@ -74,8 +70,8 @@ function createHarness(options: { verbose?: boolean } = {}) {
   };
 }
 
-test("quiet activity emits no reasoning drafts or tool messages", async () => {
-  const harness = createHarness({ verbose: false });
+test("quiet activity emits no reasoning or tool messages", async () => {
+  const harness = createHarness({ mode: "quiet" });
   harness.runtime.accept(event(1, { type: "agent-start" }));
   harness.runtime.accept(
     event(2, { type: "reasoning-delta", contentIndex: 0, delta: "secret" }),
@@ -90,7 +86,6 @@ test("quiet activity emits no reasoning drafts or tool messages", async () => {
     }),
   );
   await harness.runtime.waitForIdle();
-  assert.deepEqual(harness.drafts, []);
   assert.deepEqual(harness.sends, []);
 });
 
@@ -142,8 +137,8 @@ test("tool evidence renders as ordinary expandable HTML", () => {
   assert.match(statuses, /<code>failed<\/code>/);
 });
 
-test("verbose reasoning uses a target-bound Thinking draft only", async () => {
-  const harness = createHarness();
+test("reasoning uses a persistent target-bound expandable HTML message", async () => {
+  const harness = createHarness({ mode: "thinking" });
   harness.runtime.accept(event(1, { type: "agent-start" }));
   harness.runtime.accept(
     event(2, {
@@ -167,16 +162,73 @@ test("verbose reasoning uses a target-bound Thinking draft only", async () => {
     }),
   );
   await harness.runtime.waitForIdle();
-  assert.equal(harness.drafts.length, 2);
-  assert.equal(harness.drafts[1]?.chat_id, 42);
-  assert.equal(harness.drafts[1]?.message_thread_id, 7);
-  assert.deepEqual(harness.drafts[1]?.rich_message.blocks, [
-    {
-      type: "thinking",
-      text: ["Checking ", { type: "bold", text: "state" }],
-    },
-  ]);
-  assert.equal(harness.sends.length, 0);
+  assert.equal(harness.sends.length, 1);
+  assert.equal(harness.sends[0]?.chat_id, 42);
+  assert.equal(harness.sends[0]?.message_thread_id, 7);
+  assert.deepEqual(harness.sends[0]?.link_preview_options, {
+    is_disabled: true,
+  });
+  assert.match(harness.sends[0]?.text ?? "", /^<b>🧠&#160; thinking:<\/b>/);
+  assert.match(harness.sends[0]?.text ?? "", /<blockquote expandable>/);
+  assert.equal(harness.edits.length, 1);
+  assert.match(harness.edits[0]?.text ?? "", /<code>done<\/code>/);
+  assert.match(harness.edits[0]?.text ?? "", /Checking \*\*state\*\*/);
+  assert.equal(harness.edits[0]?.parse_mode, "HTML");
+  assert.deepEqual(harness.edits[0]?.link_preview_options, {
+    is_disabled: true,
+  });
+  assert.equal(harness.edits[0]?.rich_message, undefined);
+});
+
+test("agent end finalizes an open thinking message without deleting it", async () => {
+  const harness = createHarness({ mode: "thinking" });
+  harness.runtime.accept(event(1, { type: "agent-start" }));
+  harness.runtime.accept(
+    event(2, {
+      type: "reasoning-delta",
+      contentIndex: 0,
+      delta: "still thinking",
+    }),
+  );
+  harness.runtime.accept(event(3, { type: "agent-end" }));
+  await harness.runtime.waitForIdle();
+  assert.equal(harness.sends.length, 1);
+  assert.equal(harness.edits.length, 1);
+  assert.match(harness.edits[0]?.text ?? "", /<code>done<\/code>/);
+});
+
+test("thinking and tools modes isolate their activity classes", async () => {
+  for (const mode of ["thinking", "tools"] as const) {
+    const harness = createHarness({ mode });
+    harness.runtime.accept(event(1, { type: "agent-start" }));
+    harness.runtime.accept(
+      event(2, {
+        type: "reasoning-end",
+        contentIndex: 0,
+        text: "private thought",
+      }),
+    );
+    harness.runtime.accept(
+      event(3, {
+        type: "tool-end",
+        toolCallId: "tool-1",
+        toolName: "read",
+        result: "done",
+        isError: false,
+      }),
+    );
+    await harness.runtime.waitForIdle();
+    const text = harness.sends.map((body) => body.text).join("\n");
+    assert.equal(text.includes("🧠"), mode === "thinking");
+    assert.equal(text.includes("🛠"), mode === "tools");
+  }
+});
+
+test("reasoning evidence renders as ordinary expandable HTML", () => {
+  const html = renderTelegramThinkingActivityHtml("a < b", false);
+  assert.match(html, /^<b>🧠&#160; thinking:<\/b> <code>running<\/code>/);
+  assert.match(html, /<blockquote expandable>a &lt; b<\/blockquote>/);
+  assert.doesNotMatch(html, /rich_message/);
 });
 
 test("completed consecutive tools coalesce as collapsed redacted details", async () => {
@@ -225,6 +277,12 @@ test("completed consecutive tools coalesce as collapsed redacted details", async
   assert.match(serialized, /REDACTED/);
   assert.doesNotMatch(serialized, /abcdefghijklmnopqrstuvwxyzABCDEFGHIJK/);
   assert.equal(harness.edits[0]?.parse_mode, "HTML");
+  assert.deepEqual(harness.sends[0]?.link_preview_options, {
+    is_disabled: true,
+  });
+  assert.deepEqual(harness.edits[0]?.link_preview_options, {
+    is_disabled: true,
+  });
   assert.equal(harness.edits[0]?.rich_message, undefined);
 });
 
@@ -406,32 +464,29 @@ test("reasoning and tool updates retain bounded latest evidence", async () => {
   );
   await harness.runtime.waitForIdle();
 
-  const draft = JSON.stringify(harness.drafts.at(-1)?.rich_message);
-  assert.match(draft, /earlier chars omitted/);
-  assert.match(draft, /latest-marker/);
-  assert.doesNotMatch(draft, /old-marker/);
-  const tool = harness.sends[0]?.text ?? "";
+  const reasoning = harness.sends[0]?.text ?? "";
+  assert.match(reasoning, /earlier chars omitted/);
+  assert.match(reasoning, /latest-marker/);
+  assert.doesNotMatch(reasoning, /old-marker/);
+  const tool = harness.sends[1]?.text ?? "";
   assert.match(tool, /3 earlier updates omitted/);
   assert.doesNotMatch(tool, /update-0/);
   assert.match(tool, /update-6/);
 });
 
 test("reset drops accepted events that have not started processing", async () => {
-  let releaseDraft!: () => void;
-  const draftBlocked = new Promise<void>((resolve) => {
-    releaseDraft = resolve;
+  let releaseReasoning!: () => void;
+  const reasoningBlocked = new Promise<void>((resolve) => {
+    releaseReasoning = resolve;
   });
   const sends: TelegramSendMessageBody[] = [];
   const runtime = createTelegramActivityVerbosityRuntime({
-    isVerbose: () => true,
+    getActivityMode: () => "verbose",
     resolveTarget: (activity) => activity.target,
     captureAuthority: () => 1,
     isAuthorityActive: () => true,
-    async sendRichMessageDraft() {
-      await draftBlocked;
-      return true;
-    },
     async sendMessage(body) {
+      if (body.text.includes("🧠")) await reasoningBlocked;
       sends.push(body);
       return { message_id: 1 };
     },
@@ -472,5 +527,5 @@ test("reset drops accepted events that have not started processing", async () =>
   assert.equal(sends.length, 1);
   assert.match(JSON.stringify(sends[0]), /new session/);
   assert.doesNotMatch(JSON.stringify(sends[0]), /must not send/);
-  releaseDraft();
+  releaseReasoning();
 });

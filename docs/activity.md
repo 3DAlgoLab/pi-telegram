@@ -291,7 +291,7 @@ The implementation must cover:
 
 ## Core Verbosity And Consumer Policy
 
-The bridge now owns the minimal global `quiet`/`verbose` policy. Quiet is the default. Verbose streams available reasoning through an ephemeral Rich Thinking draft and emits bounded tool evidence through ordinary HTML expandable blockquotes without changing public assistant-segment projection or final replies.
+The bridge owns a global `quiet`/`thinking`/`tools`/`verbose` policy. Quiet is the default, `thinking` and `tools` select one technical class, and `verbose` enables both. Available thinking and bounded tool evidence use persistent ordinary HTML messages with expandable blockquotes without changing public assistant-segment projection or final replies.
 
 The registration and delivery examples above remain the public building blocks for companion-specific policy:
 

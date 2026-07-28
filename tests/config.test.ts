@@ -97,6 +97,10 @@ test("activity defaults invalid values to quiet and migrates legacy verbosity on
     },
   });
   assert.equal(controls.getActivityVerbosity(), "quiet");
+  await controls.setActivityVerbosity("thinking");
+  assert.equal(controls.getActivityVerbosity(), "thinking");
+  await controls.setActivityVerbosity("tools");
+  assert.equal(controls.getActivityVerbosity(), "tools");
   await controls.setActivityVerbosity("verbose");
   assert.equal(controls.getActivityVerbosity(), "verbose");
   const persisted = JSON.parse(await readFile(configPath, "utf8"));

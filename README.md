@@ -8,7 +8,7 @@
 
 It is a **runtime adapter**, not a remote terminal. Start or supervise work in the Pi TUI, then continue from Telegram while away from the keyboard. Each Telegram destination follows a running Pi instance and sends prompts into that instance's currently active session; it is not permanently bound to one session file or session identity. The bridge preserves Pi session semantics instead of pretending Telegram is a PTY, shell, process launcher, or session browser. That boundary is the product: Telegram gets safe runtime handles, not raw terminal power.
 
-Proactive push is enabled by default. `assistant.proactivePush` projects every completed public assistant text block from local or autonomous work—including visible checkpoints and the final answer—to the authorized Telegram target once and in order; set it explicitly to `false` to disable projection. Proactive push itself never mirrors local prompts, reasoning, tool traffic, token deltas, Telegram-owned turns, or stale-generation work. The separate quiet-by-default `Activity` setting can add ephemeral provider-exposed reasoning and bounded collapsed tool evidence. See [Outbound](docs/outbound.md#proactive-public-output) and the [configuration reference](docs/public-api.md#configuration-api).
+Proactive push is enabled by default. `assistant.proactivePush` projects every completed public assistant text block from local or autonomous work—including visible checkpoints and the final answer—to the authorized Telegram target once and in order; set it explicitly to `false` to disable projection. Proactive push itself never mirrors local prompts, thinking, tool traffic, token deltas, Telegram-owned turns, or stale-generation work. The separate quiet-by-default `Activity` setting can persist collapsed provider-exposed thinking, tool evidence, or both. See [Outbound](docs/outbound.md#proactive-public-output) and the [configuration reference](docs/public-api.md#configuration-api).
 
 This repository is an actively maintained fork of [`badlogic/pi-telegram`](https://github.com/badlogic/pi-telegram). It started from upstream commit [`cb34008`](https://github.com/badlogic/pi-telegram/commit/cb34008460b6c1ca036d92322f69d87f626be0fc) and has since diverged substantially.
 
@@ -98,12 +98,12 @@ The first Telegram user to message the bot becomes the allowed owner. Other user
 | Queue control | Inspect waiting turns, delete stale work, promote important prompts, continue, abort, stop, or force the next queued item. | Long Pi tasks keep running while new mobile prompts stay visible and controllable instead of interrupting or disappearing. |
 | Operator menu | Use `/start` for status, prompt templates, model, thinking, settings, queue, extension sections, and diagnostics. | The bot is an operator panel, not a command cheat sheet. |
 | Prompt templates | Run Pi prompt templates as Telegram-safe commands such as `/fix_tests`. | Reusable local workflows become phone-accessible without exposing arbitrary terminal commands. |
-| Model and thinking | Switch model or reasoning level from Telegram through safe continuation flows. | Mobile control can adjust execution strategy without tearing down the current session. |
+| Model and thinking | Switch model or thinking level from Telegram through safe continuation flows. | Mobile control can adjust execution strategy without tearing down the current session. |
 | Compaction | Confirm `/compact`, show native active status during compaction, and preserve Telegram-owned turn semantics. | Context maintenance is visible and safe from the phone. |
 | Draft previews | Show Telegram's native `…typing` indicator whenever the connected instance is doing agent work, or enable Rich Draft previews for streamed answer text. | Local prompts, Telegram turns, and autonomous continuations remain visibly active while draft visibility stays independent from final rendering. |
-| Activity | Keep the default `quiet` answer-only surface, or select `verbose` for short-lived reasoning drafts and durable collapsed tool disclosures. | Technical activity stays bounded, redacted, target-fenced, and visually separate from semantic assistant answers. |
+| Activity | Keep the default `quiet` answer-only surface, show only `thinking`, show only `tools`, or select `verbose` for both. | Persistent collapsed technical activity stays bounded, redacted, target-fenced, and visually separate from semantic assistant answers. |
 | Assistant rendering | Choose Native Rich Markdown or legacy Markdown-to-HTML for final assistant replies. | Renderer compatibility is explicit instead of being conflated with draft previews. |
-| Bridge UI rendering | Render verbose reasoning through a draft-only Rich Thinking block, tool activity through ordinary expandable HTML messages, and menus, queue controls, status, settings, diagnostics, and sections through Telegram HTML/plain UI. | Harness-owned surfaces remain operationally predictable and visually distinct from model-authored answers. |
+| Bridge UI rendering | Render thinking and tool activity through ordinary expandable HTML messages, and menus, queue controls, status, settings, diagnostics, and sections through Telegram HTML/plain UI. | Harness-owned surfaces remain operationally predictable and visually distinct from model-authored answers. |
 | Inbound files | Download inbound files to the Pi agent temp directory with size limits. | Screenshots, PDFs, datasets, and artifacts enter Pi as inspectable local files. |
 | Outbound artifacts | Return generated files through `telegram_attach` during active turns or explicit direct delivery. | Agents send real artifacts as files, not pasted blobs. |
 | Voice input | Route audio through configured command-template handlers, programmatic handlers, or STT providers. | Voice notes become usable prompt context. |
@@ -172,7 +172,7 @@ Messages sent while Pi is busy become queued turns. Priority lanes support contr
 
 ### Native Rich Markdown
 
-Rich Markdown is the default model-answer membrane. Complete assistant and guest model replies use Telegram's native Rich Message APIs. In `verbose` activity mode, bridge-owned reasoning uses an ephemeral Rich `Thinking` draft while completed tools use ordinary HTML messages with standard expandable blockquotes and never Rich Messages; menus, status rows, queue controls, settings, diagnostics, and other operational UI retain explicit Telegram HTML/plain rendering. Three Settings controls keep the layers separate: `Draft previews` toggles streamed answer drafts, `Activity` chooses `quiet` or `verbose` technical activity, and `Assistant rendering` chooses final-answer delivery (`rich` Native Rich Markdown or `html` legacy Markdown-to-HTML).
+Rich Markdown is the default model-answer membrane. Complete assistant and guest model replies use Telegram's native Rich Message APIs. Activity thinking and completed tools use persistent ordinary HTML messages with standard expandable blockquotes and never Rich Messages; `thinking`, `tools`, and `verbose` select the visible classes, while menus, status rows, queue controls, settings, diagnostics, and other operational UI retain explicit Telegram HTML/plain rendering. Three Settings controls keep the layers separate: `Draft previews` toggles streamed answer drafts, `Activity` chooses `quiet` or `verbose` technical activity, and `Assistant rendering` chooses final-answer delivery (`rich` Native Rich Markdown or `html` legacy Markdown-to-HTML).
 
 ### Files And Artifacts
 
@@ -225,7 +225,7 @@ Companion extensions can integrate with Telegram without owning polling or trans
 - Add menu sections and settings surfaces.
 - Add compact status rows.
 - Deliver target-aware operational views and chat actions from companion code.
-- Observe normalized assistant, reasoning, tool, compaction, and settlement activity without blocking Pi.
+- Observe normalized assistant, thinking, tool, compaction, and settlement activity without blocking Pi.
 - Handle update/callback namespaces.
 - Provide inbound preprocessing handlers.
 - Provide outbound voice synthesis.

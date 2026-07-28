@@ -204,10 +204,15 @@ export interface TelegramReplyParameters {
   message_thread_id?: number;
 }
 
+export interface TelegramLinkPreviewOptions {
+  is_disabled?: boolean;
+}
+
 export type TelegramSendMessageBody = Record<string, unknown> & {
   chat_id: number;
   text: string;
   parse_mode?: "HTML";
+  link_preview_options?: TelegramLinkPreviewOptions;
   reply_markup?: unknown;
   reply_parameters?: TelegramReplyParameters;
 };
@@ -327,6 +332,7 @@ export type TelegramEditMessageTextBody = Record<string, unknown> & {
   text?: string;
   rich_message?: TelegramInputRichMessage;
   parse_mode?: "HTML";
+  link_preview_options?: TelegramLinkPreviewOptions;
   reply_markup?: unknown;
 };
 

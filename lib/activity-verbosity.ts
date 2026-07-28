@@ -1,25 +1,24 @@
 /**
  * Bridge-owned Telegram activity verbosity projection
  * Zones: telegram activity, rich rendering, operational delivery
- * Owns ephemeral reasoning drafts and bounded durable tool disclosures; excludes activity normalization, assistant answer rendering, and transport authority policy
+ * Owns persistent bounded thinking and tool disclosures; excludes activity normalization, assistant answer rendering, and transport authority policy
  */
 
 import type { TelegramActivityEvent } from "./activity.ts";
 import { escapeHtml } from "./rendering.ts";
 import type {
   TelegramEditMessageTextBody,
-  TelegramRichText,
   TelegramSendMessageBody,
-  TelegramSendRichMessageDraftBody,
   TelegramSentMessage,
 } from "./telegram-api.ts";
 import type { TelegramTarget } from "./target.ts";
 
 export const TELEGRAM_TOOL_ACTIVITY_ICON = "🛠";
+export const TELEGRAM_THINKING_ACTIVITY_ICON = "🧠";
 export const TELEGRAM_ACTIVITY_DETAIL_MAX_CHARS = 1_200;
 export const TELEGRAM_ACTIVITY_MESSAGE_MAX_CHARS = 3_900;
 export const TELEGRAM_ACTIVITY_MESSAGE_MAX_TOOLS = 6;
-export const TELEGRAM_REASONING_DRAFT_MAX_FRAMES = 24;
+export const TELEGRAM_REASONING_MESSAGE_MAX_FRAMES = 24;
 export const TELEGRAM_REASONING_BUFFER_MAX_CHARS = 1_200;
 export const TELEGRAM_TOOL_UPDATE_MAX_ENTRIES = 4;
 
@@ -40,6 +39,11 @@ interface ToolMessage {
   target: TelegramTarget;
 }
 
+interface ReasoningMessage {
+  messageId: number;
+  target: TelegramTarget;
+}
+
 function targetEquals(left: TelegramTarget, right: TelegramTarget): boolean {
   return left.chatId === right.chatId && left.threadId === right.threadId;
 }
@@ -55,35 +59,6 @@ function redactActivityText(text: string): string {
       /(["']?(?:api[_-]?key|token|password|secret)["']?\s*[:=]\s*["']?)[^"',\s}]+/gi,
       "$1[REDACTED]",
     );
-}
-
-function renderReasoningRichText(text: string): TelegramRichText {
-  const parts: TelegramRichText[] = [];
-  let cursor = 0;
-  while (cursor < text.length) {
-    const codeStart = text.indexOf("`", cursor);
-    const boldStart = text.indexOf("**", cursor);
-    const starts = [codeStart, boldStart].filter((index) => index >= 0);
-    if (starts.length === 0) {
-      parts.push(text.slice(cursor));
-      break;
-    }
-    const start = Math.min(...starts);
-    if (start > cursor) parts.push(text.slice(cursor, start));
-    const marker = start === codeStart ? "`" : "**";
-    const end = text.indexOf(marker, start + marker.length);
-    if (end < 0) {
-      parts.push(text.slice(start));
-      break;
-    }
-    parts.push({
-      type: marker === "`" ? "code" : "bold",
-      text: text.slice(start + marker.length, end),
-    });
-    cursor = end + marker.length;
-  }
-  if (parts.length === 0) return "";
-  return parts.length === 1 ? parts[0]! : parts;
 }
 
 function formatActivityJson(value: unknown, depth = 0): string[] {
@@ -206,13 +181,14 @@ function toolMessageSize(tools: readonly ToolActivity[]): number {
   return renderTelegramToolActivityHtml(tools).length;
 }
 
-function draftIdForActivity(activityId: string): number {
-  let hash = 2166136261;
-  for (const character of activityId) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0) || 1;
+export function renderTelegramThinkingActivityHtml(
+  text: string,
+  complete: boolean,
+): string {
+  return [
+    `<b>${TELEGRAM_THINKING_ACTIVITY_ICON}&#160; thinking:</b> <code>${complete ? "done" : "running"}</code>`,
+    `<blockquote expandable>${escapeHtml(text)}</blockquote>`,
+  ].join("\n");
 }
 
 export interface TelegramActivityVerbosityRuntime {
@@ -223,19 +199,16 @@ export interface TelegramActivityVerbosityRuntime {
 }
 
 export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
-  isVerbose: () => boolean;
+  getActivityMode: () => "quiet" | "thinking" | "tools" | "verbose";
   resolveTarget: (event: TelegramActivityEvent) => TelegramTarget | undefined;
   captureAuthority: () => TAuthority;
   isAuthorityActive: (authority: TAuthority) => boolean;
   sendMessage: (body: TelegramSendMessageBody) => Promise<TelegramSentMessage>;
-  sendRichMessageDraft: (
-    body: TelegramSendRichMessageDraftBody,
-  ) => Promise<boolean>;
   editMessageText: (
     body: TelegramEditMessageTextBody,
   ) => Promise<"edited" | "unchanged">;
   recordFailure?: (
-    operation: "reasoning-draft" | "tool-send" | "tool-edit",
+    operation: "reasoning-send" | "reasoning-edit" | "tool-send" | "tool-edit",
     event: TelegramActivityEvent,
     error: unknown,
   ) => void;
@@ -248,8 +221,10 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
   let target: TelegramTarget | undefined;
   let reasoningBuffer = "";
   let reasoningChars = 0;
-  let reasoningDraftFrames = 0;
-  let lastReasoningDraftChars = 0;
+  let reasoningMessageFrames = 0;
+  let lastReasoningMessageChars = 0;
+  let reasoningMessage: ReasoningMessage | undefined;
+  let reasoningBlocked = false;
   let toolMessage: ToolMessage | undefined;
   const tools = new Map<string, ToolActivity>();
   const toolOrder: string[] = [];
@@ -260,8 +235,10 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
     target = undefined;
     reasoningBuffer = "";
     reasoningChars = 0;
-    reasoningDraftFrames = 0;
-    lastReasoningDraftChars = 0;
+    reasoningMessageFrames = 0;
+    lastReasoningMessageChars = 0;
+    reasoningMessage = undefined;
+    reasoningBlocked = false;
     toolMessage = undefined;
     tools.clear();
     toolOrder.length = 0;
@@ -269,7 +246,7 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
   const hasAuthority = (): boolean =>
     authority !== undefined && deps.isAuthorityActive(authority);
   const ensureActivity = (event: TelegramActivityEvent): boolean => {
-    if (!deps.isVerbose()) return false;
+    if (deps.getActivityMode() === "quiet") return false;
     if (activityId === event.activityId) return hasAuthority();
     clearActivity();
     const resolvedTarget = deps.resolveTarget(event);
@@ -282,44 +259,68 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
   const closeToolBatch = () => {
     toolMessage = undefined;
   };
-  const sendReasoningDraft = async (
+  const publishReasoning = async (
     event: TelegramActivityEvent,
     acceptedGeneration: number,
+    complete: boolean,
   ) => {
     if (
       generation !== acceptedGeneration ||
       !target ||
-      !hasAuthority()
+      !hasAuthority() ||
+      reasoningBlocked
     ) {
       return;
     }
-    const omitted = reasoningChars - reasoningBuffer.length;
-    const text =
-      omitted > 0
-        ? `… [${omitted} earlier chars omitted]\n${reasoningBuffer}`
-        : reasoningBuffer;
+    let retained = reasoningBuffer;
+    let body = "";
+    do {
+      const omitted = reasoningChars - retained.length;
+      const text = redactActivityText(
+        omitted > 0
+          ? `… [${omitted} earlier chars omitted]\n${retained}`
+          : retained,
+      );
+      body = renderTelegramThinkingActivityHtml(text, complete);
+      if (body.length <= TELEGRAM_ACTIVITY_MESSAGE_MAX_CHARS) break;
+      retained = retained.slice(-Math.max(1, Math.floor(retained.length * 0.75)));
+    } while (retained.length > 1);
+    const canEdit =
+      reasoningMessage && targetEquals(reasoningMessage.target, target);
     try {
-      await deps.sendRichMessageDraft({
-        chat_id: target.chatId,
-        ...(target.threadId === undefined
-          ? {}
-          : { message_thread_id: target.threadId }),
-        draft_id: draftIdForActivity(event.activityId),
-        rich_message: {
-          blocks: [
-            {
-              type: "thinking",
-              text: renderReasoningRichText(redactActivityText(text)),
-            },
-          ],
-          skip_entity_detection: true,
-        },
-      });
+      if (canEdit && reasoningMessage) {
+        await deps.editMessageText({
+          chat_id: target.chatId,
+          message_id: reasoningMessage.messageId,
+          text: body,
+          parse_mode: "HTML",
+          link_preview_options: { is_disabled: true },
+        });
+      } else {
+        const sent = await deps.sendMessage({
+          chat_id: target.chatId,
+          ...(target.threadId === undefined
+            ? {}
+            : { message_thread_id: target.threadId }),
+          text: body,
+          parse_mode: "HTML",
+          link_preview_options: { is_disabled: true },
+        });
+        reasoningMessage = {
+          messageId: sent.message_id,
+          target: { ...target },
+        };
+      }
       if (generation !== acceptedGeneration) return;
-      reasoningDraftFrames += 1;
-      lastReasoningDraftChars = reasoningChars;
+      reasoningMessageFrames += 1;
+      lastReasoningMessageChars = reasoningChars;
     } catch (error) {
-      deps.recordFailure?.("reasoning-draft", event, error);
+      deps.recordFailure?.(
+        canEdit ? "reasoning-edit" : "reasoning-send",
+        event,
+        error,
+      );
+      reasoningBlocked = true;
     }
   };
   const publishTool = async (
@@ -348,6 +349,7 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
           message_id: toolMessage.messageId,
           text: renderTelegramToolActivityHtml(nextTools),
           parse_mode: "HTML",
+          link_preview_options: { is_disabled: true },
         });
         if (generation !== acceptedGeneration) return;
         toolMessage.tools = nextTools;
@@ -360,6 +362,7 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
           : { message_thread_id: target.threadId }),
         text: renderTelegramToolActivityHtml([tool]),
         parse_mode: "HTML",
+        link_preview_options: { is_disabled: true },
       });
       if (generation !== acceptedGeneration) return;
       toolMessage = {
@@ -377,9 +380,17 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
     acceptedGeneration: number,
   ) => {
     if (!ensureActivity(event)) {
-      if (activityId === event.activityId && !deps.isVerbose()) clearActivity();
+      if (
+        activityId === event.activityId &&
+        deps.getActivityMode() === "quiet"
+      ) {
+        clearActivity();
+      }
       return;
     }
+    const mode = deps.getActivityMode();
+    const showThinking = mode === "thinking" || mode === "verbose";
+    const showTools = mode === "tools" || mode === "verbose";
     if (
       event.type === "assistant-text-delta" ||
       event.type === "assistant-segment" ||
@@ -389,31 +400,41 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
       closeToolBatch();
     }
     if (event.type === "reasoning-delta") {
+      if (!showThinking) return;
       reasoningChars += event.delta.length;
       reasoningBuffer = `${reasoningBuffer}${event.delta}`.slice(
         -TELEGRAM_REASONING_BUFFER_MAX_CHARS,
       );
       if (
-        reasoningDraftFrames < TELEGRAM_REASONING_DRAFT_MAX_FRAMES &&
-        (reasoningDraftFrames === 0 ||
-          reasoningChars - lastReasoningDraftChars >= 160)
+        reasoningMessageFrames < TELEGRAM_REASONING_MESSAGE_MAX_FRAMES &&
+        (reasoningMessageFrames === 0 ||
+          reasoningChars - lastReasoningMessageChars >= 160)
       ) {
-        await sendReasoningDraft(event, acceptedGeneration);
+        await publishReasoning(event, acceptedGeneration, false);
       }
       return;
     }
     if (event.type === "reasoning-end") {
-      if (
-        reasoningChars > lastReasoningDraftChars &&
-        reasoningDraftFrames < TELEGRAM_REASONING_DRAFT_MAX_FRAMES
-      ) {
-        await sendReasoningDraft(event, acceptedGeneration);
+      if (!showThinking) return;
+      if (reasoningChars === 0 && event.text) {
+        reasoningChars = event.text.length;
+        reasoningBuffer = event.text.slice(
+          -TELEGRAM_REASONING_BUFFER_MAX_CHARS,
+        );
+      }
+      if (reasoningChars > 0 && !reasoningBlocked) {
+        await publishReasoning(event, acceptedGeneration, true);
       }
       reasoningBuffer = "";
       reasoningChars = 0;
+      reasoningMessageFrames = 0;
+      lastReasoningMessageChars = 0;
+      reasoningMessage = undefined;
+      reasoningBlocked = false;
       return;
     }
     if (event.type === "tool-start") {
+      if (!showTools) return;
       tools.set(event.toolCallId, {
         id: event.toolCallId,
         name: event.toolName,
@@ -426,6 +447,7 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
       return;
     }
     if (event.type === "tool-update") {
+      if (!showTools) return;
       const tool = tools.get(event.toolCallId);
       if (!tool) return;
       tool.updates.push(serializeActivityValue(event.update));
@@ -436,6 +458,7 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
       return;
     }
     if (event.type === "tool-end") {
+      if (!showTools) return;
       const tool = tools.get(event.toolCallId) ?? {
         id: event.toolCallId,
         name: event.toolName,
@@ -460,6 +483,9 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
       return;
     }
     if (event.type === "agent-end" || event.type === "agent-settled") {
+      if (reasoningMessage && reasoningChars > 0 && !reasoningBlocked) {
+        await publishReasoning(event, acceptedGeneration, true);
+      }
       clearActivity();
     }
   };

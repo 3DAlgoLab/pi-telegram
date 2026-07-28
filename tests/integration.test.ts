@@ -753,28 +753,26 @@ test("Verbose activity reaches classic transport before the final assistant answ
       }),
     );
 
-    const reasoningCall = calls.find(
-      (call) => call.method === "sendRichMessageDraft",
+    const thinkingIndex = calls.findIndex(
+      (call) =>
+        call.method === "sendMessage" &&
+        typeof call.body.text === "string" &&
+        call.body.text.includes("🧠") &&
+        call.body.text.includes("<blockquote expandable>"),
     );
-    assert.equal(reasoningCall?.body.chat_id, 77);
-    assert.deepEqual(
-      (
-        reasoningCall?.body.rich_message as
-          | { blocks?: Array<{ type?: string }> }
-          | undefined
-      )?.blocks?.map((block) => block.type),
-      ["thinking"],
-    );
+    assert.equal(calls[thinkingIndex]?.body.chat_id, 77);
     const toolSendIndex = calls.findIndex(
       (call) =>
         call.method === "sendMessage" &&
         typeof call.body.text === "string" &&
+        call.body.text.includes("🛠") &&
         call.body.text.includes("<blockquote expandable>"),
     );
     const toolEditIndex = calls.findIndex(
       (call) =>
         call.method === "editMessageText" &&
         typeof call.body.text === "string" &&
+        call.body.text.includes("🛠") &&
         call.body.text.includes("<blockquote expandable>"),
     );
     const finalIndex = calls.findIndex((call) => {
@@ -783,7 +781,8 @@ test("Verbose activity reaches classic transport before the final assistant answ
         | undefined;
       return richMessage?.markdown?.includes("Semantic **answer**") ?? false;
     });
-    assert.ok(toolSendIndex >= 0);
+    assert.ok(thinkingIndex >= 0);
+    assert.ok(toolSendIndex > thinkingIndex);
     assert.ok(
       toolEditIndex > toolSendIndex,
       JSON.stringify(calls, undefined, 2),
@@ -850,12 +849,11 @@ test("Verbose activity uses follower transport and loses stale registration auth
     getFollowerGeneration: () => followerGeneration || undefined,
   });
   const runtime = createTelegramActivityVerbosityRuntime({
-    isVerbose: () => true,
+    getActivityMode: () => "verbose",
     resolveTarget: () => ({ chatId: 77, threadId: 43 }),
     captureAuthority: authority.captureAuthority,
     isAuthorityActive: authority.isAuthorityActive,
     sendMessage: api.sendMessage,
-    sendRichMessageDraft: api.sendRichMessageDraft,
     editMessageText: api.editMessageText,
   });
   const base = {
@@ -884,13 +882,13 @@ test("Verbose activity uses follower transport and loses stale registration auth
   await runtime.waitForIdle();
   assert.deepEqual(
     followerCalls.map((call) => call.args[0]),
-    ["sendRichMessageDraft", "sendMessage"],
+    ["sendMessage", "sendMessage"],
   );
-  const draftBody = followerCalls[0]?.args[1] as
+  const thinkingBody = followerCalls[0]?.args[1] as
     | Record<string, unknown>
     | undefined;
-  assert.equal(draftBody?.chat_id, 77);
-  assert.equal(draftBody?.message_thread_id, 43);
+  assert.equal(thinkingBody?.chat_id, 77);
+  assert.equal(thinkingBody?.message_thread_id, 43);
 
   followerGeneration = "follower-2";
   runtime.accept({

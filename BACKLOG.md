@@ -4,15 +4,13 @@ _This backlog tracks only open release-relevant work: hotfixes, bounded maintena
 
 ## P1 — Configurable Activity Live Smoke
 
-Context: `0.25.0` shipped quiet-by-default configurable activity verbosity. The remaining work is live Telegram client verification of verbose reasoning and compact technical tool activity.
-
-Bot API evidence: Bot API 10.2 exposes explicit outgoing Rich Message blocks. `InputRichBlockThinking` is draft-only and disappears when the draft lifecycle ends; `InputRichBlockDetails` provides a collapsed disclosure container, and `InputRichBlockPreformatted` provides nested `<pre><code>` content. Exact mobile/Desktop rendering, edit behavior, and practical limits remain live-verification gates.
+Context: configurable activity now offers quiet, thinking-only, tools-only, and verbose modes. Thinking and tools use persistent collapsed ordinary HTML messages instead of draft-only Rich Thinking blocks.
 
 Open work:
 
-- [ ] Live-smoke both modes in classic and Threaded Mode on Telegram mobile and Desktop, including multiple sequential tools, oversized output rollover, cancellation during reasoning, tool failure, session replacement, follower transport, and final-answer ordering.
+- [ ] Live-smoke all four modes in classic and Threaded Mode on Telegram mobile and Desktop, including progressive thinking edits, multiple sequential tools, oversized output rollover, cancellation during thinking, tool failure, session replacement, follower transport, and final-answer ordering.
 
-Done when: live mobile and Desktop clients confirm the intended quiet/verbose draft, disclosure, routing, rollover, cancellation, failure, and final-answer ordering behavior in classic and Threaded Mode.
+Done when: live mobile and Desktop clients confirm the intended mode isolation, persistent disclosures, routing, rollover, cancellation, failure, and final-answer ordering behavior in classic and Threaded Mode.
 
 ## P1 — Native Windows Runtime Smoke
 
