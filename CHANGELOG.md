@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.25.3: Thinking Density Header Hotfix
+
+- `Thinking Activity`: Replaced the generic `running`/`done` thinking header state with the current Pi thinking level, such as `high`, and stopped finalizing an already-current disclosure with a no-op completion edit. Impact: each persistent thinking block carries useful reasoning-density context instead of redundant lifecycle noise.
+
 ## 0.25.2: Persistent Thinking Activity Hotfix
 
 - `Activity Modes`: Expanded `assistant.activity` to `quiet`, `thinking`, `tools`, and `verbose`; thinking now uses persistent ordinary HTML messages with a `🧠` header and collapsed bounded disclosure instead of ephemeral Rich drafts, while tools retain `🛠` disclosures. Every activity send/edit disables Telegram link previews. Impact: operators can inspect thinking-only, tools-only, or combined technical history without Telegram removing thinking when the final answer arrives or URL-like evidence expanding into distracting previews.

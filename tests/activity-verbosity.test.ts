@@ -38,13 +38,16 @@ function event(
 
 type ActivityMode = "quiet" | "thinking" | "tools" | "verbose";
 
-function createHarness(options: { mode?: ActivityMode } = {}) {
+function createHarness(
+  options: { mode?: ActivityMode; thinkingLevel?: string } = {},
+) {
   let mode = options.mode ?? "verbose";
   let authority = 1;
   const sends: TelegramSendMessageBody[] = [];
   const edits: TelegramEditMessageTextBody[] = [];
   const runtime = createTelegramActivityVerbosityRuntime({
     getActivityMode: () => mode,
+    getThinkingLevel: () => options.thinkingLevel ?? "high",
     resolveTarget: (activity) => activity.target,
     captureAuthority: () => authority,
     isAuthorityActive: (captured) => captured === authority,
@@ -168,10 +171,14 @@ test("reasoning uses a persistent target-bound expandable HTML message", async (
   assert.deepEqual(harness.sends[0]?.link_preview_options, {
     is_disabled: true,
   });
-  assert.match(harness.sends[0]?.text ?? "", /^<b>🧠&#160; thinking:<\/b>/);
+  assert.match(
+    harness.sends[0]?.text ?? "",
+    /^<b>🧠&#160; thinking:<\/b> <code>high<\/code>/,
+  );
   assert.match(harness.sends[0]?.text ?? "", /<blockquote expandable>/);
   assert.equal(harness.edits.length, 1);
-  assert.match(harness.edits[0]?.text ?? "", /<code>done<\/code>/);
+  assert.match(harness.edits[0]?.text ?? "", /<code>high<\/code>/);
+  assert.doesNotMatch(harness.edits[0]?.text ?? "", /<code>done<\/code>/);
   assert.match(harness.edits[0]?.text ?? "", /Checking \*\*state\*\*/);
   assert.equal(harness.edits[0]?.parse_mode, "HTML");
   assert.deepEqual(harness.edits[0]?.link_preview_options, {
@@ -180,7 +187,7 @@ test("reasoning uses a persistent target-bound expandable HTML message", async (
   assert.equal(harness.edits[0]?.rich_message, undefined);
 });
 
-test("agent end finalizes an open thinking message without deleting it", async () => {
+test("agent end leaves an already current thinking message unchanged", async () => {
   const harness = createHarness({ mode: "thinking" });
   harness.runtime.accept(event(1, { type: "agent-start" }));
   harness.runtime.accept(
@@ -193,8 +200,8 @@ test("agent end finalizes an open thinking message without deleting it", async (
   harness.runtime.accept(event(3, { type: "agent-end" }));
   await harness.runtime.waitForIdle();
   assert.equal(harness.sends.length, 1);
-  assert.equal(harness.edits.length, 1);
-  assert.match(harness.edits[0]?.text ?? "", /<code>done<\/code>/);
+  assert.equal(harness.edits.length, 0);
+  assert.match(harness.sends[0]?.text ?? "", /<code>high<\/code>/);
 });
 
 test("thinking and tools modes isolate their activity classes", async () => {
@@ -224,9 +231,9 @@ test("thinking and tools modes isolate their activity classes", async () => {
   }
 });
 
-test("reasoning evidence renders as ordinary expandable HTML", () => {
-  const html = renderTelegramThinkingActivityHtml("a < b", false);
-  assert.match(html, /^<b>🧠&#160; thinking:<\/b> <code>running<\/code>/);
+test("reasoning evidence renders its current thinking level", () => {
+  const html = renderTelegramThinkingActivityHtml("a < b", "xhigh");
+  assert.match(html, /^<b>🧠&#160; thinking:<\/b> <code>xhigh<\/code>/);
   assert.match(html, /<blockquote expandable>a &lt; b<\/blockquote>/);
   assert.doesNotMatch(html, /rich_message/);
 });
@@ -482,6 +489,7 @@ test("reset drops accepted events that have not started processing", async () =>
   const sends: TelegramSendMessageBody[] = [];
   const runtime = createTelegramActivityVerbosityRuntime({
     getActivityMode: () => "verbose",
+    getThinkingLevel: () => "high",
     resolveTarget: (activity) => activity.target,
     captureAuthority: () => 1,
     isAuthorityActive: () => true,

@@ -850,6 +850,7 @@ test("Verbose activity uses follower transport and loses stale registration auth
   });
   const runtime = createTelegramActivityVerbosityRuntime({
     getActivityMode: () => "verbose",
+    getThinkingLevel: () => "high",
     resolveTarget: () => ({ chatId: 77, threadId: 43 }),
     captureAuthority: authority.captureAuthority,
     isAuthorityActive: authority.isAuthorityActive,
