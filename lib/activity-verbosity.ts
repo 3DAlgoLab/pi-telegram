@@ -183,10 +183,10 @@ function toolMessageSize(tools: readonly ToolActivity[]): number {
 
 export function renderTelegramThinkingActivityHtml(
   text: string,
-  complete: boolean,
+  thinkingLevel: string,
 ): string {
   return [
-    `<b>${TELEGRAM_THINKING_ACTIVITY_ICON}&#160; thinking:</b> <code>${complete ? "done" : "running"}</code>`,
+    `<b>${TELEGRAM_THINKING_ACTIVITY_ICON}&#160; thinking:</b> <code>${escapeHtml(thinkingLevel)}</code>`,
     `<blockquote expandable>${escapeHtml(text)}</blockquote>`,
   ].join("\n");
 }
@@ -200,6 +200,7 @@ export interface TelegramActivityVerbosityRuntime {
 
 export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
   getActivityMode: () => "quiet" | "thinking" | "tools" | "verbose";
+  getThinkingLevel: () => string;
   resolveTarget: (event: TelegramActivityEvent) => TelegramTarget | undefined;
   captureAuthority: () => TAuthority;
   isAuthorityActive: (authority: TAuthority) => boolean;
@@ -262,7 +263,6 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
   const publishReasoning = async (
     event: TelegramActivityEvent,
     acceptedGeneration: number,
-    complete: boolean,
   ) => {
     if (
       generation !== acceptedGeneration ||
@@ -281,7 +281,7 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
           ? `… [${omitted} earlier chars omitted]\n${retained}`
           : retained,
       );
-      body = renderTelegramThinkingActivityHtml(text, complete);
+      body = renderTelegramThinkingActivityHtml(text, deps.getThinkingLevel());
       if (body.length <= TELEGRAM_ACTIVITY_MESSAGE_MAX_CHARS) break;
       retained = retained.slice(-Math.max(1, Math.floor(retained.length * 0.75)));
     } while (retained.length > 1);
@@ -410,7 +410,7 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
         (reasoningMessageFrames === 0 ||
           reasoningChars - lastReasoningMessageChars >= 160)
       ) {
-        await publishReasoning(event, acceptedGeneration, false);
+        await publishReasoning(event, acceptedGeneration);
       }
       return;
     }
@@ -422,8 +422,12 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
           -TELEGRAM_REASONING_BUFFER_MAX_CHARS,
         );
       }
-      if (reasoningChars > 0 && !reasoningBlocked) {
-        await publishReasoning(event, acceptedGeneration, true);
+      if (
+        reasoningChars > 0 &&
+        reasoningChars > lastReasoningMessageChars &&
+        !reasoningBlocked
+      ) {
+        await publishReasoning(event, acceptedGeneration);
       }
       reasoningBuffer = "";
       reasoningChars = 0;
@@ -483,8 +487,12 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
       return;
     }
     if (event.type === "agent-end" || event.type === "agent-settled") {
-      if (reasoningMessage && reasoningChars > 0 && !reasoningBlocked) {
-        await publishReasoning(event, acceptedGeneration, true);
+      if (
+        reasoningMessage &&
+        reasoningChars > lastReasoningMessageChars &&
+        !reasoningBlocked
+      ) {
+        await publishReasoning(event, acceptedGeneration);
       }
       clearActivity();
     }
