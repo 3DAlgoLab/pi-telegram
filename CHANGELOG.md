@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.25.4: Technical Link Preview Hotfix
+
+- `Activity Evidence`: Kept Bot API link previews disabled on every thinking/tool send and edit, and added an invisible separator after HTTP(S) schemes inside technical evidence so Telegram clients cannot auto-link URL-like arguments, updates, results, or reasoning when rendering expandable blockquotes. Impact: incidental URLs no longer create distracting preview cards in persistent activity messages.
+
 ## 0.25.3: Thinking Density Header Hotfix
 
 - `Thinking Activity`: Replaced the generic `running`/`done` thinking header state with the current Pi thinking level, such as `high`, and stopped finalizing an already-current disclosure with a no-op completion edit. Impact: each persistent thinking block carries useful reasoning-density context instead of redundant lifecycle noise.

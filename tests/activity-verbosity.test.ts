@@ -97,7 +97,7 @@ test("tool evidence renders as ordinary expandable HTML", () => {
     {
       id: "tool-1",
       name: "exec<script>",
-      args: '{\n  "command": "npm run check -w @ail/web",\n  "options": {\n    "timeout": 240\n  }\n}',
+      args: '{\n  "command": "npm run check -w @ail/web",\n  "url": "https://example.com/result",\n  "options": {\n    "timeout": 240\n  }\n}',
       updates: ['{\n  "content": []\n}'],
       droppedUpdates: 0,
       result: '{\n  "content": []\n}',
@@ -112,6 +112,8 @@ test("tool evidence renders as ordinary expandable HTML", () => {
   );
   assert.match(html, /<blockquote expandable>/);
   assert.match(html, /"arguments": \{\n  "command"/);
+  assert.equal(html.includes("https://\u200bexample.com/result"), true);
+  assert.equal(html.includes("https://example.com/result"), false);
   assert.match(html, /"update 1": \{\n  "content": \[\]/);
   assert.match(html, /"result": \{\n  "content": \[\]/);
   assert.doesNotMatch(html, /rich_message|<pre>/);

@@ -147,6 +147,10 @@ function serializeActivityValue(value: unknown): string {
   return `${redacted.slice(0, TELEGRAM_ACTIVITY_DETAIL_MAX_CHARS)}\n… [${omitted} chars truncated]`;
 }
 
+function escapeActivityEvidenceHtml(text: string): string {
+  return escapeHtml(text.replace(/\b(https?:\/\/)(?=\S)/gi, "$1\u200b"));
+}
+
 function renderToolActivityHtml(tool: ToolActivity): string {
   const evidence = [`"arguments": ${tool.args}`];
   if (tool.droppedUpdates > 0) {
@@ -167,7 +171,7 @@ function renderToolActivityHtml(tool: ToolActivity): string {
     : "running";
   return [
     `<b>${TELEGRAM_TOOL_ACTIVITY_ICON}&#160; ${escapeHtml(tool.name)}:</b> <code>${status}</code>`,
-    `<blockquote expandable>${escapeHtml(evidence.join("\n\n"))}</blockquote>`,
+    `<blockquote expandable>${escapeActivityEvidenceHtml(evidence.join("\n\n"))}</blockquote>`,
   ].join("\n");
 }
 
@@ -187,7 +191,7 @@ export function renderTelegramThinkingActivityHtml(
 ): string {
   return [
     `<b>${TELEGRAM_THINKING_ACTIVITY_ICON}&#160; thinking:</b> <code>${escapeHtml(thinkingLevel)}</code>`,
-    `<blockquote expandable>${escapeHtml(text)}</blockquote>`,
+    `<blockquote expandable>${escapeActivityEvidenceHtml(text)}</blockquote>`,
   ].join("\n");
 }
 
