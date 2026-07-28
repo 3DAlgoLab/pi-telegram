@@ -44,7 +44,6 @@ export interface TelegramOutboundHandlerConfig extends CommandTemplateObjectConf
 export type TelegramTimeMode = "hidden" | "always" | "interval";
 
 export interface TelegramTimeConfig {
-  injectionMode?: TelegramTimeMode;
   interval?: number;
 }
 
@@ -76,6 +75,7 @@ export interface TelegramConfig {
     rendering?: TelegramAssistantRenderingMode;
     proactivePush?: boolean;
     activity?: TelegramActivityVerbosity;
+    timeInjection?: TelegramTimeMode;
     /** @deprecated use activity */
     activityVerbosity?: TelegramActivityVerbosity;
   };
@@ -834,10 +834,11 @@ function getSystemTimezone(): string {
 
 export function resolveTelegramTimeConfig(
   raw: TelegramTimeConfig | undefined,
+  timeInjection: TelegramTimeMode | undefined = undefined,
 ): ResolvedTelegramTimeConfig {
   const injectionMode: TelegramTimeMode =
-    raw?.injectionMode === "always" || raw?.injectionMode === "interval"
-      ? raw.injectionMode
+    timeInjection === "always" || timeInjection === "interval"
+      ? timeInjection
       : "hidden";
   const interval =
     typeof raw?.interval === "number" && raw.interval > 0
@@ -850,13 +851,25 @@ export function resolveTelegramTimeConfig(
 export function createTelegramTimeConfigGetter(
   configStore: Pick<TelegramConfigStore, "get">,
 ): () => ResolvedTelegramTimeConfig {
-  return () => resolveTelegramTimeConfig(configStore.get().time);
+  return () => {
+    const config = configStore.get();
+    return resolveTelegramTimeConfig(
+      config.time,
+      config.assistant?.timeInjection,
+    );
+  };
 }
 
 export function createTelegramTimeInjectionModeGetter(
   configStore: Pick<TelegramConfigStore, "get">,
 ): () => TelegramTimeMode {
-  return () => resolveTelegramTimeConfig(configStore.get().time).injectionMode;
+  return () => {
+    const config = configStore.get();
+    return resolveTelegramTimeConfig(
+      config.time,
+      config.assistant?.timeInjection,
+    ).injectionMode;
+  };
 }
 
 export function createTelegramTimeInjectionModeSetter(
@@ -865,19 +878,12 @@ export function createTelegramTimeInjectionModeSetter(
   return async (injectionMode) => {
     await loadLatestTelegramConfig(configStore);
     const current = configStore.get();
-    if (injectionMode === "hidden") {
-      const { injectionMode: _injectionMode, ...remainingTime } =
-        current.time ?? {};
-      const next = { ...current };
-      if (Object.keys(remainingTime).length > 0) next.time = remainingTime;
-      else delete next.time;
-      configStore.set(next);
-      await configStore.persist(next);
-      return;
-    }
     const next = {
       ...current,
-      time: { ...(current.time ?? {}), injectionMode },
+      assistant: {
+        ...(current.assistant ?? {}),
+        timeInjection: injectionMode,
+      },
     };
     configStore.set(next);
     await configStore.persist(next);

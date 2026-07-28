@@ -470,8 +470,8 @@ test("Stale config persistence preserves unrelated global and profile disk delta
           allowedUserId: 42,
         },
       },
-      assistant: { rendering: "rich" },
-      time: { interval: 5000, injectionMode: "interval" },
+      assistant: { rendering: "rich", timeInjection: "interval" },
+      time: { interval: 5000 },
     });
     stale.update((config) => {
       config.voice = { replyMode: "mirror" };
@@ -487,8 +487,8 @@ test("Stale config persistence preserves unrelated global and profile disk delta
           allowedUserId: 42,
         },
       },
-      assistant: { rendering: "rich" },
-      time: { interval: 5000, injectionMode: "interval" },
+      assistant: { rendering: "rich", timeInjection: "interval" },
+      time: { interval: 5000 },
       voice: { replyMode: "mirror" },
     });
   } finally {
@@ -507,20 +507,19 @@ test("No-op config persistence adopts newer disk state without rewriting it", as
     await store.load();
     await writeTelegramConfig(dir, configPath, {
       profiles: { default: { botToken: "default-token" } },
-      time: { interval: 5000, injectionMode: "interval" },
+      assistant: { timeInjection: "interval" },
+      time: { interval: 5000 },
     });
     const stableTime = new Date("2001-01-01T00:00:00.000Z");
     await utimes(configPath, stableTime, stableTime);
 
     await store.persist();
 
-    assert.deepEqual(store.get().time, {
-      interval: 5000,
-      injectionMode: "interval",
-    });
+    assert.deepEqual(store.get().time, { interval: 5000 });
     assert.deepEqual(await readTelegramConfig(configPath), {
       profiles: { default: { botToken: "default-token" } },
-      time: { interval: 5000, injectionMode: "interval" },
+      assistant: { timeInjection: "interval" },
+      time: { interval: 5000 },
     });
     assert.ok(
       Math.abs((await stat(configPath)).mtimeMs - stableTime.getTime()) < 5,
@@ -889,9 +888,8 @@ test("Telegram settings menu callbacks persist voice and time settings to telegr
   );
   assert.deepEqual(await readTelegramConfig(configPath), {
     profiles: { default: { botToken: "123:abc" } },
-    assistant: { draftPreviews: true },
+    assistant: { draftPreviews: true, timeInjection: "always" },
     voice: { replyMode: "mirror" },
-    time: { injectionMode: "always" },
   });
 });
 
@@ -899,7 +897,10 @@ test("Telegram time injection mode setter persists telegram.json", async () => {
   const agentDir = await mkdtemp(join(tmpdir(), "pi-telegram-time-mode-"));
   const configPath = join(agentDir, "telegram.json");
   const store = createTelegramConfigStore({
-    initialConfig: { botToken: "123:abc", time: { interval: 5000 } },
+    initialConfig: {
+      botToken: "123:abc",
+      time: { interval: 5000, injectionMode: "always" },
+    } as TelegramConfig,
     agentDir,
     configPath,
   });
@@ -913,7 +914,8 @@ test("Telegram time injection mode setter persists telegram.json", async () => {
   assert.equal(getMode(), "interval");
   assert.deepEqual(await readTelegramConfig(configPath), {
     profiles: { default: { botToken: "123:abc" } },
-    time: { interval: 5000, injectionMode: "interval" },
+    assistant: { timeInjection: "interval" },
+    time: { interval: 5000, injectionMode: "always" },
   });
 
   await setMode("hidden");
@@ -921,7 +923,8 @@ test("Telegram time injection mode setter persists telegram.json", async () => {
   assert.equal(getMode(), "hidden");
   assert.deepEqual(await readTelegramConfig(configPath), {
     profiles: { default: { botToken: "123:abc" } },
-    time: { interval: 5000 },
+    assistant: { timeInjection: "hidden" },
+    time: { interval: 5000, injectionMode: "always" },
   });
 });
 

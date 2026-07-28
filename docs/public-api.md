@@ -96,13 +96,13 @@ interface TelegramConfig {
     rendering?: "rich" | "html";
     proactivePush?: boolean;
     activity?: "quiet" | "verbose";
+    timeInjection?: "hidden" | "always" | "interval";
   };
   voice?: {
     replyMode?: "hidden" | "mirror" | "always";
     sendTranscript?: boolean;
   };
   time?: {
-    injectionMode?: "hidden" | "always" | "interval";
     interval?: number;
   };
   threads?: {
@@ -122,7 +122,7 @@ Hidden/default semantics are represented by absence:
 - `assistant.activity` accepts exactly `"quiet"` or `"verbose"` and resolves omitted or invalid values to `"quiet"`. Quiet preserves the answer-only behavior. Verbose adds provider-exposed reasoning as an ephemeral target-bound Rich `Thinking` draft. Completed tool activity uses ordinary HTML `sendMessage`/`editMessageText`, with each tool represented by a standard expandable blockquote containing bounded redacted arguments, retained updates, results, and errors; tool output never uses Rich Messages. Consecutive tools coalesce only inside the same ordered activity segment and bounded message. Legacy `assistant.activityVerbosity` is read only when `assistant.activity` is absent and is removed by the next Activity Settings write.
 - Voice Reply `hidden`: no `voice.replyMode` key is persisted; legacy `manual` resolves to this silent default. `mirror` adds `[voice] delivery: automatic voice` only to voice/audio-input turns, while `always` adds the same effective line to every Telegram turn.
 - Agent activity status is not configurable in this release. Telegram uses native `sendChatAction(typing)` / product `...active` status as the only automatic in-chat work signal before the final reply.
-- Time Injection `hidden`: no `time.injectionMode` key is persisted; if `time` becomes empty, the whole `time` object may be omitted.
+- `assistant.timeInjection` accepts `hidden`, `always`, or `interval` and defaults to `hidden`. Settings writes the selected value there, including `hidden`; the old `time.injectionMode` key is ignored and is not migrated. `time.interval` remains the optional interval duration in milliseconds.
 
 With `assistant.rendering: "rich"` (the default), assistant Markdown delivery is native: final replies are sent as `InputRichMessage.markdown` via `sendRichMessage`, and draft previews use `sendRichMessageDraft` when a structurally closed preview frame is available. Draft-frame failures are recorded and skipped rather than converted into raw plain preview messages, because partial Markdown can be temporarily invalid while the final answer remains valid. Long native replies are split at Telegram Rich Message transport limits, with oversized fenced code, display-math, and fully wrapped inline-formatting blocks rewrapped per chunk so persisted chunks remain structurally valid. Guest replies use `InputRichMessageContent` in `answerGuestQuery` results. Bridge-owned UI surfaces such as menus, status, queue controls, commands, and sections keep explicit Telegram HTML/plain rendering by default because those texts are authored by the bridge or companion extensions for Telegram UI. Companion extension sections may explicitly request `"markdown"`, `"html"`, or `"plain"` per view. `assistant.rendering: "html"` keeps the compatibility path that converts assistant Markdown to Telegram HTML before ordinary message delivery. The bridge sets `skip_entity_detection: true` for assistant and guest Markdown so technical text such as `/commands`, hashtags, URLs, phone numbers, and card-like numbers does not gain unintended automatic entities; explicit Markdown links still belong in the Markdown source.
 

@@ -32,19 +32,15 @@ test("Time config resolves defaults when keys are missing", () => {
   assert.ok(resolved.timezone.length > 0);
 });
 
-test("Time config maps legacy off mode to hidden", () => {
-  const resolved = resolveTelegramTimeConfig({
-    injectionMode: "off" as never,
-  });
+test("Time config rejects invalid assistant time injection mode", () => {
+  const resolved = resolveTelegramTimeConfig(undefined, "off" as never);
   assert.equal(resolved.injectionMode, "hidden");
 });
 
 test("Time config rejects non-positive interval", () => {
-  const resolved = resolveTelegramTimeConfig({
-    injectionMode: "interval",
-    interval: 0,
-  });
+  const resolved = resolveTelegramTimeConfig({ interval: 0 }, "interval");
   assert.equal(resolved.interval, 60 * 60 * 1000);
+  assert.equal(resolved.injectionMode, "interval");
 });
 
 test("Time injection runtime returns null for every call when injectionMode is hidden", () => {
