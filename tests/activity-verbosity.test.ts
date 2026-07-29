@@ -181,7 +181,7 @@ test("reasoning uses a persistent target-bound expandable HTML message", async (
   assert.equal(harness.edits.length, 1);
   assert.match(harness.edits[0]?.text ?? "", /<code>high<\/code>/);
   assert.doesNotMatch(harness.edits[0]?.text ?? "", /<code>done<\/code>/);
-  assert.match(harness.edits[0]?.text ?? "", /Checking \*\*state\*\*/);
+  assert.match(harness.edits[0]?.text ?? "", /Checking <b>state<\/b>/);
   assert.equal(harness.edits[0]?.parse_mode, "HTML");
   assert.deepEqual(harness.edits[0]?.link_preview_options, {
     is_disabled: true,
@@ -233,11 +233,18 @@ test("thinking and tools modes isolate their activity classes", async () => {
   }
 });
 
-test("reasoning evidence renders its current thinking level", () => {
-  const html = renderTelegramThinkingActivityHtml("a < b", "xhigh");
+test("reasoning evidence renders inline HTML inside an expandable quote", () => {
+  const html = renderTelegramThinkingActivityHtml(
+    "**Reviewing data models**\na < b\n<https://example.com>",
+    "xhigh",
+  );
   assert.match(html, /^<b>🧠&#160; thinking:<\/b> <code>xhigh<\/code>/);
-  assert.match(html, /<blockquote expandable>a &lt; b<\/blockquote>/);
-  assert.doesNotMatch(html, /rich_message/);
+  assert.match(
+    html,
+    /<blockquote expandable><b>Reviewing data models<\/b>\na &lt; b/,
+  );
+  assert.equal(html.includes("https://\u200bexample.com"), true);
+  assert.doesNotMatch(html, /<a |rich_message/);
 });
 
 test("completed consecutive tools coalesce as collapsed redacted details", async () => {
