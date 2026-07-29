@@ -795,22 +795,48 @@ export function createTelegramBusLeaderTargetProvisioner<TContext>(
       );
     }
     await deps.topicTargetStore.load();
+    const profileKey = Threads.getTelegramThreadOwnerKey({
+      kind: "leader",
+      cwd: deps.getCwd?.(ctx),
+      instanceId: deps.instanceId,
+      telegramProfile: deps.getTelegramProfile?.(),
+    });
+    const reusableOwnRecord = deps.topicTargetStore.getByProfileKey(profileKey);
+    const pendingCleanups = deps.topicTargetStore.listPendingCleanups();
+    const deferredOwnCleanups =
+      reusableOwnRecord?.status === "active"
+        ? pendingCleanups.filter(
+            (cleanup) =>
+              cleanup.owner === "leader" &&
+              cleanup.target.chatId === reusableOwnRecord.target.chatId &&
+              cleanup.target.threadId === reusableOwnRecord.target.threadId,
+          )
+        : [];
+    const deferredOwnCleanupIds = new Set(
+      deferredOwnCleanups.map((cleanup) => cleanup.id),
+    );
     const pendingCleanupPlan = ThreadReconciler.planThreadReconciliation({
       nowMs: getNowMs(),
       currentLeaderEpoch: leaderEpoch,
       previousState: deps.getThreadReconciliationMachineState?.(),
       records: deps.topicTargetStore.list(),
-      pendingCleanups: deps.topicTargetStore.listPendingCleanups(),
+      pendingCleanups: pendingCleanups.filter(
+        (cleanup) => !deferredOwnCleanupIds.has(cleanup.id),
+      ),
     });
     deps.recordThreadReconciliationPlan?.(pendingCleanupPlan);
-    await ThreadReconciler.applyThreadReconciliationPlan(pendingCleanupPlan, {
+    const cleanupPorts = {
       callApi: deps.callApi,
       markStaleByTarget: deps.topicTargetStore.markStaleByTarget,
       removeCleanupIntentById: deps.topicTargetStore.removePendingCleanup,
       persist: deps.topicTargetStore.persist,
       getCurrentLeaderEpoch: deps.getCurrentLeaderEpoch,
       recordRuntimeEvent: deps.recordRuntimeEvent,
-    });
+    };
+    await ThreadReconciler.applyThreadReconciliationPlan(
+      pendingCleanupPlan,
+      cleanupPorts,
+    );
     deps.onProvisioningStart?.();
     let ownTarget: Threads.TelegramOwnTopicProvisionResult | undefined;
     try {
@@ -831,6 +857,20 @@ export function createTelegramBusLeaderTargetProvisioner<TContext>(
       });
     } finally {
       deps.onProvisioningEnd?.();
+    }
+    if (deferredOwnCleanups.length > 0) {
+      const supersededCleanupPlan = ThreadReconciler.planThreadReconciliation({
+        nowMs: getNowMs(),
+        currentLeaderEpoch: leaderEpoch,
+        previousState: deps.getThreadReconciliationMachineState?.(),
+        records: deps.topicTargetStore.list(),
+        pendingCleanups: deferredOwnCleanups,
+      });
+      deps.recordThreadReconciliationPlan?.(supersededCleanupPlan);
+      await ThreadReconciler.applyThreadReconciliationPlan(
+        supersededCleanupPlan,
+        cleanupPorts,
+      );
     }
     if (
       deps.getCurrentLeaderEpoch &&

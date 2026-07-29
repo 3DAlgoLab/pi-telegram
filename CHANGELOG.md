@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.25.6: Same-Profile Thread Reuse Hotfix
+
+- `Leader Restart`: Deferred a pending leader cleanup when its target still belongs to the replacement's active stable profile, restored that existing binding first, and then cancelled the superseded cleanup intent. Unrelated cleanup intents still execute before provisioning. Impact: an interrupted graceful shutdown no longer causes the next launch of the same Pi instance to delete and recreate its reusable Telegram thread.
+
 ## 0.25.5: Thinking HTML Rendering Hotfix
 
 - `Thinking Presentation`: Rendered inline Markdown emphasis and code in provider-exposed thinking as Telegram HTML inside the existing expandable blockquote while keeping links inert and HTTP(S) auto-link neutralization intact. Impact: reasoning such as `**Reviewing data models**` appears as formatted collapsed technical evidence instead of leaking raw Markdown markers.
