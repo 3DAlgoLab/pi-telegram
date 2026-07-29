@@ -164,6 +164,10 @@ function renderThinkingActivityEvidenceHtml(text: string): string {
   });
 }
 
+function capitalizeActivityLabel(label: string): string {
+  return label.length > 0 ? `${label[0]!.toUpperCase()}${label.slice(1)}` : label;
+}
+
 function renderToolActivityHtml(tool: ToolActivity): string {
   const evidence = [`"arguments": ${tool.args}`];
   if (tool.droppedUpdates > 0) {
@@ -183,7 +187,7 @@ function renderToolActivityHtml(tool: ToolActivity): string {
       : "done"
     : "running";
   return [
-    `<b>${TELEGRAM_TOOL_ACTIVITY_ICON}&#160; ${escapeHtml(tool.name)}:</b> <code>${status}</code>`,
+    `<b>${TELEGRAM_TOOL_ACTIVITY_ICON}&#160; ${escapeHtml(capitalizeActivityLabel(tool.name))}:</b> <code>${status}</code>`,
     `<blockquote expandable>${escapeActivityEvidenceHtml(evidence.join("\n\n"))}</blockquote>`,
   ].join("\n");
 }
@@ -203,7 +207,7 @@ export function renderTelegramThinkingActivityHtml(
   thinkingLevel: string,
 ): string {
   return [
-    `<b>${TELEGRAM_THINKING_ACTIVITY_ICON}&#160; thinking:</b> <code>${escapeHtml(thinkingLevel)}</code>`,
+    `<b>${TELEGRAM_THINKING_ACTIVITY_ICON}&#160; Thinking:</b> <code>${escapeHtml(thinkingLevel)}</code>`,
     `<blockquote expandable>${renderThinkingActivityEvidenceHtml(text)}</blockquote>`,
   ].join("\n");
 }

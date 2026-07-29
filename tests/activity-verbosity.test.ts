@@ -117,7 +117,7 @@ test("tool evidence renders as ordinary expandable HTML", () => {
 
   assert.match(
     html,
-    /^<b>🛠&#160; exec&lt;script&gt;:<\/b> <code>done<\/code>/,
+    /^<b>🛠&#160; Exec&lt;script&gt;:<\/b> <code>done<\/code>/,
   );
   assert.match(html, /<blockquote expandable>/);
   assert.match(html, /"arguments": \{\n  "command"/);
@@ -184,7 +184,7 @@ test("reasoning uses a persistent target-bound expandable HTML message", async (
   });
   assert.match(
     harness.sends[0]?.text ?? "",
-    /^<b>🧠&#160; thinking:<\/b> <code>high<\/code>/,
+    /^<b>🧠&#160; Thinking:<\/b> <code>high<\/code>/,
   );
   assert.match(harness.sends[0]?.text ?? "", /<blockquote expandable>/);
   assert.equal(harness.edits.length, 1);
@@ -291,7 +291,7 @@ test("reasoning evidence renders inline HTML inside an expandable quote", () => 
     "**Reviewing data models**\na < b\n<https://example.com>",
     "xhigh",
   );
-  assert.match(html, /^<b>🧠&#160; thinking:<\/b> <code>xhigh<\/code>/);
+  assert.match(html, /^<b>🧠&#160; Thinking:<\/b> <code>xhigh<\/code>/);
   assert.match(
     html,
     /<blockquote expandable><b>Reviewing data models<\/b>\na &lt; b/,
@@ -490,7 +490,7 @@ test("parallel tool completion preserves tool-start order", async () => {
   assert.equal(harness.sends.length, 1);
   assert.equal(harness.edits.length, 1);
   const text = harness.edits[0]?.text ?? "";
-  assert.ok(text.indexOf("first-tool") < text.indexOf("second-tool"));
+  assert.ok(text.indexOf("First-tool") < text.indexOf("Second-tool"));
   assert.equal(harness.edits[0]?.rich_message, undefined);
 });
 

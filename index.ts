@@ -507,7 +507,7 @@ export default function (pi: Pi.ExtensionAPI) {
   activityVerbosityRuntime =
     ActivityVerbosity.createTelegramActivityVerbosityRuntime({
       getActivityMode: configControls.getActivityVerbosity,
-      refreshActivityMode: configStore.load,
+      refreshActivityMode: configControls.refreshActivityVerbosity,
       getThinkingLevel,
       resolveTarget(event) {
         return event.target ?? proactivePushTargetGetter();

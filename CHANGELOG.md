@@ -3,6 +3,7 @@
 ## 0.25.7: Multi-Instance Activity Isolation Hotfix
 
 - `Activity Config`: Reloaded the shared file-backed `assistant.activity` setting in every Pi process at `agent-start` before activity admission, failing closed for that run if refresh fails. Impact: selecting `thinking` emits only thinking, selecting `tools` emits only tools, `verbose` emits both, and `quiet` emits neither across all live instances instead of stale process-local config behaving like an older broader mode.
+- `Activity Labels`: Capitalized human-facing technical headers as `🧠  Thinking: <level>` and `🛠  <Tool>: <status>`. Impact: persistent activity messages follow the same sentence-case UI convention as menus and settings.
 
 ## 0.25.6: Same-Profile Thread Reuse Hotfix
 
