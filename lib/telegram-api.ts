@@ -285,6 +285,7 @@ export type TelegramRichText =
   | { type: "bold" | "code"; text: TelegramRichText };
 
 export type TelegramInputRichBlock =
+  | { type: "paragraph"; text: TelegramRichText }
   | { type: "pre"; text: TelegramRichText; language?: string }
   | {
       type: "details";

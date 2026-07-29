@@ -228,10 +228,10 @@ export function buildActivityVerbositySettingsText(
     "",
     "Choose how much technical model activity Telegram shows.",
     "",
-    "<code>-</code> <code>quiet</code> (default): show no thinking or tool traffic.",
+    "<code>-</code> <code>quiet</code>: show no thinking or tool traffic.",
     "<code>-</code> <code>thinking</code>: show persistent collapsed thinking.",
-    "<code>-</code> <code>tools</code>: show persistent collapsed tool details.",
-    "<code>-</code> <code>verbose</code>: show both thinking and tools.",
+    "<code>-</code> <code>tools</code>: show persistent Rich tool details.",
+    "<code>-</code> <code>verbose</code> (default): show both thinking and tools.",
   ].join("\n");
 }
 
@@ -260,9 +260,9 @@ export function buildTimeInjectionModeSettingsText(
     "",
     "Controls whether Telegram-originated prompts include a compact wall-clock [time] line.",
     "",
-    "<code>-</code> <code>hidden</code> (default): no time line is added to prompt context.",
+    "<code>-</code> <code>hidden</code>: no time line is added to prompt context.",
     "<code>-</code> <code>always</code>: add time to every Telegram turn.",
-    "<code>-</code> <code>interval</code>: add time at most once per chat interval (default: 1 hour).",
+    "<code>-</code> <code>interval</code> (default): add time at most once per chat interval (1 hour unless configured).",
   ].join("\n");
 }
 

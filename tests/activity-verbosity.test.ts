@@ -9,6 +9,7 @@ import {
   createTelegramActivityVerbosityRuntime,
   renderTelegramThinkingActivityHtml,
   renderTelegramToolActivityHtml,
+  renderTelegramToolActivityRichMessage,
   TELEGRAM_ACTIVITY_MESSAGE_MAX_TOOLS,
   TELEGRAM_REASONING_BUFFER_MAX_CHARS,
   TELEGRAM_TOOL_UPDATE_MAX_ENTRIES,
@@ -20,6 +21,7 @@ import type {
 import type {
   TelegramEditMessageTextBody,
   TelegramSendMessageBody,
+  TelegramSendRichMessageBody,
 } from "../lib/telegram-api.ts";
 
 function event(
@@ -43,12 +45,14 @@ function createHarness(
     mode?: ActivityMode;
     refreshedMode?: ActivityMode;
     refreshError?: Error;
+    richSendError?: Error;
     thinkingLevel?: string;
   } = {},
 ) {
   let mode = options.mode ?? "verbose";
   let authority = 1;
   const sends: TelegramSendMessageBody[] = [];
+  const richSends: TelegramSendRichMessageBody[] = [];
   const edits: TelegramEditMessageTextBody[] = [];
   const runtime = createTelegramActivityVerbosityRuntime({
     getActivityMode: () => mode,
@@ -64,6 +68,11 @@ function createHarness(
       sends.push(body);
       return { message_id: sends.length };
     },
+    async sendRichMessage(body) {
+      if (options.richSendError) throw options.richSendError;
+      richSends.push(body);
+      return { message_id: 100 + richSends.length };
+    },
     async editMessageText(body) {
       edits.push(body);
       return "edited";
@@ -72,6 +81,7 @@ function createHarness(
   return {
     runtime,
     sends,
+    richSends,
     edits,
     setMode(value: ActivityMode) {
       mode = value;
@@ -101,7 +111,58 @@ test("quiet activity emits no reasoning or tool messages", async () => {
   assert.deepEqual(harness.sends, []);
 });
 
-test("tool evidence renders as ordinary expandable HTML", () => {
+test("tool Rich activity separates arguments, updates, and result details", () => {
+  const rich = renderTelegramToolActivityRichMessage([
+    {
+      id: "tool-1",
+      name: "bash",
+      args: '{\n  "command": "npm test"\n}',
+      updates: ['{\n  "line": 1\n}'],
+      droppedUpdates: 2,
+      result: '{\n  "ok": true\n}',
+      isError: false,
+      complete: true,
+    },
+  ]);
+  assert.equal(rich.skip_entity_detection, true);
+  assert.deepEqual(rich.blocks, [
+    {
+      type: "paragraph",
+      text: [
+        { type: "bold", text: "🛠  Bash:" },
+        " ",
+        { type: "code", text: "done" },
+      ],
+    },
+    {
+      type: "details",
+      summary: { type: "bold", text: "Arguments" },
+      blocks: [
+        {
+          type: "pre",
+          text: '{\n  "command": "npm test"\n}',
+          language: "json",
+        },
+      ],
+    },
+    {
+      type: "details",
+      summary: { type: "bold", text: "Update 3 · 2 earlier omitted" },
+      blocks: [
+        { type: "pre", text: '{\n  "line": 1\n}', language: "json" },
+      ],
+    },
+    {
+      type: "details",
+      summary: { type: "bold", text: "Result" },
+      blocks: [
+        { type: "pre", text: '{\n  "ok": true\n}', language: "json" },
+      ],
+    },
+  ]);
+});
+
+test("tool evidence renders as ordinary expandable HTML fallback", () => {
   const html = renderTelegramToolActivityHtml([
     {
       id: "tool-1",
@@ -149,6 +210,30 @@ test("tool evidence renders as ordinary expandable HTML", () => {
   ]);
   assert.match(statuses, /<code>running<\/code>/);
   assert.match(statuses, /<code>failed<\/code>/);
+});
+
+test("known-safe Rich rejection falls back to the HTML tool message", async () => {
+  const harness = createHarness({
+    mode: "tools",
+    richSendError: new Error(
+      "Telegram API sendRichMessage failed: HTTP 400: Bad Request: unsupported rich block",
+    ),
+  });
+  harness.runtime.accept(event(1, { type: "agent-start" }));
+  harness.runtime.accept(
+    event(2, {
+      type: "tool-end",
+      toolCallId: "tool-1",
+      toolName: "bash",
+      result: "done",
+      isError: false,
+    }),
+  );
+  await harness.runtime.waitForIdle();
+  assert.equal(harness.richSends.length, 0);
+  assert.equal(harness.sends.length, 1);
+  assert.match(harness.sends[0]?.text ?? "", /🛠/);
+  assert.match(harness.sends[0]?.text ?? "", /<blockquote expandable>/);
 });
 
 test("reasoning uses a persistent target-bound expandable HTML message", async () => {
@@ -280,9 +365,10 @@ test("thinking and tools modes isolate their activity classes", async () => {
       }),
     );
     await harness.runtime.waitForIdle();
-    const text = harness.sends.map((body) => body.text).join("\n");
-    assert.equal(text.includes("🧠"), mode === "thinking");
-    assert.equal(text.includes("🛠"), mode === "tools");
+    const thinkingText = harness.sends.map((body) => body.text).join("\n");
+    const toolText = JSON.stringify(harness.richSends);
+    assert.equal(thinkingText.includes("🧠"), mode === "thinking");
+    assert.equal(toolText.includes("🛠"), mode === "tools");
   }
 });
 
@@ -338,24 +424,17 @@ test("completed consecutive tools coalesce as collapsed redacted details", async
     }),
   );
   await harness.runtime.waitForIdle();
-  assert.equal(harness.sends.length, 1);
+  assert.equal(harness.richSends.length, 1);
   assert.equal(harness.edits.length, 1);
-  const serialized = harness.edits[0]?.text ?? "";
+  const serialized = JSON.stringify(harness.edits[0]?.rich_message);
   assert.match(serialized, /🛠/);
-  assert.match(serialized, /<blockquote expandable>/);
+  assert.match(serialized, /details/);
   assert.match(serialized, /REDACTED/);
   assert.doesNotMatch(serialized, /abcdefghijklmnopqrstuvwxyzABCDEFGHIJK/);
-  assert.equal(harness.edits[0]?.parse_mode, "HTML");
-  assert.deepEqual(harness.sends[0]?.link_preview_options, {
-    is_disabled: true,
-  });
-  assert.deepEqual(harness.edits[0]?.link_preview_options, {
-    is_disabled: true,
-  });
-  assert.equal(harness.edits[0]?.rich_message, undefined);
+  assert.equal(harness.edits[0]?.text, undefined);
 });
 
-test("tool evidence quotes labels and compacts arrays of objects", async () => {
+test("tool Rich details keep compact arrays of objects", async () => {
   const harness = createHarness();
   harness.runtime.accept(event(1, { type: "agent-start" }));
   harness.runtime.accept(
@@ -391,13 +470,12 @@ test("tool evidence quotes labels and compacts arrays of objects", async () => {
   );
   await harness.runtime.waitForIdle();
 
-  const html = harness.sends[0]?.text ?? "";
-  assert.match(html, /"arguments": \{/);
-  assert.match(
-    html,
-    /"update 1": \{\n  "content": \[\{\n    "type": "text",\n    "text": "\\n"\n  \}, \{\n    "type": "text",\n    "text": "\\n"\n  \}\],\n  "details": \{\}\n\}/,
-  );
-  assert.match(html, /"result": \{\n  "content": \[\]\n\}/);
+  const rich = JSON.stringify(harness.richSends[0]?.rich_message);
+  assert.match(rich, /Arguments/);
+  assert.match(rich, /Update 1/);
+  assert.match(rich, /Result/);
+  assert.match(rich, /\\"content\\":\s*\[/);
+  assert.match(rich, /\\"result\\"|Result/);
 });
 
 test("assistant boundaries, capacity, and authority replacement fence batches", async () => {
@@ -433,7 +511,7 @@ test("assistant boundaries, capacity, and authority replacement fence batches", 
     }),
   );
   await harness.runtime.waitForIdle();
-  assert.equal(harness.sends.length, 3);
+  assert.equal(harness.richSends.length, 3);
 
   harness.replaceAuthority();
   harness.runtime.accept(
@@ -446,7 +524,7 @@ test("assistant boundaries, capacity, and authority replacement fence batches", 
     }),
   );
   await harness.runtime.waitForIdle();
-  assert.equal(harness.sends.length, 3);
+  assert.equal(harness.richSends.length, 3);
 });
 
 test("parallel tool completion preserves tool-start order", async () => {
@@ -487,11 +565,11 @@ test("parallel tool completion preserves tool-start order", async () => {
     }),
   );
   await harness.runtime.waitForIdle();
-  assert.equal(harness.sends.length, 1);
+  assert.equal(harness.richSends.length, 1);
   assert.equal(harness.edits.length, 1);
-  const text = harness.edits[0]?.text ?? "";
+  const text = JSON.stringify(harness.edits[0]?.rich_message);
   assert.ok(text.indexOf("First-tool") < text.indexOf("Second-tool"));
-  assert.equal(harness.edits[0]?.rich_message, undefined);
+  assert.equal(harness.edits[0]?.text, undefined);
 });
 
 test("reasoning and tool updates retain bounded latest evidence", async () => {
@@ -537,8 +615,8 @@ test("reasoning and tool updates retain bounded latest evidence", async () => {
   assert.match(reasoning, /earlier chars omitted/);
   assert.match(reasoning, /latest-marker/);
   assert.doesNotMatch(reasoning, /old-marker/);
-  const tool = harness.sends[1]?.text ?? "";
-  assert.match(tool, /3 earlier updates omitted/);
+  const tool = JSON.stringify(harness.richSends[0]?.rich_message);
+  assert.match(tool, /3 earlier omitted/);
   assert.doesNotMatch(tool, /update-0/);
   assert.match(tool, /update-6/);
 });
@@ -549,6 +627,7 @@ test("reset drops accepted events that have not started processing", async () =>
     releaseReasoning = resolve;
   });
   const sends: TelegramSendMessageBody[] = [];
+  const richSends: TelegramSendRichMessageBody[] = [];
   const runtime = createTelegramActivityVerbosityRuntime({
     getActivityMode: () => "verbose",
     getThinkingLevel: () => "high",
@@ -559,6 +638,10 @@ test("reset drops accepted events that have not started processing", async () =>
       if (body.text.includes("🧠")) await reasoningBlocked;
       sends.push(body);
       return { message_id: 1 };
+    },
+    async sendRichMessage(body) {
+      richSends.push(body);
+      return { message_id: 2 };
     },
     async editMessageText() {
       return "edited";
@@ -594,8 +677,9 @@ test("reset drops accepted events that have not started processing", async () =>
     activityId: "session:2",
   });
   await runtime.waitForIdle();
-  assert.equal(sends.length, 1);
-  assert.match(JSON.stringify(sends[0]), /new session/);
-  assert.doesNotMatch(JSON.stringify(sends[0]), /must not send/);
+  assert.equal(sends.length, 0);
+  assert.equal(richSends.length, 1);
+  assert.match(JSON.stringify(richSends[0]), /new session/);
+  assert.doesNotMatch(JSON.stringify(richSends[0]), /must not send/);
   releaseReasoning();
 });

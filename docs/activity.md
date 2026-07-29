@@ -180,7 +180,7 @@ Pi provider events use `thinking_*`; the public product term is `reasoning`. The
 
 Tool activity uses Pi's executed-tool lifecycle (`tool_execution_start/update/end`), not provider `toolcall_*` payloads. Provider tool-call boundaries are used only to classify preceding assistant prose. This prevents duplicate tool rows and reports actual execution results.
 
-`args`, `update`, and `result` may contain paths, source text, command output, or other sensitive data. They are available to trusted local extension code but must not be rendered wholesale by default. Core `quiet` mode renders none of them. Explicit `verbose` mode redacts known secret shapes, truncates every evidence field, and places completed tool evidence in ordinary HTML messages with standard expandable blockquotes rather than Rich Messages.
+`args`, `update`, and `result` may contain paths, source text, command output, or other sensitive data. They are available to trusted local extension code but must not be rendered wholesale by default. Core `quiet` mode renders none of them. Visible tool modes redact known secret shapes, truncate every evidence field, and place completed tool evidence in native Rich Messages with separate closed Arguments/Update/Result/Error details containing JSON pre blocks.
 
 ## Delivery Context
 
@@ -291,7 +291,7 @@ The implementation must cover:
 
 ## Core Verbosity And Consumer Policy
 
-The bridge owns a global `quiet`/`thinking`/`tools`/`verbose` policy. Quiet is the default, `thinking` and `tools` select one technical class, and `verbose` enables both. Available thinking and bounded tool evidence use persistent ordinary HTML messages with expandable blockquotes without changing public assistant-segment projection or final replies.
+The bridge owns a global `quiet`/`thinking`/`tools`/`verbose` policy. `verbose` is the absent-config default, `thinking` and `tools` select one technical class, and `quiet` disables both. Available thinking uses persistent ordinary HTML with an expandable blockquote; bounded tool evidence uses native Rich details without changing public assistant-segment projection or final replies.
 
 The registration and delivery examples above remain the public building blocks for companion-specific policy:
 
