@@ -164,6 +164,10 @@ function renderThinkingActivityEvidenceHtml(text: string): string {
   });
 }
 
+function capitalizeActivityLabel(label: string): string {
+  return label.length > 0 ? `${label[0]!.toUpperCase()}${label.slice(1)}` : label;
+}
+
 function renderToolActivityHtml(tool: ToolActivity): string {
   const evidence = [`"arguments": ${tool.args}`];
   if (tool.droppedUpdates > 0) {
@@ -183,7 +187,7 @@ function renderToolActivityHtml(tool: ToolActivity): string {
       : "done"
     : "running";
   return [
-    `<b>${TELEGRAM_TOOL_ACTIVITY_ICON}&#160; ${escapeHtml(tool.name)}:</b> <code>${status}</code>`,
+    `<b>${TELEGRAM_TOOL_ACTIVITY_ICON}&#160; ${escapeHtml(capitalizeActivityLabel(tool.name))}:</b> <code>${status}</code>`,
     `<blockquote expandable>${escapeActivityEvidenceHtml(evidence.join("\n\n"))}</blockquote>`,
   ].join("\n");
 }
@@ -203,7 +207,7 @@ export function renderTelegramThinkingActivityHtml(
   thinkingLevel: string,
 ): string {
   return [
-    `<b>${TELEGRAM_THINKING_ACTIVITY_ICON}&#160; thinking:</b> <code>${escapeHtml(thinkingLevel)}</code>`,
+    `<b>${TELEGRAM_THINKING_ACTIVITY_ICON}&#160; Thinking:</b> <code>${escapeHtml(thinkingLevel)}</code>`,
     `<blockquote expandable>${renderThinkingActivityEvidenceHtml(text)}</blockquote>`,
   ].join("\n");
 }
@@ -217,6 +221,7 @@ export interface TelegramActivityVerbosityRuntime {
 
 export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
   getActivityMode: () => "quiet" | "thinking" | "tools" | "verbose";
+  refreshActivityMode?: () => Promise<void>;
   getThinkingLevel: () => string;
   resolveTarget: (event: TelegramActivityEvent) => TelegramTarget | undefined;
   captureAuthority: () => TAuthority;
@@ -226,7 +231,12 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
     body: TelegramEditMessageTextBody,
   ) => Promise<"edited" | "unchanged">;
   recordFailure?: (
-    operation: "reasoning-send" | "reasoning-edit" | "tool-send" | "tool-edit",
+    operation:
+      | "config-refresh"
+      | "reasoning-send"
+      | "reasoning-edit"
+      | "tool-send"
+      | "tool-edit",
     event: TelegramActivityEvent,
     error: unknown,
   ) => void;
@@ -396,6 +406,16 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
     event: TelegramActivityEvent,
     acceptedGeneration: number,
   ) => {
+    if (event.type === "agent-start" && deps.refreshActivityMode) {
+      try {
+        await deps.refreshActivityMode();
+      } catch (error) {
+        deps.recordFailure?.("config-refresh", event, error);
+        clearActivity();
+        activityId = event.activityId;
+        return;
+      }
+    }
     if (!ensureActivity(event)) {
       if (
         activityId === event.activityId &&

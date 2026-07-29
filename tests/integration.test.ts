@@ -790,8 +790,8 @@ test("Verbose activity reaches classic transport before the final assistant answ
     assert.ok(finalIndex > toolEditIndex);
     const editedText = calls[toolEditIndex]?.body.text;
     assert.equal(typeof editedText, "string");
-    assert.match(editedText as string, /read/);
-    assert.match(editedText as string, /exec/);
+    assert.match(editedText as string, /Read/);
+    assert.match(editedText as string, /Exec/);
     assert.equal(calls[toolEditIndex]?.body.rich_message, undefined);
     await handlers.get("agent_settled")?.({}, ctx);
     await commands.get("telegram-disconnect")?.handler("", ctx);

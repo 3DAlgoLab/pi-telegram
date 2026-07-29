@@ -39,7 +39,12 @@ function event(
 type ActivityMode = "quiet" | "thinking" | "tools" | "verbose";
 
 function createHarness(
-  options: { mode?: ActivityMode; thinkingLevel?: string } = {},
+  options: {
+    mode?: ActivityMode;
+    refreshedMode?: ActivityMode;
+    refreshError?: Error;
+    thinkingLevel?: string;
+  } = {},
 ) {
   let mode = options.mode ?? "verbose";
   let authority = 1;
@@ -47,6 +52,10 @@ function createHarness(
   const edits: TelegramEditMessageTextBody[] = [];
   const runtime = createTelegramActivityVerbosityRuntime({
     getActivityMode: () => mode,
+    refreshActivityMode: async () => {
+      if (options.refreshError) throw options.refreshError;
+      if (options.refreshedMode) mode = options.refreshedMode;
+    },
     getThinkingLevel: () => options.thinkingLevel ?? "high",
     resolveTarget: (activity) => activity.target,
     captureAuthority: () => authority,
@@ -108,7 +117,7 @@ test("tool evidence renders as ordinary expandable HTML", () => {
 
   assert.match(
     html,
-    /^<b>🛠&#160; exec&lt;script&gt;:<\/b> <code>done<\/code>/,
+    /^<b>🛠&#160; Exec&lt;script&gt;:<\/b> <code>done<\/code>/,
   );
   assert.match(html, /<blockquote expandable>/);
   assert.match(html, /"arguments": \{\n  "command"/);
@@ -175,7 +184,7 @@ test("reasoning uses a persistent target-bound expandable HTML message", async (
   });
   assert.match(
     harness.sends[0]?.text ?? "",
-    /^<b>🧠&#160; thinking:<\/b> <code>high<\/code>/,
+    /^<b>🧠&#160; Thinking:<\/b> <code>high<\/code>/,
   );
   assert.match(harness.sends[0]?.text ?? "", /<blockquote expandable>/);
   assert.equal(harness.edits.length, 1);
@@ -204,6 +213,50 @@ test("agent end leaves an already current thinking message unchanged", async () 
   assert.equal(harness.sends.length, 1);
   assert.equal(harness.edits.length, 0);
   assert.match(harness.sends[0]?.text ?? "", /<code>high<\/code>/);
+});
+
+test("agent start refreshes file-backed mode before activity isolation", async () => {
+  const harness = createHarness({ mode: "verbose", refreshedMode: "thinking" });
+  harness.runtime.accept(event(1, { type: "agent-start" }));
+  harness.runtime.accept(
+    event(2, {
+      type: "reasoning-end",
+      contentIndex: 0,
+      text: "private thought",
+    }),
+  );
+  harness.runtime.accept(
+    event(3, {
+      type: "tool-end",
+      toolCallId: "tool-1",
+      toolName: "read",
+      result: "done",
+      isError: false,
+    }),
+  );
+  await harness.runtime.waitForIdle();
+  const text = harness.sends.map((body) => body.text).join("\n");
+  assert.equal(text.includes("🧠"), true);
+  assert.equal(text.includes("🛠"), false);
+});
+
+test("activity fails closed when file-backed mode refresh fails", async () => {
+  const harness = createHarness({
+    mode: "verbose",
+    refreshError: new Error("config unavailable"),
+  });
+  harness.runtime.accept(event(1, { type: "agent-start" }));
+  harness.runtime.accept(
+    event(2, {
+      type: "tool-end",
+      toolCallId: "tool-1",
+      toolName: "read",
+      result: "done",
+      isError: false,
+    }),
+  );
+  await harness.runtime.waitForIdle();
+  assert.deepEqual(harness.sends, []);
 });
 
 test("thinking and tools modes isolate their activity classes", async () => {
@@ -238,7 +291,7 @@ test("reasoning evidence renders inline HTML inside an expandable quote", () => 
     "**Reviewing data models**\na < b\n<https://example.com>",
     "xhigh",
   );
-  assert.match(html, /^<b>🧠&#160; thinking:<\/b> <code>xhigh<\/code>/);
+  assert.match(html, /^<b>🧠&#160; Thinking:<\/b> <code>xhigh<\/code>/);
   assert.match(
     html,
     /<blockquote expandable><b>Reviewing data models<\/b>\na &lt; b/,
@@ -437,7 +490,7 @@ test("parallel tool completion preserves tool-start order", async () => {
   assert.equal(harness.sends.length, 1);
   assert.equal(harness.edits.length, 1);
   const text = harness.edits[0]?.text ?? "";
-  assert.ok(text.indexOf("first-tool") < text.indexOf("second-tool"));
+  assert.ok(text.indexOf("First-tool") < text.indexOf("Second-tool"));
   assert.equal(harness.edits[0]?.rich_message, undefined);
 });
 

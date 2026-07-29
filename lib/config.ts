@@ -773,6 +773,12 @@ export function createTelegramActivityVerbosityGetter(
   };
 }
 
+export function createTelegramActivityVerbosityRefresher(
+  configStore: TelegramMutableConfigStore,
+): () => Promise<void> {
+  return () => loadLatestTelegramConfig(configStore);
+}
+
 export function createTelegramActivityVerbositySetter(
   configStore: TelegramMutableConfigStore,
 ): (verbosity: TelegramActivityVerbosity) => Promise<void> {
@@ -976,6 +982,8 @@ export function createTelegramConfigControls(
       createTelegramAssistantRenderingModeSetter(configStore),
     getActivityVerbosity:
       createTelegramActivityVerbosityGetter(configStore),
+    refreshActivityVerbosity:
+      createTelegramActivityVerbosityRefresher(configStore),
     setActivityVerbosity:
       createTelegramActivityVerbositySetter(configStore),
     getVoiceReplyMode: createTelegramVoiceReplyModeGetter(configStore),
