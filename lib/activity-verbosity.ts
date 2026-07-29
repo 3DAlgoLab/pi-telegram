@@ -217,6 +217,7 @@ export interface TelegramActivityVerbosityRuntime {
 
 export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
   getActivityMode: () => "quiet" | "thinking" | "tools" | "verbose";
+  refreshActivityMode?: () => Promise<void>;
   getThinkingLevel: () => string;
   resolveTarget: (event: TelegramActivityEvent) => TelegramTarget | undefined;
   captureAuthority: () => TAuthority;
@@ -226,7 +227,12 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
     body: TelegramEditMessageTextBody,
   ) => Promise<"edited" | "unchanged">;
   recordFailure?: (
-    operation: "reasoning-send" | "reasoning-edit" | "tool-send" | "tool-edit",
+    operation:
+      | "config-refresh"
+      | "reasoning-send"
+      | "reasoning-edit"
+      | "tool-send"
+      | "tool-edit",
     event: TelegramActivityEvent,
     error: unknown,
   ) => void;
@@ -396,6 +402,16 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
     event: TelegramActivityEvent,
     acceptedGeneration: number,
   ) => {
+    if (event.type === "agent-start" && deps.refreshActivityMode) {
+      try {
+        await deps.refreshActivityMode();
+      } catch (error) {
+        deps.recordFailure?.("config-refresh", event, error);
+        clearActivity();
+        activityId = event.activityId;
+        return;
+      }
+    }
     if (!ensureActivity(event)) {
       if (
         activityId === event.activityId &&

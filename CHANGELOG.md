@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.25.7: Multi-Instance Activity Isolation Hotfix
+
+- `Activity Config`: Reloaded the shared file-backed `assistant.activity` setting in every Pi process at `agent-start` before activity admission, failing closed for that run if refresh fails. Impact: selecting `thinking` emits only thinking, selecting `tools` emits only tools, `verbose` emits both, and `quiet` emits neither across all live instances instead of stale process-local config behaving like an older broader mode.
+
 ## 0.25.6: Same-Profile Thread Reuse Hotfix
 
 - `Leader Restart`: Deferred a pending leader cleanup when its target still belongs to the replacement's active stable profile, restored that existing binding first, and then cancelled the superseded cleanup intent. Unrelated cleanup intents still execute before provisioning. Impact: an interrupted graceful shutdown no longer causes the next launch of the same Pi instance to delete and recreate its reusable Telegram thread.
