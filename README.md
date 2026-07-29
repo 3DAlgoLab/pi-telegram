@@ -158,7 +158,7 @@ Run these inside Pi.
 | `/telegram-disconnect` | Confirm, then stop polling, release ownership, and delete this instance's Threaded Mode tab; graceful Pi quit does the same without prompting when automatic cleanup is enabled |
 | `/telegram-status` | Inspect connection, mode, queue, transport, and recent diagnostics |
 
-Named profile identifiers contain only lowercase ASCII letters and digits (maximum 32 characters); `default`, `main`, and `active` remain reserved.
+Named profile identifiers contain only lowercase ASCII letters and digits (maximum 32 characters); `default`, `main`, and `active` remain reserved. If graceful thread deletion was interrupted, a same-profile replacement reuses its still-active thread and cancels the superseded cleanup instead of deleting and recreating the tab during startup.
 
 ## Main Surfaces
 

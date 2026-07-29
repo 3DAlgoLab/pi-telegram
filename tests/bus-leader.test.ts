@@ -286,6 +286,64 @@ test("Successor leader replays durable cleanup intent before provisioning its ow
   }
 });
 
+test("Successor leader reuses its stable thread before cancelling superseded cleanup", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-successor-reuse-"));
+  const store = createTelegramTopicTargetStore({
+    path: join(dir, "state.json"),
+    getNowMs: () => 2000,
+  });
+  store.upsert({
+    profileKey: "cwd:/repo",
+    owner: { kind: "leader", cwd: "/repo", instanceId: "leader-old" },
+    target: { chatId: 7, threadId: 42 },
+    status: "active",
+    createdAtMs: 500,
+    updatedAtMs: 500,
+    instanceId: "leader-old",
+    slot: "A",
+    threadName: "Atlas",
+  });
+  store.upsertPendingCleanup({
+    id: "cleanup:leader-old:runtime-old:7:42",
+    owner: "leader",
+    instanceId: "leader-old",
+    runtimeGeneration: "runtime-old",
+    profileKey: "cwd:/repo",
+    target: { chatId: 7, threadId: 42 },
+    requestedAtMs: 1000,
+  });
+  await store.persist();
+  let leaderTarget: { target: { chatId: number; threadId?: number } } | undefined;
+  const provision = createTelegramBusLeaderTargetProvisioner({
+    getAllowedUserId: () => 7,
+    instanceId: "leader-new",
+    getCwd: () => "/repo",
+    topicTargetStore: store,
+    async callApi(method: string) {
+      throw new Error(`Unexpected Telegram API call: ${method}`);
+    },
+    getCurrentLeaderEpoch: () => 2,
+    getSyncState: () => ({}),
+    setSyncState: () => undefined,
+    setLeaderTarget: (target) => {
+      leaderTarget = target;
+    },
+    recordRuntimeEvent: () => undefined,
+  });
+  try {
+    await provision({ cwd: "/repo" });
+    assert.deepEqual(leaderTarget?.target, { chatId: 7, threadId: 42 });
+    assert.deepEqual(store.listPendingCleanups(), []);
+    assert.equal(store.getByProfileKey("cwd:/repo")?.instanceId, "leader-new");
+    assert.equal(
+      store.getByProfileKey("cwd:/repo")?.lastReconcileAction,
+      "leader-startup-skip-probe",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("Bus leader follower target provisioner creates thread and announces connection", async () => {
   const dir = mkdtempSync(
     join(tmpdir(), "pi-telegram-bus-follower-provision-"),
