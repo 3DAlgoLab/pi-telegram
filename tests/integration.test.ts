@@ -120,9 +120,24 @@ async function createRuntimeTelegramConfigFixture() {
   return {
     write: async (config: Record<string, unknown>) => {
       await mkdir(agentDir, { recursive: true });
+      const assistant =
+        typeof config.assistant === "object" && config.assistant !== null
+          ? (config.assistant as Record<string, unknown>)
+          : {};
       await writeFile(
         configPath,
-        JSON.stringify(config, null, "\t") + "\n",
+        JSON.stringify(
+          {
+            ...config,
+            assistant: {
+              activity: "quiet",
+              timeInjection: "hidden",
+              ...assistant,
+            },
+          },
+          null,
+          "\t",
+        ) + "\n",
         "utf8",
       );
     },
@@ -763,17 +778,15 @@ test("Verbose activity reaches classic transport before the final assistant answ
     assert.equal(calls[thinkingIndex]?.body.chat_id, 77);
     const toolSendIndex = calls.findIndex(
       (call) =>
-        call.method === "sendMessage" &&
-        typeof call.body.text === "string" &&
-        call.body.text.includes("🛠") &&
-        call.body.text.includes("<blockquote expandable>"),
+        call.method === "sendRichMessage" &&
+        JSON.stringify(call.body.rich_message).includes("🛠") &&
+        JSON.stringify(call.body.rich_message).includes("details"),
     );
     const toolEditIndex = calls.findIndex(
       (call) =>
         call.method === "editMessageText" &&
-        typeof call.body.text === "string" &&
-        call.body.text.includes("🛠") &&
-        call.body.text.includes("<blockquote expandable>"),
+        JSON.stringify(call.body.rich_message).includes("🛠") &&
+        JSON.stringify(call.body.rich_message).includes("details"),
     );
     const finalIndex = calls.findIndex((call) => {
       const richMessage = call.body.rich_message as
@@ -788,11 +801,14 @@ test("Verbose activity reaches classic transport before the final assistant answ
       JSON.stringify(calls, undefined, 2),
     );
     assert.ok(finalIndex > toolEditIndex);
-    const editedText = calls[toolEditIndex]?.body.text;
-    assert.equal(typeof editedText, "string");
-    assert.match(editedText as string, /Read/);
-    assert.match(editedText as string, /Exec/);
-    assert.equal(calls[toolEditIndex]?.body.rich_message, undefined);
+    const editedRich = JSON.stringify(
+      calls[toolEditIndex]?.body.rich_message,
+    );
+    assert.match(editedRich, /Read/);
+    assert.match(editedRich, /Exec/);
+    assert.match(editedRich, /Arguments/);
+    assert.match(editedRich, /Result/);
+    assert.equal(calls[toolEditIndex]?.body.text, undefined);
     await handlers.get("agent_settled")?.({}, ctx);
     await commands.get("telegram-disconnect")?.handler("", ctx);
     await handlers.get("session_shutdown")?.({}, ctx);
@@ -835,7 +851,9 @@ test("Verbose activity uses follower transport and loses stale registration auth
     async callFollowerApi(operation: string, args: unknown[]) {
       followerCalls.push({ operation, args });
       const method = args[0];
-      return method === "sendMessage" ? { message_id: 501 } : true;
+      return method === "sendMessage" || method === "sendRichMessage"
+        ? { message_id: 501 }
+        : true;
     },
   });
   const authority = Routing.createTelegramAssistantOutputAuthorityRuntime({
@@ -855,6 +873,7 @@ test("Verbose activity uses follower transport and loses stale registration auth
     captureAuthority: authority.captureAuthority,
     isAuthorityActive: authority.isAuthorityActive,
     sendMessage: api.sendMessage,
+    sendRichMessage: api.sendRichMessage,
     editMessageText: api.editMessageText,
   });
   const base = {
@@ -883,7 +902,7 @@ test("Verbose activity uses follower transport and loses stale registration auth
   await runtime.waitForIdle();
   assert.deepEqual(
     followerCalls.map((call) => call.args[0]),
-    ["sendMessage", "sendMessage"],
+    ["sendMessage", "sendRichMessage"],
   );
   const thinkingBody = followerCalls[0]?.args[1] as
     | Record<string, unknown>

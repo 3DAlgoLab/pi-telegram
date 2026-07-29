@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.26.0: Rich Tool Activity
+
+- `Tool Presentation`: Moved completed tool batches from one ordinary HTML expandable quote to native Rich Messages. Each sentence-case tool header now precedes separate closed `Arguments`, retained `Update N`, and `Result`/`Error` details containing compact JSON code blocks; dropped-update counts remain visible in the first retained update summary. Thinking keeps its distinct persistent HTML expandable quote. Impact: technical history becomes easier to scan, tool phases no longer compete inside one large JSON disclosure, and thinking remains optimized for prose.
+- `Activity Safety`: Preserved tool-start ordering, batch coalescing, redaction, per-field truncation, target and generation fencing, final-answer ordering, and no replay after ambiguous sends. Rich activity disables entity detection; a known-safe Rich HTTP 400 rejection falls back once to the previous HTML representation. Impact: the richer UI retains the existing bounded privacy and transport guarantees without duplicate technical messages.
+- `Discoverable Defaults`: Changed absent `assistant.activity` to `verbose` and absent `assistant.timeInjection` to `interval` with the existing one-hour interval fallback. Explicit stored settings remain authoritative and receive no migration. Impact: new installations discover technical activity and periodic wall-clock context immediately, while existing operator choices remain unchanged.
+
 ## 0.25.7: Multi-Instance Activity Isolation Hotfix
 
 - `Activity Config`: Reloaded the shared file-backed `assistant.activity` setting in every Pi process at `agent-start` before activity admission, failing closed for that run if refresh fails. Impact: selecting `thinking` emits only thinking, selecting `tools` emits only tools, `verbose` emits both, and `quiet` emits neither across all live instances instead of stale process-local config behaving like an older broader mode.

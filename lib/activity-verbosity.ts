@@ -11,7 +11,10 @@ import {
 } from "./rendering.ts";
 import type {
   TelegramEditMessageTextBody,
+  TelegramInputRichBlock,
+  TelegramInputRichMessage,
   TelegramSendMessageBody,
+  TelegramSendRichMessageBody,
   TelegramSentMessage,
 } from "./telegram-api.ts";
 import type { TelegramTarget } from "./target.ts";
@@ -40,6 +43,7 @@ interface ToolMessage {
   messageId: number;
   tools: ToolActivity[];
   target: TelegramTarget;
+  format: "rich" | "html";
 }
 
 interface ReasoningMessage {
@@ -198,8 +202,68 @@ export function renderTelegramToolActivityHtml(
   return tools.map(renderToolActivityHtml).join("\n\n");
 }
 
+function createToolActivityDetail(
+  summary: string,
+  text: string,
+): TelegramInputRichBlock {
+  return {
+    type: "details",
+    summary: { type: "bold", text: summary },
+    blocks: [{ type: "pre", text, language: "json" }],
+  };
+}
+
+function renderToolActivityRichBlocks(tool: ToolActivity): TelegramInputRichBlock[] {
+  const status = tool.complete
+    ? tool.isError
+      ? "failed"
+      : "done"
+    : "running";
+  const blocks: TelegramInputRichBlock[] = [
+    {
+      type: "paragraph",
+      text: [
+        {
+          type: "bold",
+          text: `${TELEGRAM_TOOL_ACTIVITY_ICON}  ${capitalizeActivityLabel(tool.name)}:`,
+        },
+        " ",
+        { type: "code", text: status },
+      ],
+    },
+    createToolActivityDetail("Arguments", tool.args),
+  ];
+  tool.updates.forEach((update, index) => {
+    const number = tool.droppedUpdates + index + 1;
+    const omitted =
+      index === 0 && tool.droppedUpdates > 0
+        ? ` · ${tool.droppedUpdates} earlier omitted`
+        : "";
+    blocks.push(createToolActivityDetail(`Update ${number}${omitted}`, update));
+  });
+  if (tool.complete && tool.result !== undefined) {
+    blocks.push(
+      createToolActivityDetail(tool.isError ? "Error" : "Result", tool.result),
+    );
+  }
+  return blocks;
+}
+
+export function renderTelegramToolActivityRichMessage(
+  tools: readonly ToolActivity[],
+): TelegramInputRichMessage {
+  return {
+    blocks: tools.flatMap(renderToolActivityRichBlocks),
+    skip_entity_detection: true,
+  };
+}
+
 function toolMessageSize(tools: readonly ToolActivity[]): number {
   return renderTelegramToolActivityHtml(tools).length;
+}
+
+function isKnownSafeRichActivityRejection(error: unknown): boolean {
+  return error instanceof Error && /HTTP 400: Bad Request:/i.test(error.message);
 }
 
 export function renderTelegramThinkingActivityHtml(
@@ -227,6 +291,9 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
   captureAuthority: () => TAuthority;
   isAuthorityActive: (authority: TAuthority) => boolean;
   sendMessage: (body: TelegramSendMessageBody) => Promise<TelegramSentMessage>;
+  sendRichMessage: (
+    body: TelegramSendRichMessageBody,
+  ) => Promise<TelegramSentMessage>;
   editMessageText: (
     body: TelegramEditMessageTextBody,
   ) => Promise<"edited" | "unchanged">;
@@ -371,31 +438,70 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
     try {
       if (canAppend && toolMessage) {
         const nextTools = [...toolMessage.tools, tool];
-        await deps.editMessageText({
-          chat_id: target.chatId,
-          message_id: toolMessage.messageId,
-          text: renderTelegramToolActivityHtml(nextTools),
-          parse_mode: "HTML",
-          link_preview_options: { is_disabled: true },
-        });
+        try {
+          await deps.editMessageText({
+            chat_id: target.chatId,
+            message_id: toolMessage.messageId,
+            ...(toolMessage.format === "rich"
+              ? {
+                  rich_message:
+                    renderTelegramToolActivityRichMessage(nextTools),
+                }
+              : {
+                  text: renderTelegramToolActivityHtml(nextTools),
+                  parse_mode: "HTML" as const,
+                  link_preview_options: { is_disabled: true },
+                }),
+          });
+        } catch (error) {
+          if (
+            toolMessage.format !== "rich" ||
+            !isKnownSafeRichActivityRejection(error)
+          ) {
+            throw error;
+          }
+          await deps.editMessageText({
+            chat_id: target.chatId,
+            message_id: toolMessage.messageId,
+            text: renderTelegramToolActivityHtml(nextTools),
+            parse_mode: "HTML",
+            link_preview_options: { is_disabled: true },
+          });
+          toolMessage.format = "html";
+        }
         if (generation !== acceptedGeneration) return;
         toolMessage.tools = nextTools;
         return;
       }
-      const sent = await deps.sendMessage({
+      const body = {
         chat_id: target.chatId,
         ...(target.threadId === undefined
           ? {}
           : { message_thread_id: target.threadId }),
-        text: renderTelegramToolActivityHtml([tool]),
-        parse_mode: "HTML",
-        link_preview_options: { is_disabled: true },
-      });
+      };
+      let sent: TelegramSentMessage;
+      let format: ToolMessage["format"] = "rich";
+      try {
+        sent = await deps.sendRichMessage({
+          ...body,
+          rich_message: renderTelegramToolActivityRichMessage([tool]),
+        });
+      } catch (error) {
+        if (!isKnownSafeRichActivityRejection(error)) throw error;
+        sent = await deps.sendMessage({
+          ...body,
+          text: renderTelegramToolActivityHtml([tool]),
+          parse_mode: "HTML",
+          link_preview_options: { is_disabled: true },
+        });
+        format = "html";
+      }
       if (generation !== acceptedGeneration) return;
       toolMessage = {
         messageId: sent.message_id,
         tools: [tool],
         target: { ...target },
+        format,
       };
     } catch (error) {
       deps.recordFailure?.(canAppend ? "tool-edit" : "tool-send", event, error);

@@ -76,7 +76,7 @@ test("Telegram config helper returns empty config when file is absent", async ()
   );
 });
 
-test("activity defaults invalid values to quiet and migrates legacy verbosity on write", async () => {
+test("activity defaults absent config to verbose, fails invalid values closed, and migrates legacy verbosity on write", async () => {
   const agentDir = await mkdtemp(join(tmpdir(), "pi-telegram-verbosity-"));
   const configPath = join(agentDir, "telegram.json");
   const store = createTelegramConfigStore({
@@ -89,6 +89,11 @@ test("activity defaults invalid values to quiet and migrates legacy verbosity on
     },
   });
   const controls = createTelegramConfigControls(store);
+  store.set({});
+  assert.equal(controls.getActivityVerbosity(), "verbose");
+  store.set({ assistant: { activityVerbosity: "quiet" } });
+  assert.equal(controls.getActivityVerbosity(), "quiet");
+  store.set({ assistant: { activityVerbosity: "verbose" } });
   assert.equal(controls.getActivityVerbosity(), "verbose");
   store.set({
     assistant: {
@@ -911,7 +916,7 @@ test("Telegram time injection mode setter persists telegram.json", async () => {
   const getMode = createTelegramTimeInjectionModeGetter(store);
   const setMode = createTelegramTimeInjectionModeSetter(store);
 
-  assert.equal(getMode(), "hidden");
+  assert.equal(getMode(), "interval");
 
   await setMode("interval");
 

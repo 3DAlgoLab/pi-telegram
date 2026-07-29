@@ -516,6 +516,7 @@ export default function (pi: Pi.ExtensionAPI) {
       isAuthorityActive:
         assistantOutputBindingRuntime.authority.isAuthorityActive,
       sendMessage,
+      sendRichMessage,
       editMessageText: editTelegramMessageText,
       recordFailure(operation, event, error) {
         recordRuntimeEvent("activity", error, {

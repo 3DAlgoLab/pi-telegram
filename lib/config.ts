@@ -769,7 +769,10 @@ export function createTelegramActivityVerbosityGetter(
       }
       return "quiet";
     }
-    return assistant?.activityVerbosity === "verbose" ? "verbose" : "quiet";
+    if (assistant?.activityVerbosity !== undefined) {
+      return assistant.activityVerbosity === "verbose" ? "verbose" : "quiet";
+    }
+    return "verbose";
   };
 }
 
@@ -854,9 +857,11 @@ export function resolveTelegramTimeConfig(
   timeInjection: TelegramTimeMode | undefined = undefined,
 ): ResolvedTelegramTimeConfig {
   const injectionMode: TelegramTimeMode =
-    timeInjection === "always" || timeInjection === "interval"
-      ? timeInjection
-      : "hidden";
+    timeInjection === undefined
+      ? "interval"
+      : timeInjection === "always" || timeInjection === "interval"
+        ? timeInjection
+        : "hidden";
   const interval =
     typeof raw?.interval === "number" && raw.interval > 0
       ? raw.interval
