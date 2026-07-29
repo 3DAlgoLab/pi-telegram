@@ -5,7 +5,10 @@
  */
 
 import type { TelegramActivityEvent } from "./activity.ts";
-import { escapeHtml } from "./rendering.ts";
+import {
+  escapeHtml,
+  renderTelegramInlineMarkdownHtml,
+} from "./rendering.ts";
 import type {
   TelegramEditMessageTextBody,
   TelegramSendMessageBody,
@@ -147,8 +150,18 @@ function serializeActivityValue(value: unknown): string {
   return `${redacted.slice(0, TELEGRAM_ACTIVITY_DETAIL_MAX_CHARS)}\n… [${omitted} chars truncated]`;
 }
 
+function neutralizeActivityAutoLinks(text: string): string {
+  return text.replace(/\b(https?:\/\/)(?=\S)/gi, "$1\u200b");
+}
+
 function escapeActivityEvidenceHtml(text: string): string {
-  return escapeHtml(text.replace(/\b(https?:\/\/)(?=\S)/gi, "$1\u200b"));
+  return escapeHtml(neutralizeActivityAutoLinks(text));
+}
+
+function renderThinkingActivityEvidenceHtml(text: string): string {
+  return renderTelegramInlineMarkdownHtml(neutralizeActivityAutoLinks(text), {
+    allowLinks: false,
+  });
 }
 
 function renderToolActivityHtml(tool: ToolActivity): string {
@@ -191,7 +204,7 @@ export function renderTelegramThinkingActivityHtml(
 ): string {
   return [
     `<b>${TELEGRAM_THINKING_ACTIVITY_ICON}&#160; thinking:</b> <code>${escapeHtml(thinkingLevel)}</code>`,
-    `<blockquote expandable>${escapeActivityEvidenceHtml(text)}</blockquote>`,
+    `<blockquote expandable>${renderThinkingActivityEvidenceHtml(text)}</blockquote>`,
   ].join("\n");
 }
 

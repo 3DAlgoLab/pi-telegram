@@ -499,11 +499,12 @@ function makeInlineMarkdownToken(
 function stashInlineMarkdownLinks(
   text: string,
   state: InlineMarkdownTokenState,
+  allowLinks: boolean,
 ): string {
   return replaceMarkdownLink(text, {
     renderInlineLink: (link, supported) => {
       const plainLabel = stripInlineMarkdownToPlainText(link.label).trim();
-      if (!supported)
+      if (!allowLinks || !supported)
         return plainLabel.length > 0 ? plainLabel : link.destination;
       const renderedLabel =
         plainLabel.length > 0 ? plainLabel : link.destination;
@@ -513,6 +514,7 @@ function stashInlineMarkdownLinks(
       );
     },
     renderAutolink: (link) => {
+      if (!allowLinks) return link.destination;
       return makeInlineMarkdownToken(
         state,
         `<a href="${escapeHtmlAttribute(link.destination)}">${escapeHtml(link.destination)}</a>`,
@@ -564,14 +566,28 @@ function restoreInlineMarkdownTokens(
   );
 }
 
-function renderInlineMarkdown(text: string): string {
+function renderInlineMarkdown(
+  text: string,
+  options: { allowLinks?: boolean } = {},
+): string {
   const tokenState: InlineMarkdownTokenState = { tokens: [] };
-  let result = stashInlineMarkdownLinks(text, tokenState);
+  let result = stashInlineMarkdownLinks(
+    text,
+    tokenState,
+    options.allowLinks !== false,
+  );
   result = stashInlineMarkdownCodeSpans(result, tokenState);
   result = escapeHtml(result);
   result = applyInlineMarkdownStyles(result);
   result = result.replace(/\\([\\`*_{}\[\]()#+\-.!>~|])/g, "$1");
   return restoreInlineMarkdownTokens(result, tokenState);
+}
+
+export function renderTelegramInlineMarkdownHtml(
+  text: string,
+  options: { allowLinks?: boolean } = {},
+): string {
+  return renderInlineMarkdown(text, options);
 }
 
 function buildListIndent(level: number): string {

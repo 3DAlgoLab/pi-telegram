@@ -11,6 +11,7 @@ import {
   escapeHtml,
   escapeHtmlAttribute,
   MAX_MESSAGE_LENGTH,
+  renderTelegramInlineMarkdownHtml,
   renderTelegramMessage,
 } from "../lib/rendering.ts";
 
@@ -23,6 +24,16 @@ test("HTML helpers escape text and attribute contexts", () => {
   assert.equal(
     escapeHtmlAttribute(`"quoted" 'value' & <tag>`),
     "&quot;quoted&quot; &#39;value&#39; &amp; &lt;tag&gt;",
+  );
+});
+
+test("Inline Markdown helper can render formatting without links", () => {
+  assert.equal(
+    renderTelegramInlineMarkdownHtml(
+      "**Reviewing** [docs](https://example.com) <https://example.com>",
+      { allowLinks: false },
+    ),
+    "<b>Reviewing</b> docs https://example.com",
   );
 });
 

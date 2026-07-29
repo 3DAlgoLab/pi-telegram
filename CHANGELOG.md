@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.25.5: Thinking HTML Rendering Hotfix
+
+- `Thinking Presentation`: Rendered inline Markdown emphasis and code in provider-exposed thinking as Telegram HTML inside the existing expandable blockquote while keeping links inert and HTTP(S) auto-link neutralization intact. Impact: reasoning such as `**Reviewing data models**` appears as formatted collapsed technical evidence instead of leaking raw Markdown markers.
+
 ## 0.25.4: Technical Link Preview Hotfix
 
 - `Activity Evidence`: Kept Bot API link previews disabled on every thinking/tool send and edit, and added an invisible separator after HTTP(S) schemes inside technical evidence so Telegram clients cannot auto-link URL-like arguments, updates, results, or reasoning when rendering expandable blockquotes. Impact: incidental URLs no longer create distracting preview cards in persistent activity messages.
