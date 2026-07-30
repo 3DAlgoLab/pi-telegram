@@ -95,7 +95,7 @@ export interface TelegramBusFollowerRegistrationRuntime<TContext> {
   registerWithLeader: (
     ctx: TContext,
     leader: { busSocketPath?: string; busSecret?: string },
-    options?: { target?: TelegramTarget },
+    options?: { target?: TelegramTarget; previousInstanceId?: string },
   ) => Promise<boolean>;
   setContext: (ctx: TContext) => void;
   disconnectFromLeader?: () => Promise<boolean>;
@@ -815,7 +815,10 @@ export function createTelegramBusFollowerSessionRefreshHook<TContext>(
           const restored = await deps.registrationRuntime.registerWithLeader(
             ctx,
             lockState.lock,
-            { target: handoff.target },
+            {
+              target: handoff.target,
+              previousInstanceId: handoff.instanceId,
+            },
           );
           if (deps.isSessionActive && !deps.isSessionActive(ctx)) return;
           if (restored) {
@@ -1240,6 +1243,18 @@ export function createTelegramBusFollowerRegistrationRuntime<
   };
   return {
     registerWithLeader: async (ctx, leader, options) => {
+      const pendingHandoff = options
+        ? undefined
+        : getTelegramFollowerSessionHandoff();
+      const pendingHandoffOptions = isTelegramFollowerSessionHandoffFresh(
+        pendingHandoff,
+      )
+        ? {
+            target: pendingHandoff.target,
+            previousInstanceId: pendingHandoff.instanceId,
+          }
+        : undefined;
+      const registrationOptions = options ?? pendingHandoffOptions;
       const leaderSocketPath =
         leader.busSocketPath ??
         deps.getLeaderSocketPath?.() ??
@@ -1257,6 +1272,9 @@ export function createTelegramBusFollowerRegistrationRuntime<
         auth: activeAuthSecret,
         registration: {
           instanceId: deps.instanceId,
+          ...(registrationOptions?.previousInstanceId
+            ? { previousInstanceId: registrationOptions.previousInstanceId }
+            : {}),
           profileKey:
             deps.getProfileKey?.(ctx) ??
             (ctx.cwd ? `cwd:${ctx.cwd}` : undefined),
@@ -1271,7 +1289,7 @@ export function createTelegramBusFollowerRegistrationRuntime<
           cwd: ctx.cwd,
           pid: getPid(),
           target:
-            options?.target ??
+            registrationOptions?.target ??
             deps.registrationState?.getTarget() ??
             lastKnownTarget,
           busSocketPath:
@@ -1344,6 +1362,13 @@ export function createTelegramBusFollowerRegistrationRuntime<
         activeContext = ctx;
         await sendHeartbeat();
         startHeartbeat(leaderSocketPath);
+        if (
+          pendingHandoffOptions &&
+          getTelegramFollowerSessionHandoff()?.instanceId ===
+            pendingHandoffOptions.previousInstanceId
+        ) {
+          setTelegramFollowerSessionHandoff(undefined);
+        }
         return true;
       }
       stopHeartbeat();
