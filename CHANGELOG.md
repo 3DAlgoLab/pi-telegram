@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.26.12: Monospaced Tool Evidence Keys
+
+- `Tool Evidence Typography`: Rendered nested `arguments`, `update`, `result`, and `error` summaries as lowercase inline code, including any dropped-update suffix in the same span. Impact: child labels read as compact quote-free outer JSON keys while root styling, disclosure state, evidence blocks, message height, and delivery guarantees remain unchanged.
+
 ## 0.26.11: Compact Tool Hierarchy And Ordered Settings Copy
 
 - `Tool Evidence Hierarchy`: Restyled nested Rich evidence summaries as plain lowercase labels (`arguments`, `update`, `result`, `error`) without icons, list markers, or heading emphasis. Arguments still open with the root and secondary evidence remains collapsed. Impact: child nodes read as quote-free outer JSON keys without adding message height or changing evidence behavior.

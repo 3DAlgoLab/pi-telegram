@@ -2,44 +2,18 @@
 
 _This backlog tracks only open release-relevant work: hotfixes, bounded maintenance, live runtime verification, evidence-gated Telegram client follow-ups, and upstream Pi API blockers. Completed outcomes and validation evidence belong in `CHANGELOG.md`, not in this queue._
 
-## P0 — 0.26.11 Windows Release Gates
+## P0 — Monospaced Tool Evidence Keys
 
-Context: the first final release matrix correctly held publication after loaded Windows scheduling exceeded two integration-only deadlines: queued model-menu completion and graceful shutdown of a full-Pi parent fixture. Neither failure changed the runtime feature contract, but both gates must remain bounded and preserve their exact assertions.
-
-Open work:
-
-- [x] Recheck the generic integration predicate at its deadline and give only the model-menu completion assertion a five-second budget.
-- [x] Give the full-Pi parent fixture up to ten seconds to complete graceful shutdown after its stop marker, without weakening exit-code or child-poll assertions.
-- [ ] Pass two fresh Linux/macOS/Windows matrices after these final changes.
-
-Done when: both Windows-sensitive evidence paths complete under runner load, genuine hangs remain bounded and diagnostic, and two consecutive release matrices pass before merge.
-
-## P0 — Settings Description Choice Ordering
-
-Context: Settings detail copy historically tended to place the default value first. The default is metadata, not an ordering rule. Value descriptions should mirror the actual choice controls so operators can scan explanatory text and buttons in the same sequence.
+Context: nested `arguments`, `update`, `result`, and `error` summaries already behave like quote-free outer JSON keys. Rendering the lowercase label itself as inline code completes that semantic relationship without reintroducing icons, markers, or extra height.
 
 Open work:
 
-- [x] Order every core Settings value-description list exactly like its selectable controls: keyboard rows top-to-bottom and values within a shared row left-to-right; never move a value merely because it carries `(default)`.
-- [x] Keep `(default)` attached to the actual default wherever that value falls in control order; for example, Draft previews should describe `on` before `off (default)` because the buttons display On then Off, while Activity should retain `quiet`, `thinking`, `tools`, `verbose (default)`.
-- [x] Make the option/control order the explicit source of truth or protect parity with focused regressions so description and keyboard order cannot drift independently.
-- [x] Live-smoke the Settings detail ordering before the guarded release flow.
+- [x] Render every nested tool evidence summary as one lowercase monospaced label, retaining omission suffixes inside the same code span.
+- [x] Preserve root styling, Arguments open-by-default behavior, collapsed secondary evidence, JSON blocks, and all delivery guarantees.
+- [x] Update focused regressions, durable UI documentation, changelog, and package metadata.
+- [ ] Pass live Telegram smoke plus two fresh Linux/macOS/Windows matrices before release.
 
-Done when: every Settings description follows its visible chooser rather than default-first history, default annotations remain truthful, automated parity coverage passes, and live Telegram screens confirm scan order.
-
-## P0 — Nested Tool Evidence List Styling
-
-Context: nested Rich tool evidence labels should read like quote-free outer JSON keys rather than peer headings or list items. Plain lowercase labels distinguish evidence children from the root without adding a redundant marker. Root labels remain sentence-case, but tool names beginning with a two- or three-character run of the same ASCII letter should preserve that recognizable prefix as uppercase instead of flattening it to one initial capital.
-
-Open work:
-
-- [x] Render each child summary as a marker-free plain lowercase label: `arguments`, `update N (K earlier omitted)`, `result`, or `error`.
-- [x] At the root level only, uppercase a leading repeated-letter run when its length is two or three, then retain ordinary label casing for the remainder; examples: `ffgrep` → `FFgrep`, `fffind` → `FFFind`, and `bash` → `Bash`.
-- [x] Keep Arguments open-by-default behavior intact, secondary nodes collapsed, and all JSON evidence, bounds, ordering, coalescing, redaction, fallback, and fencing guarantees unchanged.
-- [x] Update focused Rich block regressions, durable UI documentation, changelog, and package metadata.
-- [x] Live-smoke `FFFind` and `Bash` roots plus the nested hierarchy, then remove the redundant minus from the final design in response to operator feedback.
-
-Done when: opening a tool root reveals compact quote-free evidence keys without adding height, all evidence behavior remains intact, automated validation passes, live clients confirm the hierarchy, and the hotfix clears the guarded release flow.
+Done when: child keys read as compact code-like metadata, hierarchy and behavior remain unchanged, live clients confirm the style, and the guarded hotfix release completes.
 
 ## P1 — Windows Graceful Disconnect Test Budget
 

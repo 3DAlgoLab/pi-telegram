@@ -134,7 +134,7 @@ test("tool Rich activity separates arguments, updates, and result details", () =
       blocks: [
         {
           type: "details",
-          summary: "arguments",
+          summary: { type: "code", text: "arguments" },
           blocks: [
             {
               type: "pre",
@@ -146,14 +146,17 @@ test("tool Rich activity separates arguments, updates, and result details", () =
         },
         {
           type: "details",
-          summary: "update 3 (2 earlier omitted)",
+          summary: {
+            type: "code",
+            text: "update 3 (2 earlier omitted)",
+          },
           blocks: [
             { type: "pre", text: '{\n  "line": 1\n}', language: "json" },
           ],
         },
         {
           type: "details",
-          summary: "result",
+          summary: { type: "code", text: "result" },
           blocks: [
             { type: "pre", text: '{\n  "ok": true\n}', language: "json" },
           ],

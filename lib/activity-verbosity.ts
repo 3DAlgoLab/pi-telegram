@@ -212,7 +212,7 @@ function createToolActivityDetail(
 ): TelegramInputRichBlock {
   return {
     type: "details",
-    summary,
+    summary: { type: "code", text: summary },
     blocks: [{ type: "pre", text, language: "json" }],
     ...(isOpen ? { is_open: true as const } : {}),
   };
