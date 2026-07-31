@@ -486,6 +486,8 @@ export async function ensureTelegramLeaderThreadBinding(
   return ownTarget;
 }
 
+export const TELEGRAM_SYNC_SLICE_TARGET_BINDINGS = "target-bindings";
+
 export const TELEGRAM_SYNC_SLICES = [
   "bot-identity",
   "bot-capabilities",
@@ -493,7 +495,7 @@ export const TELEGRAM_SYNC_SLICES = [
   "allowed-user",
   "topic-capability",
   "topic-state",
-  "target-bindings",
+  TELEGRAM_SYNC_SLICE_TARGET_BINDINGS,
   "reservations",
   "transport-health",
 ] as const;

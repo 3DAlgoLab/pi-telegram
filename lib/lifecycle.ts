@@ -6,6 +6,7 @@
 
 import * as BusFollower from "./bus-follower.ts";
 import * as Queue from "./queue.ts";
+import * as TextGroups from "./text-groups.ts";
 import type {
   AgentEndEvent,
   AgentSettledEvent,
@@ -251,6 +252,67 @@ export interface TelegramBridgeSessionLifecycleAssemblyDeps<
   > &
     BusFollower.TelegramBusFollowerSessionReplacementSuspenderDeps;
   services: TelegramBridgeSessionServiceRuntime;
+}
+
+export interface TelegramBridgeSessionLifecyclePorts<
+  TQueueItem,
+  TModel = unknown,
+> {
+  contextStore: TelegramSessionContextStore<ExtensionContext>;
+  queue: Omit<
+    Queue.TelegramSessionLifecycleRuntimeDeps<
+      ExtensionContext,
+      TQueueItem,
+      TModel
+    >,
+    "isSessionActive" | "stopPolling" | "clearPendingMediaGroups"
+  >;
+  follower: Omit<
+    BusFollower.TelegramBusFollowerSessionRefreshHookDeps<ExtensionContext>,
+    "isSessionActive"
+  > &
+    BusFollower.TelegramBusFollowerSessionReplacementSuspenderDeps;
+  services: {
+    mediaGroup: {
+      resume(ctx: ExtensionContext): void;
+      suspend(): void;
+    };
+    textGroup: {
+      resume(ctx: ExtensionContext): void;
+      suspend(): void;
+    };
+    delivery: TelegramBridgeSessionServiceRuntime["delivery"];
+    polling: TelegramBridgeSessionServiceRuntime["polling"];
+    capabilityMonitor: TelegramBridgeSessionServiceRuntime["capabilityMonitor"];
+    queueWatchdog: TelegramBridgeSessionServiceRuntime["queueWatchdog"];
+  };
+}
+
+export function createTelegramBridgeSessionLifecycleDeps<
+  TQueueItem,
+  TModel = unknown,
+>(
+  ports: TelegramBridgeSessionLifecyclePorts<TQueueItem, TModel>,
+): TelegramBridgeSessionLifecycleAssemblyDeps<TQueueItem, TModel> {
+  return {
+    contextStore: ports.contextStore,
+    queue: ports.queue,
+    follower: ports.follower,
+    services: {
+      resumeGroupedInput(ctx) {
+        ports.services.mediaGroup.resume(ctx);
+        ports.services.textGroup.resume(ctx);
+      },
+      suspendGroupedInput: TextGroups.createTelegramGroupedInputClearer({
+        clearMediaGroups: ports.services.mediaGroup.suspend,
+        clearTextGroups: ports.services.textGroup.suspend,
+      }),
+      delivery: ports.services.delivery,
+      polling: ports.services.polling,
+      capabilityMonitor: ports.services.capabilityMonitor,
+      queueWatchdog: ports.services.queueWatchdog,
+    },
+  };
 }
 
 export function createTelegramBridgeSessionLifecycleAssembly<

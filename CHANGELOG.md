@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.26.13: Entrypoint Compression And BotFather Prerequisites
+
+- `Entrypoint Compression`: Moved low-level policy out of `index.ts` into owning domains: the deferred queue dispatch delay defaults in the queue domain, the delivery generation seed is built by the delivery domain, the `target-bindings` sync slice key and the default profile name resolve from their domains, and bus-runtime capability answers come from the thread capability state. Removed a redundant follower client timeout literal that duplicated the domain default. Impact: the composition root wires ports while constants, generations, and capability decisions stay with their owning domains.
+- `Assembly Ownership`: Extracted the follower assembly (receiver, target replacement, recovery, registration) and session-lifecycle assembly (queue, follower, services) dependency structures into builders owned by `bus-follower` and `lifecycle`, normalizing shared ports and moving auth-secret derivation and grouped-input sequencing into domain runtimes. Impact: assembly shape and policy live in the owning domains, and the entrypoint reads as named construction steps instead of nested constructor calls.
+- `Setup Documentation`: Documented the BotFather prerequisites for guest mode, private-chat Threaded Mode, and queue-reaction admin rights in the Quick Start. Impact: operators can enable the capabilities a feature needs instead of discovering that a disabled capability silently never triggers.
+
 ## 0.26.12: Monospaced Tool Evidence Keys
 
 - `Tool Evidence Typography`: Rendered nested `arguments`, `update`, `result`, and `error` summaries as lowercase inline code, including any dropped-update suffix in the same span. Impact: child labels read as compact quote-free outer JSON keys while root styling, disclosure state, evidence blocks, message height, and delivery guarantees remain unchanged.

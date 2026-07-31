@@ -351,6 +351,7 @@ export interface TelegramThreadCapabilityStateRuntime {
   setBusPollingStarted(started: boolean): void;
   isTopicModeUnavailable(): boolean;
   setTopicModeUnavailable(unavailable: boolean): void;
+  isBusRuntimeEnabled(): boolean;
   shouldForceFreshLeaderThread(): boolean;
   setForceFreshLeaderThread(forceFresh: boolean): void;
 }
@@ -458,6 +459,7 @@ export function createTelegramThreadCapabilityStateRuntime(): TelegramThreadCapa
     setTopicModeUnavailable(unavailable) {
       topicModeUnavailable = unavailable;
     },
+    isBusRuntimeEnabled: () => !topicModeUnavailable,
     shouldForceFreshLeaderThread: () => forceFreshLeaderThread,
     setForceFreshLeaderThread(forceFresh) {
       forceFreshLeaderThread = forceFresh;
