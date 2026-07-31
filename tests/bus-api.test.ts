@@ -382,3 +382,41 @@ test("Bus-aware API runtime routes follower multipart uploads through the leader
     },
   ]);
 });
+
+test("follower editMessageText normalizes an unmodified-message rejection to unchanged", async () => {
+  const runtime = createTelegramBusAwareApiRuntime({
+    directRuntime: createDirectRuntime([]),
+    ownsDirect: () => false,
+    callFollowerApi: async () => {
+      throw new Error(
+        "Telegram API editMessageText failed: HTTP 400: Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message",
+      );
+    },
+  });
+  const result = await runtime.editMessageText({
+    chat_id: 7,
+    message_id: 42,
+    text: "same body",
+    parse_mode: "HTML",
+  });
+  assert.equal(result, "unchanged");
+});
+
+test("follower editMessageText rethrows non-unmodified failures", async () => {
+  const runtime = createTelegramBusAwareApiRuntime({
+    directRuntime: createDirectRuntime([]),
+    ownsDirect: () => false,
+    callFollowerApi: async () => {
+      throw new Error("Telegram API editMessageText failed: HTTP 400: Bad Request: message text is empty");
+    },
+  });
+  await assert.rejects(
+    runtime.editMessageText({
+      chat_id: 7,
+      message_id: 42,
+      text: "",
+      parse_mode: "HTML",
+    }),
+    /message text is empty/,
+  );
+});
