@@ -50,6 +50,7 @@ function createHarness(
 ) {
   let mode = options.mode ?? "verbose";
   let authority = 1;
+  let nowMs = 0;
   const sends: TelegramSendMessageBody[] = [];
   const richSends: TelegramSendRichMessageBody[] = [];
   const edits: TelegramEditMessageTextBody[] = [];
@@ -59,6 +60,7 @@ function createHarness(
       if (options.refreshError) throw options.refreshError;
       if (options.refreshedMode) mode = options.refreshedMode;
     },
+    getNowMs: () => nowMs,
     resolveTarget: (activity) => activity.target,
     captureAuthority: () => authority,
     isAuthorityActive: (captured) => captured === authority,
@@ -83,6 +85,9 @@ function createHarness(
     edits,
     setMode(value: ActivityMode) {
       mode = value;
+    },
+    advanceNow(ms: number) {
+      nowMs += ms;
     },
     replaceAuthority() {
       authority += 1;
@@ -649,6 +654,61 @@ test("reasoning and tool updates retain bounded latest evidence", async () => {
   assert.match(tool, /3 earlier omitted/);
   assert.doesNotMatch(tool, /update-0/);
   assert.match(tool, /update-6/);
+});
+
+test("reasoning edits are throttled to a minimum interval between frames", async () => {
+  const harness = createHarness({ mode: "thinking" });
+  harness.runtime.accept(event(1, { type: "agent-start" }));
+  harness.runtime.accept(
+    event(2, {
+      type: "reasoning-delta",
+      contentIndex: 0,
+      delta: "a".repeat(200),
+    }),
+  );
+  await harness.runtime.waitForIdle();
+  assert.equal(harness.sends.length, 1);
+  harness.runtime.accept(
+    event(3, {
+      type: "reasoning-delta",
+      contentIndex: 0,
+      delta: "b".repeat(200),
+    }),
+  );
+  await harness.runtime.waitForIdle();
+  assert.equal(harness.edits.length, 0, "within interval no edit");
+  harness.advanceNow(2_000);
+  harness.runtime.accept(
+    event(4, {
+      type: "reasoning-delta",
+      contentIndex: 0,
+      delta: "c".repeat(200),
+    }),
+  );
+  await harness.runtime.waitForIdle();
+  assert.equal(harness.edits.length, 1, "after interval edit fires");
+  harness.runtime.accept(
+    event(5, {
+      type: "reasoning-delta",
+      contentIndex: 0,
+      delta: "d".repeat(200),
+    }),
+  );
+  await harness.runtime.waitForIdle();
+  assert.equal(
+    harness.edits.length,
+    1,
+    "delta inside the new interval stays throttled",
+  );
+  harness.runtime.accept(
+    event(6, {
+      type: "reasoning-end",
+      contentIndex: 0,
+      text: "done",
+    }),
+  );
+  await harness.runtime.waitForIdle();
+  assert.equal(harness.edits.length, 2, "final flush covers throttled chars");
 });
 
 test("reset drops accepted events that have not started processing", async () => {

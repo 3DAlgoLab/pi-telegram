@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.26.14: Reasoning Activity Throttle
+
+- `Reasoning Throttle`: Added a minimum interval between reasoning-block edits (`TELEGRAM_REASONING_MIN_INTERVAL_MS = 1_200`) so the first frame publishes immediately while later frames wait until both the interval and the 160-char delta threshold pass. The final `reasoning-end`/`agent-end` flush stays unconditional, and the 24-frame cap is unchanged. Impact: fast-token models with very large reasoning blocks no longer push an edit per character burst, so parallel threads stop saturating the bus and inbound Telegram messages arrive without multi-second delay.
+
 ## 0.26.13: Entrypoint Compression And BotFather Prerequisites
 
 - `Entrypoint Compression`: Moved low-level policy out of `index.ts` into owning domains: the deferred queue dispatch delay defaults in the queue domain, the delivery generation seed is built by the delivery domain, the `target-bindings` sync slice key and the default profile name resolve from their domains, and bus-runtime capability answers come from the thread capability state. Removed a redundant follower client timeout literal that duplicated the domain default. Impact: the composition root wires ports while constants, generations, and capability decisions stay with their owning domains.

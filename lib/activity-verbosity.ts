@@ -24,6 +24,7 @@ export const TELEGRAM_ACTIVITY_MESSAGE_MAX_CHARS = 3_900;
 export const TELEGRAM_ACTIVITY_MESSAGE_MAX_TOOLS = 6;
 export const TELEGRAM_REASONING_MESSAGE_MAX_FRAMES = 24;
 export const TELEGRAM_REASONING_BUFFER_MAX_CHARS = 1_200;
+export const TELEGRAM_REASONING_MIN_INTERVAL_MS = 1_200;
 export const TELEGRAM_TOOL_UPDATE_MAX_ENTRIES = 4;
 
 interface ToolActivity {
@@ -291,6 +292,7 @@ export interface TelegramActivityVerbosityRuntime {
 export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
   getActivityMode: () => "quiet" | "thinking" | "tools" | "verbose";
   refreshActivityMode?: () => Promise<void>;
+  getNowMs?: () => number;
   resolveTarget: (event: TelegramActivityEvent) => TelegramTarget | undefined;
   captureAuthority: () => TAuthority;
   isAuthorityActive: (authority: TAuthority) => boolean;
@@ -315,6 +317,7 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
   let active = true;
   let generation = 0;
   let tail = Promise.resolve();
+  const getNowMs = deps.getNowMs ?? Date.now;
   let activityId: string | undefined;
   let authority: TAuthority | undefined;
   let target: TelegramTarget | undefined;
@@ -324,6 +327,7 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
   let lastReasoningMessageChars = 0;
   let reasoningMessage: ReasoningMessage | undefined;
   let reasoningBlocked = false;
+  let lastReasoningPublishMs = 0;
   let toolMessage: ToolMessage | undefined;
   const tools = new Map<string, ToolActivity>();
   const toolOrder: string[] = [];
@@ -338,6 +342,7 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
     lastReasoningMessageChars = 0;
     reasoningMessage = undefined;
     reasoningBlocked = false;
+    lastReasoningPublishMs = 0;
     toolMessage = undefined;
     tools.clear();
     toolOrder.length = 0;
@@ -412,6 +417,7 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
       if (generation !== acceptedGeneration) return;
       reasoningMessageFrames += 1;
       lastReasoningMessageChars = reasoningChars;
+      lastReasoningPublishMs = getNowMs();
     } catch (error) {
       deps.recordFailure?.(
         canEdit ? "reasoning-edit" : "reasoning-send",
@@ -552,10 +558,11 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
       reasoningBuffer = `${reasoningBuffer}${event.delta}`.slice(
         -TELEGRAM_REASONING_BUFFER_MAX_CHARS,
       );
-      if (
-        reasoningMessageFrames < TELEGRAM_REASONING_MESSAGE_MAX_FRAMES &&
+      if (reasoningMessageFrames < TELEGRAM_REASONING_MESSAGE_MAX_FRAMES &&
         (reasoningMessageFrames === 0 ||
-          reasoningChars - lastReasoningMessageChars >= 160)
+          (getNowMs() - lastReasoningPublishMs >=
+            TELEGRAM_REASONING_MIN_INTERVAL_MS &&
+            reasoningChars - lastReasoningMessageChars >= 160))
       ) {
         await publishReasoning(event, acceptedGeneration);
       }
@@ -580,6 +587,7 @@ export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
       reasoningChars = 0;
       reasoningMessageFrames = 0;
       lastReasoningMessageChars = 0;
+      lastReasoningPublishMs = 0;
       reasoningMessage = undefined;
       reasoningBlocked = false;
       return;
