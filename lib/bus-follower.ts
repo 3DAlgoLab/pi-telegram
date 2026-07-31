@@ -35,6 +35,7 @@ import {
 
 export const TELEGRAM_BUS_FOLLOWER_PROMOTION_GRACE_MS = 2_500;
 export const TELEGRAM_FOLLOWER_SESSION_HANDOFF_TTL_MS = 30_000;
+export const TELEGRAM_BUS_FOLLOWER_CLIENT_TIMEOUT_MS = 30_000;
 export const TELEGRAM_BUS_FOLLOWER_REGISTRATION_RETRY_ATTEMPTS =
   TELEGRAM_BUS_REGISTRATION_RETRY.attempts;
 export const TELEGRAM_BUS_FOLLOWER_REGISTRATION_RETRY_DELAY_MS =
@@ -720,10 +721,12 @@ export function createTelegramBusFollowerClientRuntime<
   TMessage = unknown,
 >(deps: TelegramBusFollowerClientRuntimeDeps<TMessage>) {
   const createRequestId = createTelegramBusRequestIdFactory(deps.instanceId);
+  const timeoutMs =
+    deps.timeoutMs ?? TELEGRAM_BUS_FOLLOWER_CLIENT_TIMEOUT_MS;
   const sharedClientDeps = {
     socketPath: deps.socketPath,
     createRequestId,
-    timeoutMs: deps.timeoutMs,
+    timeoutMs,
   };
   return {
     createRequestId,
@@ -756,7 +759,8 @@ export function createTelegramBusFollowerApiCaller(
   deps: TelegramBusFollowerApiCallerDeps,
 ): (method: string, args: unknown[]) => Promise<unknown> {
   const getNowMs = deps.getNowMs ?? Date.now;
-  const timeoutMs = deps.timeoutMs ?? 30000;
+  const timeoutMs =
+    deps.timeoutMs ?? TELEGRAM_BUS_FOLLOWER_CLIENT_TIMEOUT_MS;
   return async (method, args) => {
     const socketPath = resolveTelegramBusSocketPath(deps.socketPath);
     let response: TelegramBusEnvelope | undefined;

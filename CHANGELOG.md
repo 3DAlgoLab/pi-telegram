@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.26.15: Follower Bus Timeout Hotfix
+
+- `Follower Bus Timeout`: Restored the 30-second default for follower-client bus calls (update forwarding, thread-target control, and API calls) after an entrypoint compression pass dropped the explicit timeout and left the forwarding path falling through to the 1-second transport default. The shared default now lives on the follower client runtime as `TELEGRAM_BUS_FOLLOWER_CLIENT_TIMEOUT_MS`. Impact: leader-to-follower update forwarding no longer times out under load, so polling stops re-fetching and re-downloading the same update (which previously delivered one voice message as three identical turns).
+
 ## 0.26.14: Reasoning Activity Throttle
 
 - `Reasoning Throttle`: Added a minimum interval between reasoning-block edits (`TELEGRAM_REASONING_MIN_INTERVAL_MS = 1_200`) so the first frame publishes immediately while later frames wait until both the interval and the 160-char delta threshold pass. The final `reasoning-end`/`agent-end` flush stays unconditional, and the 24-frame cap is unchanged. Impact: fast-token models with very large reasoning blocks no longer push an edit per character burst, so parallel threads stop saturating the bus and inbound Telegram messages arrive without multi-second delay.
