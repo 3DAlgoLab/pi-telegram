@@ -198,6 +198,10 @@ export function createTelegramDeliveryLifecycleHooks(
   };
 }
 
+export function createTelegramDeliveryGenerationSeed(instanceId: string): string {
+  return `${instanceId}:${Date.now()}`;
+}
+
 /** @internal */
 export function createTelegramBridgeDeliveryLifecycleHooks<TTransportStamp>(
   deps: Omit<

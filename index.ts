@@ -107,7 +107,7 @@ export default function (pi: Pi.ExtensionAPI) {
     Ownership.createTelegramBusMessageOwnershipRuntime({
       instanceId: telegramInstanceId,
       getProfileKey() {
-        return getActiveTelegramThreadProfile() ?? "default";
+        return getActiveTelegramThreadProfile() ?? Config.TELEGRAM_DEFAULT_PROFILE_NAME;
       },
       listFollowers: telegramBusFollowerRegistry.list,
     });
@@ -117,9 +117,7 @@ export default function (pi: Pi.ExtensionAPI) {
   const runtimeEvents = runtimeDiagnostics.events;
   const recordRuntimeEvent = runtimeDiagnostics.recordRuntimeEvent;
   const configStore = Config.createTelegramConfigStore({ recordRuntimeEvent });
-  const isTelegramBusRuntimeEnabled = function (): boolean {
-    return !telegramThreadCapabilityState.isTopicModeUnavailable();
-  };
+  const isTelegramBusRuntimeEnabled = telegramThreadCapabilityState.isBusRuntimeEnabled;
   Config.bindGlobalTelegramConfigRuntime(configStore);
   const configControls = Config.createTelegramConfigControls(configStore);
   const lockRuntime = Locks.createTelegramLockRuntime<Pi.ExtensionContext>({
@@ -225,7 +223,6 @@ export default function (pi: Pi.ExtensionAPI) {
   );
   const deferredQueueDispatchRuntime =
     Queue.createTelegramDeferredQueueDispatchRuntime<Pi.ExtensionContext>({
-      delayMs: 50,
       recordRuntimeEvent,
     });
   const pollingControllerState = Polling.createTelegramPollingControllerState();
@@ -364,7 +361,6 @@ export default function (pi: Pi.ExtensionAPI) {
       getForwardCommentBatchPosition:
         textGroupRuntime.getPreparedForwardingPosition,
       recordRuntimeEvent,
-      timeoutMs: 30_000,
     });
   const telegramApiRuntime = BusApi.createTelegramBusAwareApiRuntime({
     directRuntime: directTelegramApiRuntime,
@@ -446,7 +442,8 @@ export default function (pi: Pi.ExtensionAPI) {
       getActiveTurnTarget: activeTurnRuntime.getTarget,
       getActiveGuestQueryId: activeTurnRuntime.getGuestQueryId,
     });
-  const deliveryGenerationSeed = `${telegramInstanceId}:${Date.now()}`;
+  const deliveryGenerationSeed =
+    Delivery.createTelegramDeliveryGenerationSeed(telegramInstanceId);
   const deliveryLifecycleRuntime =
     Delivery.createTelegramBridgeDeliveryLifecycleHooks({
       generationSeed: deliveryGenerationSeed,
@@ -687,10 +684,13 @@ export default function (pi: Pi.ExtensionAPI) {
       followerRegistry: telegramBusFollowerRegistry,
       followerTargetController,
       onRestored() {
-        telegramSyncStateRuntime.markSliceFresh("target-bindings", {
-          nowMs: Date.now(),
-          action: "follower-thread-restore",
-        });
+        telegramSyncStateRuntime.markSliceFresh(
+          Sync.TELEGRAM_SYNC_SLICE_TARGET_BINDINGS,
+          {
+            nowMs: Date.now(),
+            action: "follower-thread-restore",
+          },
+        );
       },
     });
   const observedThreadTargetBinding =
@@ -811,58 +811,54 @@ export default function (pi: Pi.ExtensionAPI) {
       handleAuthorizedReactionUpdate:
         inboundRouteRuntime.handleAuthorizedReactionUpdate,
     });
+  const telegramBusFollowerAssemblyDeps =
+    BusFollower.createTelegramBusFollowerRuntimeAssemblyDeps<
+      Pi.ExtensionContext,
+      Updates.TelegramMessageReactionUpdated,
+      Routing.TelegramRoutedCallbackQuery,
+      Routing.TelegramRoutedMessage
+    >({
+      instanceId: telegramInstanceId,
+      registrationState: telegramBusFollowerRegistrationState,
+      recordRuntimeEvent,
+      receiver: {
+        socketPath: getTelegramBusFollowerSocketPath,
+        getContext: telegramSessionContextStore.get,
+        getAuthSecret: telegramBusFollowerControlState.getActiveAuthSecret,
+        ...forwardedRouteHandlers,
+        prepareForwardedMessage: textGroupRuntime.prepareForwardedMessage,
+      },
+      targetReplacement: {
+        topicTargetStore: threadStore,
+        getManualFollowerProfileKey: getTelegramManualFollowerProfileKey,
+        manualFollowerOwnerId: telegramManualFollowerOwnerId,
+        getSyncState: telegramSyncStateRuntime.getState,
+        setSyncState: telegramSyncStateRuntime.setState,
+        updateStatus,
+      },
+      recovery: {
+        getLeaderState: lockRuntime.getState,
+        setLifecyclePhase: telegramBusFollowerControlState.setLifecyclePhase,
+        updateStatus,
+        promoteToLeader: promoteTelegramBusFollowerToLeader,
+        getActiveContext: telegramSessionContextStore.get,
+      },
+      registration: {
+        getFollowerBusSocketPath: getTelegramBusFollowerSocketPath,
+        getLeaderSocketPath: getTelegramBusSocketPath,
+        isContextActive: telegramSessionContextStore.isCurrent,
+        createRequestId: telegramBusFollowerClients.createRequestId,
+        setActiveAuthSecret: telegramBusFollowerControlState.setActiveAuthSecret,
+        getProfileKey: getTelegramManualFollowerProfileKey,
+      },
+    });
   const telegramBusFollowerAssembly: BusFollower.TelegramBusFollowerRuntimeAssembly<Pi.ExtensionContext> =
     BusFollower.createTelegramBusFollowerRuntimeAssembly<
       Pi.ExtensionContext,
       Updates.TelegramMessageReactionUpdated,
       Routing.TelegramRoutedCallbackQuery,
       Routing.TelegramRoutedMessage
-    >({
-      receiver: {
-        socketPath: getTelegramBusFollowerSocketPath,
-        instanceId: telegramInstanceId,
-        getContext: telegramSessionContextStore.get,
-        getAuthSecret: telegramBusFollowerControlState.getActiveAuthSecret,
-        ...forwardedRouteHandlers,
-        prepareForwardedMessage: textGroupRuntime.prepareForwardedMessage,
-        recordRuntimeEvent,
-      },
-      targetReplacement: {
-        topicTargetStore: threadStore,
-        registrationState: telegramBusFollowerRegistrationState,
-        instanceId: telegramInstanceId,
-        getManualFollowerProfileKey: getTelegramManualFollowerProfileKey,
-        manualFollowerOwnerId: telegramManualFollowerOwnerId,
-        getSyncState: telegramSyncStateRuntime.getState,
-        setSyncState: telegramSyncStateRuntime.setState,
-        updateStatus,
-        recordRuntimeEvent,
-      },
-      recovery: {
-        registrationState: telegramBusFollowerRegistrationState,
-        getLeaderState: lockRuntime.getState,
-        setLifecyclePhase: telegramBusFollowerControlState.setLifecyclePhase,
-        updateStatus,
-        promoteToLeader: promoteTelegramBusFollowerToLeader,
-        getActiveContext: telegramSessionContextStore.get,
-        recordRuntimeEvent,
-      },
-      registration: {
-        instanceId: telegramInstanceId,
-        getFollowerBusSocketPath: getTelegramBusFollowerSocketPath,
-        getLeaderSocketPath: getTelegramBusSocketPath,
-        registrationState: telegramBusFollowerRegistrationState,
-        isContextActive: telegramSessionContextStore.isCurrent,
-        createRequestId: telegramBusFollowerClients.createRequestId,
-        getLeaderAuthSecret(owner) {
-          return owner.busSecret;
-        },
-        setActiveAuthSecret:
-          telegramBusFollowerControlState.setActiveAuthSecret,
-        getProfileKey: getTelegramManualFollowerProfileKey,
-        recordRuntimeEvent,
-      },
-    });
+    >(telegramBusFollowerAssemblyDeps);
   const telegramBusFollowerRegistration =
     telegramBusFollowerAssembly.registration;
   const pollingRuntime = Polling.createTelegramPollingControllerRuntime({
@@ -1001,8 +997,8 @@ export default function (pi: Pi.ExtensionAPI) {
       stopPolling: lockedPollingRuntime.stop,
       recordRuntimeEvent,
     });
-  const sessionLifecycleRuntime =
-    Lifecycle.createTelegramBridgeSessionLifecycleAssembly({
+  const telegramBridgeSessionLifecycleDeps =
+    Lifecycle.createTelegramBridgeSessionLifecycleDeps({
       contextStore: telegramSessionContextStore,
       queue: {
         getCurrentModel: getContextModel,
@@ -1038,20 +1034,24 @@ export default function (pi: Pi.ExtensionAPI) {
         recordRuntimeEvent,
       },
       services: {
-        resumeGroupedInput(ctx) {
-          mediaGroupRuntime.resume(ctx);
-          textGroupRuntime.resume(ctx);
+        mediaGroup: {
+          resume: mediaGroupRuntime.resume,
+          suspend: mediaGroupRuntime.suspend,
         },
-        suspendGroupedInput: TextGroups.createTelegramGroupedInputClearer({
-          clearMediaGroups: mediaGroupRuntime.suspend,
-          clearTextGroups: textGroupRuntime.suspend,
-        }),
+        textGroup: {
+          resume: textGroupRuntime.resume,
+          suspend: textGroupRuntime.suspend,
+        },
         delivery: deliveryLifecycleRuntime,
         polling: lockedPollingRuntime,
         capabilityMonitor: telegramThreadCapabilityMonitor,
         queueWatchdog: queueDispatchWatchdogRuntime,
       },
     });
+  const sessionLifecycleRuntime =
+    Lifecycle.createTelegramBridgeSessionLifecycleAssembly(
+      telegramBridgeSessionLifecycleDeps,
+    );
 
   // --- Extension API Bindings ---
 

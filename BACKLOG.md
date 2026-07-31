@@ -2,19 +2,6 @@
 
 _This backlog tracks only open release-relevant work: hotfixes, bounded maintenance, live runtime verification, evidence-gated Telegram client follow-ups, and upstream Pi API blockers. Completed outcomes and validation evidence belong in `CHANGELOG.md`, not in this queue._
 
-## P0 — Monospaced Tool Evidence Keys
-
-Context: nested `arguments`, `update`, `result`, and `error` summaries already behave like quote-free outer JSON keys. Rendering the lowercase label itself as inline code completes that semantic relationship without reintroducing icons, markers, or extra height.
-
-Open work:
-
-- [x] Render every nested tool evidence summary as one lowercase monospaced label, retaining omission suffixes inside the same code span.
-- [x] Preserve root styling, Arguments open-by-default behavior, collapsed secondary evidence, JSON blocks, and all delivery guarantees.
-- [x] Update focused regressions, durable UI documentation, changelog, and package metadata.
-- [ ] Pass live Telegram smoke plus two fresh Linux/macOS/Windows matrices before release.
-
-Done when: child keys read as compact code-like metadata, hierarchy and behavior remain unchanged, live clients confirm the style, and the guarded hotfix release completes.
-
 ## P1 — Windows Graceful Disconnect Test Budget
 
 Context: the graceful follower-disconnect integration overrides the production 30-second bus budget with 500 milliseconds even though the path persists cleanup intent, performs close/delete operations, updates binding state, and returns an authenticated response. A loaded Windows runner exceeded that artificial deadline while the same focused path completes promptly under normal scheduling.

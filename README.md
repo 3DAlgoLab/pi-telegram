@@ -67,6 +67,14 @@ Open the bot DM and send:
 
 The first Telegram user to message the bot becomes the allowed owner. Other users are ignored.
 
+### 5. Enable optional bot capabilities in BotFather
+
+Enable the optional capabilities the bridge needs in [@BotFather](https://t.me/BotFather). The bridge does not fail loudly when a capability is off; the feature simply never triggers.
+
+1. Enable guest mode so the bot can answer mentions and replies in chats where it is not a member.
+2. Enable private-chat Threaded Mode; when it is available, one live instance becomes the profile's leader and later visible Pi instances register as followers. Without it, the bridge stays in classic single-owner DM mode.
+3. Make the bot an administrator in any chat where the queue reaction shortcuts (👍 promote, 👎 remove) should work. Reaction updates require admin rights, so the shortcuts silently do nothing in non-admin chats; private chats deliver reactions without admin rights.
+
 ## What It Feels Like
 
 - Start a task in the terminal, walk away, and keep supervising it from your phone.

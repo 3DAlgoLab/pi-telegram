@@ -514,6 +514,91 @@ export function createTelegramBusForwardedRouteHandlers<
   };
 }
 
+export interface TelegramBusFollowerRuntimeAssemblyPorts<
+  TContext extends { cwd?: string },
+  TReactionUpdate,
+  TCallbackQuery,
+  TMessage = unknown,
+> {
+  instanceId: string;
+  registrationState: TelegramBusFollowerRegistrationState;
+  recordRuntimeEvent: (
+    category: string,
+    error: unknown,
+    details?: Record<string, unknown>,
+  ) => void;
+  receiver: Omit<
+    TelegramBusForwardedUpdateReceiverRuntimeDeps<
+      TContext,
+      TReactionUpdate,
+      TCallbackQuery,
+      TMessage
+    >,
+    "handleReplaceTarget" | "instanceId" | "recordRuntimeEvent"
+  >;
+  targetReplacement: Omit<
+    TelegramBusFollowerTargetReplacementHandlerDeps<TContext>,
+    "registrationState" | "instanceId" | "recordRuntimeEvent"
+  >;
+  recovery: Omit<
+    TelegramBusFollowerHeartbeatRecoveryHandlerDeps<TContext>,
+    "getRegistrationRuntime" | "registrationState" | "recordRuntimeEvent"
+  >;
+  registration: Omit<
+    TelegramBusFollowerRegistrationRuntimeDeps<TContext>,
+    | "startReceiving"
+    | "stopReceiving"
+    | "onHeartbeatFailure"
+    | "instanceId"
+    | "registrationState"
+    | "recordRuntimeEvent"
+  >;
+}
+
+export function createTelegramBusFollowerRuntimeAssemblyDeps<
+  TContext extends { cwd?: string },
+  TReactionUpdate,
+  TCallbackQuery,
+  TMessage = unknown,
+>(
+  ports: TelegramBusFollowerRuntimeAssemblyPorts<
+    TContext,
+    TReactionUpdate,
+    TCallbackQuery,
+    TMessage
+  >,
+): TelegramBusFollowerRuntimeAssemblyDeps<
+  TContext,
+  TReactionUpdate,
+  TCallbackQuery,
+  TMessage
+> {
+  return {
+    receiver: {
+      ...ports.receiver,
+      instanceId: ports.instanceId,
+      recordRuntimeEvent: ports.recordRuntimeEvent,
+    },
+    targetReplacement: {
+      ...ports.targetReplacement,
+      instanceId: ports.instanceId,
+      registrationState: ports.registrationState,
+      recordRuntimeEvent: ports.recordRuntimeEvent,
+    },
+    recovery: {
+      ...ports.recovery,
+      registrationState: ports.registrationState,
+      recordRuntimeEvent: ports.recordRuntimeEvent,
+    },
+    registration: {
+      ...ports.registration,
+      instanceId: ports.instanceId,
+      registrationState: ports.registrationState,
+      recordRuntimeEvent: ports.recordRuntimeEvent,
+    },
+  };
+}
+
 export function createTelegramBusFollowerRuntimeAssembly<
   TContext extends { cwd?: string },
   TReactionUpdate,
@@ -1260,7 +1345,9 @@ export function createTelegramBusFollowerRegistrationRuntime<
         deps.getLeaderSocketPath?.() ??
         getTelegramBusSocketPath();
       await deps.startReceiving?.();
-      activeAuthSecret = deps.getLeaderAuthSecret?.(leader);
+      activeAuthSecret = deps.getLeaderAuthSecret
+        ? deps.getLeaderAuthSecret(leader)
+        : leader?.busSecret;
       deps.setActiveAuthSecret?.(activeAuthSecret);
       const registrationGeneration = deps.createRequestId();
       const registrationEnvelope: Extract<

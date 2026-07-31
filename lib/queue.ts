@@ -2133,13 +2133,19 @@ export interface TelegramDeferredQueueDispatchRuntime<TContext = unknown> {
   request: (dispatchNextQueuedTelegramTurn: (ctx: TContext) => void) => void;
 }
 
+/**
+ * Production debounce for deferred queue dispatch; the factory defaults to this
+ * so the entrypoint wires ports instead of policy constants.
+ */
+export const TELEGRAM_DEFERRED_DISPATCH_DELAY_MS = 50;
+
 export function createTelegramDeferredQueueDispatchRuntime<TContext = unknown>(
   deps: TelegramDeferredQueueDispatchRuntimeDeps = {},
 ): TelegramDeferredQueueDispatchRuntime<TContext> {
   let boundContext: TContext | undefined;
   let generation = 0;
   const timers = new Set<ReturnType<typeof setTimeout>>();
-  const delayMs = deps.delayMs ?? 0;
+  const delayMs = deps.delayMs ?? TELEGRAM_DEFERRED_DISPATCH_DELAY_MS;
   const setTimer =
     deps.setTimer ??
     ((callback: () => void, ms: number): ReturnType<typeof setTimeout> =>
