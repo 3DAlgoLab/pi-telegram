@@ -11,6 +11,7 @@ import test from "node:test";
 
 import {
   createTelegramBusFollowerApiCaller,
+  createTelegramBusFollowerClientRuntime,
   createTelegramBusFollowerControlState,
   createTelegramBusFollowerHeartbeatRecoveryHandler,
   createTelegramBusFollowerRegistrationRuntime,
@@ -1853,4 +1854,37 @@ test("Bus follower session refresh re-registers with the handed-off target", asy
       details: { phase: "follower-session-refresh" },
     },
   ]);
+});
+
+test("follower client defaults the forwarding timeout to the 30s bus window", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-follower-timeout-"));
+  const socketPath = join(dir, "bus.sock");
+  const server = createTelegramBusLocalServer({
+    socketPath,
+    handleEnvelope: async (envelope) => {
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      return { kind: "bus.ack", requestId: envelope.requestId, ok: true };
+    },
+  });
+  const client = createTelegramBusFollowerClientRuntime<
+    { cwd: string },
+    unknown,
+    unknown,
+    unknown
+  >({
+    socketPath,
+    instanceId: "inst-a",
+  });
+  try {
+    await server.start();
+    const accepted = await client.foreignOwnedUpdateForwarder.forwardMessage({
+      message: { message_id: 1, chat: { id: 7, type: "supergroup" } },
+      ownership: { instanceId: "inst-a" },
+      ctx: { cwd: "/repo" },
+    });
+    assert.equal(accepted, true);
+  } finally {
+    await server.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
