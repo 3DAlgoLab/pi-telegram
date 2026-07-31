@@ -5,6 +5,7 @@
  */
 
 import { stripTelegramBusApiMetadata } from "./bus.ts";
+import { isTelegramMessageNotModifiedError } from "./telegram-api.ts";
 import type {
   TelegramAnswerGuestQueryOptions,
   TelegramApiCallOptions,
@@ -262,8 +263,13 @@ export function createTelegramBusAwareApiRuntime(
       body: TelegramEditMessageTextBody,
     ): Promise<"edited" | "unchanged"> {
       if (deps.ownsDirect()) return deps.directRuntime.editMessageText(body);
-      await deps.callFollowerApi("call", ["editMessageText", body]);
-      return "edited";
+      try {
+        await deps.callFollowerApi("call", ["editMessageText", body]);
+        return "edited";
+      } catch (error) {
+        if (isTelegramMessageNotModifiedError(error)) return "unchanged";
+        throw error;
+      }
     },
     async editMessageReplyMarkup(
       chatId: number,

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.26.16: Follower Edit Normalization Hotfix
+
+- `Follower Edit Normalization`: The bus-routed `editMessageText` path now treats Telegram's "message is not modified" rejection as an unchanged edit instead of a failure, matching the direct transport path. Impact: reasoning activity on follower instances no longer freezes its thinking block when an edit targets identical content (for example a repeated reasoning-end flush), because the failed edit no longer marks the whole block as blocked.
+
 ## 0.26.15: Follower Bus Timeout Hotfix
 
 - `Follower Bus Timeout`: Restored the 30-second default for follower-client bus calls (update forwarding, thread-target control, and API calls) after an entrypoint compression pass dropped the explicit timeout and left the forwarding path falling through to the 1-second transport default. The shared default now lives on the follower client runtime as `TELEGRAM_BUS_FOLLOWER_CLIENT_TIMEOUT_MS`. Impact: leader-to-follower update forwarding no longer times out under load, so polling stops re-fetching and re-downloading the same update (which previously delivered one voice message as three identical turns).
