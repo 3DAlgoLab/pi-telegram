@@ -287,7 +287,7 @@ interface TelegramLifecycleBindingDeps {
   activityVerbosityRuntime?: TelegramActivityVerbosityRuntime;
   assistantOutputRuntime: Pick<
     Activity.TelegramAssistantOutputRuntime,
-    "start" | "stop"
+    "start" | "waitForIdle" | "stop"
   >;
   sessionLifecycleRuntime: Pick<
     Lifecycle.TelegramLifecycleRegistrationDeps,
@@ -564,7 +564,10 @@ export function registerTelegramLifecycleRuntimeHooks({
     isSessionActive: isSessionContextActive,
     isTurnTransportActive,
     waitForTypingIdle: typing.waitForIdle,
-    waitForActivityIdle: activityVerbosityRuntime?.waitForIdle,
+    async waitForActivityIdle() {
+      await activityVerbosityRuntime?.waitForIdle();
+      await assistantOutputRuntime.waitForIdle();
+    },
     dispatchNextQueuedTelegramTurn,
     requestDeferredDispatchNextQueuedTelegramTurn:
       deferredQueueDispatchRuntime.request,

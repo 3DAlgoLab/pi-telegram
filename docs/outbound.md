@@ -6,11 +6,13 @@ Normal Telegram-turn replies are intentionally prompt-driven: the agent writes M
 
 Text handlers use the portable [Command Template Standard](./command-templates.md). Programmatic outbound handlers use `registerTelegramOutboundHandler(kind, handler)`. Voice replies can use configured command-template handlers or the provider API described in [Voice Integration](./voice.md).
 
-## Proactive Public Output
+## Public Assistant Output
 
-Proactive projection defaults on. With `assistant.proactivePush` omitted or set to `true`, completed public assistant text blocks from local or autonomous Pi work are projected to the instance's authorized Telegram target; set it explicitly to `false` to opt out. A visible intermediate commentary/checkpoint and the final answer become separate Telegram messages in source order; this is not a final-only `agent_end` notification. The bridge consumes normalized Activity `assistant-segment` events, not raw token deltas, reasoning, or tool traffic.
+Every completed `assistant-segment` with `placement: "intermediate"` from a Telegram-originated turn is delivered as its own message to the immutable originating target before the ordinary active-turn final reply. This commentary path always applies; `assistant.proactivePush` does not disable it. Final and terminal-partial Telegram segments remain owned by active-turn settlement so the final answer, voice, buttons, previews, and artifacts are not duplicated.
 
-Proactive blocks use `assistant.rendering` independently of voice policy. Rich mode sends native Rich Markdown and HTML mode keeps the established HTML renderer; proactive projection does not synthesize voice or attach queued files merely because Rich rendering is active. The queue revalidates exact target, profile/token transport generation, leader epoch or follower registration generation, and session generation before each send. Telegram-owned turns remain on their ordinary reply path, and `commit-unknown` never permits proactive replay.
+Proactive projection defaults on for local and autonomous Pi work. With `assistant.proactivePush` omitted or set to `true`, every completed public block—including visible commentary/checkpoints and the final answer—is projected to the instance's authorized target in source order; set it explicitly to `false` to opt out of only this local/autonomous projection. Both paths consume normalized complete Activity segments rather than raw token deltas, reasoning, or tool traffic.
+
+Projected blocks use `assistant.rendering` independently of voice policy. Rich mode sends native Rich Markdown and HTML mode keeps the established HTML renderer; projection does not synthesize voice or attach queued files merely because Rich rendering is active. Ordered admission revalidates the exact target, profile/token transport generation, leader epoch or follower registration generation, and session generation before each send. Active-turn final delivery waits for admitted commentary inside its existing background delivery task, preserving commentary-before-final order without blocking Pi lifecycle completion. A `commit-unknown` outcome never permits replay.
 
 ## Technical Activity
 

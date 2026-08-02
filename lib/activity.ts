@@ -730,9 +730,10 @@ export function createTelegramAssistantOutputRuntime<TAuthority = undefined>(dep
   let running = false;
   let tail: Promise<void> = Promise.resolve();
   const admitted = new Set<string>();
-  const isEligibleSource = (
-    source: TelegramAssistantSegmentEvent["source"],
-  ): boolean => source === "local" || source === "autonomous";
+  const isEligibleEvent = (event: TelegramAssistantSegmentEvent): boolean =>
+    (event.source === "telegram" && event.placement === "intermediate") ||
+    ((event.source === "local" || event.source === "autonomous") &&
+      deps.isEnabled());
 
   return {
     start() {
@@ -742,8 +743,7 @@ export function createTelegramAssistantOutputRuntime<TAuthority = undefined>(dep
       tail = Promise.resolve();
     },
     accept(event) {
-      if (!running || !deps.isEnabled()) return;
-      if (!isEligibleSource(event.source) || !event.text.trim()) return;
+      if (!running || !isEligibleEvent(event) || !event.text.trim()) return;
       const key = `${event.activityId}:${event.sequence}`;
       if (admitted.has(key)) return;
       admitted.add(key);
@@ -753,7 +753,7 @@ export function createTelegramAssistantOutputRuntime<TAuthority = undefined>(dep
         const isAdmittedAuthorityActive = () =>
           running &&
           generation === admittedGeneration &&
-          deps.isEnabled() &&
+          isEligibleEvent(event) &&
           (deps.isAuthorityActive === undefined ||
             deps.isAuthorityActive(admittedAuthority as TAuthority));
         if (!isAdmittedAuthorityActive() || !deps.canDeliver(event)) return;

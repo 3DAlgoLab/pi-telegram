@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.27.0: Telegram Commentary Delivery
+
+- `Telegram Commentary`: Completed intermediate assistant text segments from Telegram-originated turns now arrive once as independent messages on the immutable originating target before the existing final reply. The path remains active independently of local/autonomous Proactive Push, preserves normalized segment order, rendering, authority fencing, and no-replay behavior, and leaves final/terminal settlement with the established active-turn delivery pipeline. Impact: visible checkpoints and other standalone commentary no longer disappear between thinking/tool activity and the final answer in classic or Threaded Mode.
+- `Delivery Ordering`: Active-turn final delivery now waits for both admitted technical activity and assistant commentary inside its existing extension-owned background task. Impact: commentary cannot be overtaken by the final result, while Pi lifecycle completion remains non-blocking and stale session/transport generations still fail closed.
+
 ## 0.26.16: Follower Edit Normalization Hotfix
 
 - `Follower Edit Normalization`: The bus-routed `editMessageText` path now treats Telegram's "message is not modified" rejection as an unchanged edit instead of a failure, matching the direct transport path. Impact: reasoning activity on follower instances no longer freezes its thinking block when an edit targets identical content (for example a repeated reasoning-end flush), because the failed edit no longer marks the whole block as blocked.

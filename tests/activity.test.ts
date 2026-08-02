@@ -637,7 +637,7 @@ test("Assistant output projection admits public local blocks once and in order",
     isEnabled: () => enabled,
     canDeliver: () => true,
     send: async (event) => {
-      if (event.sequence === 4) throw new Error("failed");
+      if (event.sequence === 6) throw new Error("failed");
       sent.push(event.text);
     },
     recordFailure: (_event, error) => failures.push((error as Error).message),
@@ -645,15 +645,34 @@ test("Assistant output projection admits public local blocks once and in order",
   runtime.start();
   runtime.accept(assistantSegment(1));
   runtime.accept(assistantSegment(1));
-  runtime.accept(assistantSegment(2, { source: "telegram" }));
-  runtime.accept(assistantSegment(3, { text: "  " }));
-  runtime.accept(assistantSegment(4));
-  runtime.accept(assistantSegment(5, { source: "local" }));
+  runtime.accept(
+    assistantSegment(2, { source: "telegram", placement: "intermediate" }),
+  );
+  runtime.accept(
+    assistantSegment(3, { source: "telegram", placement: "final" }),
+  );
+  runtime.accept(
+    assistantSegment(4, {
+      source: "telegram",
+      placement: "terminal-partial",
+    }),
+  );
+  runtime.accept(assistantSegment(5, { text: "  " }));
+  runtime.accept(assistantSegment(6));
+  runtime.accept(assistantSegment(7, { source: "local" }));
   await runtime.waitForIdle();
   enabled = false;
-  runtime.accept(assistantSegment(6));
+  runtime.accept(assistantSegment(8));
+  runtime.accept(
+    assistantSegment(9, { source: "telegram", placement: "intermediate" }),
+  );
   await runtime.waitForIdle();
-  assert.deepEqual(sent, ["segment-1", "segment-5"]);
+  assert.deepEqual(sent, [
+    "segment-1",
+    "segment-2",
+    "segment-7",
+    "segment-9",
+  ]);
   assert.deepEqual(failures, ["failed"]);
 });
 
