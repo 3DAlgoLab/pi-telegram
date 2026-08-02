@@ -1926,6 +1926,154 @@ test("Extension runtime skips proactive local result without Telegram lock owner
   }
 });
 
+test("Extension runtime delivers Telegram commentary before the active-turn final reply", async () => {
+  const telegramConfig = await createRuntimeTelegramConfigFixture();
+  const sentMessages: RuntimeHarnessMessage[] = [];
+  const deliveredMarkdown: string[] = [];
+  let dispatched = false;
+  const { handlers, commands, pi } = createRuntimePiHarness({
+    sendUserMessage: (content) => {
+      sentMessages.push(content);
+      dispatched = true;
+    },
+  });
+  let getUpdatesCalls = 0;
+  const restoreFetch = setRuntimeTestFetch(async (input, init) => {
+    const method = getRuntimeTelegramApiMethod(input);
+    const body = parseJsonRequestBody(init) ?? {};
+    if (method === "deleteWebhook" || method === "setMyCommands") {
+      return createRuntimeTelegramApiResponse(true);
+    }
+    if (method === "getUpdates") {
+      getUpdatesCalls += 1;
+      if (getUpdatesCalls === 1) {
+        return createRuntimeTelegramApiResponse([
+          {
+            _: "other",
+            update_id: 1,
+            message: {
+              message_id: 10,
+              chat: { id: 99, type: "private" },
+              from: { id: 77, is_bot: false, first_name: "Test" },
+              text: "show checkpoints",
+            },
+          },
+        ]);
+      }
+      return await new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new DOMException("stop", "AbortError"));
+        });
+      });
+    }
+    if (method === "sendChatAction") {
+      return createRuntimeTelegramApiResponse(true);
+    }
+    if (method === "sendRichMessage") {
+      deliveredMarkdown.push(
+        String(
+          (body.rich_message as { markdown?: string } | undefined)?.markdown ??
+            "",
+        ),
+      );
+      return createRuntimeTelegramApiResponse({
+        message_id: 100 + deliveredMarkdown.length,
+      });
+    }
+    if (method === "sendMessage") {
+      return createRuntimeTelegramApiResponse({ message_id: 200 });
+    }
+    throw new Error(`Unexpected Telegram API method: ${method}`);
+  });
+  try {
+    await telegramConfig.write({
+      botToken: "123:abc",
+      allowedUserId: 77,
+      lastUpdateId: 0,
+      assistant: { activity: "quiet", proactivePush: true },
+    });
+    await writeRuntimeTelegramLocks({});
+    (await getRuntimeTelegramExtension())(pi);
+    const idleCtx = createRuntimeExtensionContext();
+    const activeCtx = createRuntimeExtensionContext({ isIdle: () => false });
+    await handlers.get("session_start")?.({}, idleCtx);
+    await commands.get("telegram-connect")?.handler("", idleCtx);
+    await waitForCondition(() => dispatched);
+    assert.match(
+      getRuntimeHarnessTextBlock(sentMessages[0]).text ?? "",
+      /^\[telegram\] show checkpoints/,
+    );
+    await handlers.get("agent_start")?.({}, activeCtx);
+    const checkpointMessage = {
+      role: "assistant",
+      content: [{ type: "text", text: "Checkpoint **visible**" }],
+    };
+    await handlers.get("message_update")?.(
+      {
+        message: checkpointMessage,
+        assistantMessageEvent: {
+          type: "text_end",
+          contentIndex: 0,
+          content: "Checkpoint **visible**",
+          partial: checkpointMessage,
+        },
+      },
+      activeCtx,
+    );
+    await handlers.get("message_update")?.(
+      {
+        message: checkpointMessage,
+        assistantMessageEvent: {
+          type: "toolcall_start",
+          contentIndex: 1,
+          partial: checkpointMessage,
+        },
+      },
+      activeCtx,
+    );
+    const finalMessage = {
+      role: "assistant",
+      content: [{ type: "text", text: "Final **answer**" }],
+    };
+    await handlers.get("message_update")?.(
+      {
+        message: finalMessage,
+        assistantMessageEvent: {
+          type: "text_end",
+          contentIndex: 0,
+          content: "Final **answer**",
+          partial: finalMessage,
+        },
+      },
+      activeCtx,
+    );
+    await handlers.get("message_update")?.(
+      {
+        message: finalMessage,
+        assistantMessageEvent: {
+          type: "done",
+          reason: "stop",
+          message: finalMessage,
+        },
+      },
+      activeCtx,
+    );
+    await handlers.get("agent_end")?.(
+      { messages: [finalMessage] },
+      activeCtx,
+    );
+    await waitForCondition(() => deliveredMarkdown.length === 2);
+    assert.deepEqual(deliveredMarkdown, [
+      "Checkpoint **visible**",
+      "Final **answer**",
+    ]);
+    await handlers.get("session_shutdown")?.({}, idleCtx);
+  } finally {
+    restoreFetch();
+    await telegramConfig.restore();
+  }
+});
+
 test("Extension runtime clears queued follow-ups after a Telegram stop", async () => {
   const telegramConfig = await createRuntimeTelegramConfigFixture();
   const sentMessages: RuntimeHarnessMessage[] = [];
