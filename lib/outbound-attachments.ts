@@ -81,6 +81,9 @@ export interface TelegramOutboundMessagePlan {
 export interface TelegramOutboundMessageToolRegistrationDeps extends TelegramOutboundAttachmentRuntimeEventRecorderPort {
   getDefaultChatId: () => number | undefined;
   getDefaultTarget?: () => TelegramTarget | undefined;
+  getActiveTurn?: () =>
+    | { chatId: number; target?: TelegramTarget }
+    | undefined;
   canSendDirect: () => boolean;
   planMessage: (markdown: string) => TelegramOutboundMessagePlan;
   sendMarkdownMessage: (
@@ -521,6 +524,7 @@ export function registerTelegramOutboundMessageTool(
           threadId: params.thread_id,
           getDefaultChatId: deps.getDefaultChatId,
           getDefaultTarget: deps.getDefaultTarget,
+          getActiveTurn: deps.getActiveTurn,
           canSendDirect: deps.canSendDirect,
           planMessage: deps.planMessage,
           sendMarkdownMessage: deps.sendMarkdownMessage,
@@ -735,6 +739,9 @@ export async function sendTelegramOutboundMessage(options: {
   target?: TelegramTarget;
   getDefaultChatId?: () => number | undefined;
   getDefaultTarget?: () => TelegramTarget | undefined;
+  getActiveTurn?: () =>
+    | { chatId: number; target?: TelegramTarget }
+    | undefined;
   canSendDirect: () => boolean;
   planMessage: (markdown: string) => TelegramOutboundMessagePlan;
   sendMarkdownMessage: (
@@ -754,6 +761,21 @@ export async function sendTelegramOutboundMessage(options: {
     getDefaultChatId: options.getDefaultChatId,
     getDefaultTarget: options.getDefaultTarget,
   });
+  const activeTurn = options.getActiveTurn?.();
+  if (activeTurn) {
+    const hasExplicitTarget =
+      options.chatId !== undefined || options.target !== undefined;
+    const activeTarget = activeTurn.target ?? { chatId: activeTurn.chatId };
+    const requestedTarget = target ?? { chatId };
+    const targetsMatch =
+      activeTarget.chatId === requestedTarget.chatId &&
+      activeTarget.threadId === requestedTarget.threadId;
+    if (!hasExplicitTarget || targetsMatch) {
+      throw new Error(
+        "telegram_message cannot send directly to the active Telegram turn target; return the text normally so the bridge can deliver it once",
+      );
+    }
+  }
   const plan = options.planMessage(options.text);
   const messageId = await options.sendMarkdownMessage(chatId, plan.markdown, {
     replyMarkup: plan.replyMarkup,
