@@ -168,12 +168,17 @@ function renderThinkingActivityEvidenceHtml(text: string): string {
 }
 
 function formatToolActivityLabel(label: string): string {
-  if (label.length === 0) return label;
-  const repeatedPrefix = label.match(/^([a-z])\1*/iu)?.[0] ?? "";
-  if (repeatedPrefix.length === 2 || repeatedPrefix.length === 3) {
-    return `${repeatedPrefix.toUpperCase()}${label.slice(repeatedPrefix.length)}`;
-  }
-  return `${label[0]!.toUpperCase()}${label.slice(1)}`;
+  return label
+    .split("_")
+    .filter(Boolean)
+    .map((word) => {
+      const repeatedPrefix = word.match(/^([a-z])\1*/iu)?.[0] ?? "";
+      if (repeatedPrefix.length === 2 || repeatedPrefix.length === 3) {
+        return `${repeatedPrefix.toUpperCase()}${word.slice(repeatedPrefix.length)}`;
+      }
+      return `${word[0]!.toUpperCase()}${word.slice(1)}`;
+    })
+    .join(" ");
 }
 
 function renderToolActivityHtml(tool: ToolActivity): string {

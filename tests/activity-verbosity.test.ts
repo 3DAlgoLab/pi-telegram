@@ -171,9 +171,9 @@ test("tool Rich activity separates arguments, updates, and result details", () =
   ]);
 });
 
-test("tool root labels preserve two- and three-letter repeated prefixes", () => {
+test("tool root labels humanize snake case and preserve repeated prefixes", () => {
   const rich = renderTelegramToolActivityRichMessage(
-    ["ffgrep", "fffind", "bash"].map((name, index) => ({
+    ["ffgrep", "fffind", "bash", "telegram_attach", "ff_find_items"].map((name, index) => ({
       id: `tool-${index}`,
       name,
       args: "{}",
@@ -194,6 +194,8 @@ test("tool root labels preserve two- and three-letter repeated prefixes", () => 
       { type: "bold", text: "FFgrep:" },
       { type: "bold", text: "FFFind:" },
       { type: "bold", text: "Bash:" },
+      { type: "bold", text: "Telegram Attach:" },
+      { type: "bold", text: "FF Find Items:" },
     ],
   );
 });
