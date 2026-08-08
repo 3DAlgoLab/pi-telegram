@@ -449,6 +449,52 @@ test("Direct outbound message defaults to assigned thread target", async () => {
   assert.deepEqual(sent, [{ chatId: -1007, target }]);
 });
 
+test("Direct outbound message rejects the active turn default target", async () => {
+  const activeTarget = createTelegramThreadTarget(-1007, 42);
+  const baseOptions = {
+    text: "duplicate",
+    getDefaultChatId: () => -1007,
+    getDefaultTarget: () => activeTarget,
+    getActiveTurn: () => ({ chatId: -1007, target: activeTarget }),
+    canSendDirect: () => true,
+    planMessage: (markdown: string) => ({ markdown }),
+    sendMarkdownMessage: async () => 1,
+  };
+  await assert.rejects(sendTelegramOutboundMessage(baseOptions), {
+    message: /active Telegram turn target/,
+  });
+  await assert.rejects(
+    sendTelegramOutboundMessage({
+      ...baseOptions,
+      chatId: -1007,
+      threadId: 42,
+    }),
+    { message: /active Telegram turn target/ },
+  );
+});
+
+test("Direct outbound message allows an explicit different thread", async () => {
+  const sent: Array<{ chatId: number; target?: unknown }> = [];
+  await sendTelegramOutboundMessage({
+    text: "cross-thread notice",
+    chatId: -1007,
+    threadId: 99,
+    getActiveTurn: () => ({
+      chatId: -1007,
+      target: createTelegramThreadTarget(-1007, 42),
+    }),
+    canSendDirect: () => true,
+    planMessage: (markdown) => ({ markdown }),
+    sendMarkdownMessage: async (chatId, _markdown, options) => {
+      sent.push({ chatId, target: options?.target });
+      return 1;
+    },
+  });
+  assert.deepEqual(sent, [
+    { chatId: -1007, target: { chatId: -1007, threadId: 99 } },
+  ]);
+});
+
 test("Direct outbound files carry internal thread target", async () => {
   const sentFields: Array<Record<string, string>> = [];
   await sendTelegramOutboundFiles({

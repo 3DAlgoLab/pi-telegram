@@ -158,6 +158,7 @@ export function registerTelegramCommandsAndTools({
   OutboundAttachments.registerTelegramOutboundMessageTool(pi, {
     getDefaultChatId,
     getDefaultTarget,
+    getActiveTurn: activeTurnRuntime.get,
     canSendDirect,
     planMessage:
       OutboundHandlers.createTelegramOutboundReplyPlanner(buttonActionStore),

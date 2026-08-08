@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.27.2: Target-Aware Direct Message Guard
+
+- `Direct Message Guard`: `telegram_message` now rejects implicit delivery and an explicit target equal to the active Telegram turn, leaving the ordinary final-reply path as the sole current-target response. An explicit different chat/thread target remains allowed for user-requested cross-target delivery, while local/TUI direct sends and automatic Proactive Push remain unchanged. Impact: accidental duplicate replies are prevented without breaking legitimate inter-thread messaging.
+- `Boundary Coverage`: Focused regressions distinguish implicit, same-target, and different-thread direct messaging while retaining the existing active-turn attachment queue contract. Impact: future duplicate protection cannot silently collapse all direct delivery into a coarse active-turn ban.
+
 ## 0.27.1: Humanized Tool Labels Hotfix
 
 - `Tool Labels`: Tool activity roots now replace snake-case underscores with spaces and capitalize every resulting word while preserving recognizable uppercase repeated-letter prefixes per word (`telegram_attach` → `Telegram Attach`, `ff_find_items` → `FF Find Items`). Impact: Rich tool disclosures and their HTML fallback present multi-word tool names as user-facing labels instead of code identifiers.
