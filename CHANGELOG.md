@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.27.1: Humanized Tool Labels Hotfix
+
+- `Tool Labels`: Tool activity roots now replace snake-case underscores with spaces and capitalize every resulting word while preserving recognizable uppercase repeated-letter prefixes per word (`telegram_attach` → `Telegram Attach`, `ff_find_items` → `FF Find Items`). Impact: Rich tool disclosures and their HTML fallback present multi-word tool names as user-facing labels instead of code identifiers.
+
 ## 0.27.0: Telegram Commentary Delivery
 
 - `Telegram Commentary`: Completed intermediate assistant text segments from Telegram-originated turns now arrive once as independent messages on the immutable originating target before the existing final reply. The path remains active independently of local/autonomous Proactive Push, preserves normalized segment order, rendering, authority fencing, and no-replay behavior, and leaves final/terminal settlement with the established active-turn delivery pipeline. Impact: visible checkpoints and other standalone commentary no longer disappear between thinking/tool activity and the final answer in classic or Threaded Mode.
