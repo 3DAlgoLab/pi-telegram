@@ -4,7 +4,10 @@
  * Wraps the direct Telegram Bot API runtime so follower instances can route outbound calls through the bus leader
  */
 
-import { stripTelegramBusApiMetadata } from "./bus.ts";
+import {
+  markTelegramBusCrossTargetDelivery,
+  stripTelegramBusApiMetadata,
+} from "./bus.ts";
 import { isTelegramMessageNotModifiedError } from "./telegram-api.ts";
 import type {
   TelegramAnswerGuestQueryOptions,
@@ -54,6 +57,19 @@ function withDefaultThreadTarget(
   return body.chat_id === target.chatId
     ? { ...body, message_thread_id: target.threadId }
     : body;
+}
+
+function markFollowerCrossTargetDelivery<T extends Record<string, unknown>>(
+  body: T,
+  defaultTarget: { chatId: number; threadId?: number } | undefined,
+): T {
+  if (!defaultTarget || body.chat_id !== defaultTarget.chatId) return body;
+  const threadId = body.message_thread_id;
+  const isDifferentTarget =
+    threadId === undefined
+      ? defaultTarget.threadId !== undefined
+      : threadId !== defaultTarget.threadId;
+  return isDifferentTarget ? markTelegramBusCrossTargetDelivery(body) : body;
 }
 
 function rejectTelegramDirectOwnership(method: string): Promise<never> {
@@ -238,16 +254,28 @@ export function createTelegramBusAwareApiRuntime(
       return deps.ownsDirect()
         ? deps.directRuntime.sendMessage(stripTelegramBusApiMetadata(body))
         : deps
-            .callFollowerApi("call", ["sendMessage", body])
+            .callFollowerApi("call", [
+              "sendMessage",
+              markFollowerCrossTargetDelivery(
+                body,
+                deps.getDefaultTarget?.(),
+              ),
+            ])
             .then(asSentMessage);
     },
     sendRichMessage(
       body: TelegramSendRichMessageBody,
     ): Promise<TelegramSentMessage> {
       return deps.ownsDirect()
-        ? deps.directRuntime.sendRichMessage(body)
+        ? deps.directRuntime.sendRichMessage(stripTelegramBusApiMetadata(body))
         : deps
-            .callFollowerApi("call", ["sendRichMessage", body])
+            .callFollowerApi("call", [
+              "sendRichMessage",
+              markFollowerCrossTargetDelivery(
+                body,
+                deps.getDefaultTarget?.(),
+              ),
+            ])
             .then(asSentMessage);
     },
     sendRichMessageDraft(

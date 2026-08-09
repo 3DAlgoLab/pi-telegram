@@ -338,6 +338,54 @@ test("Bus-aware API runtime applies follower default thread to scoped actions", 
   ]);
 });
 
+test("Bus-aware API runtime marks follower sends to a different thread", async () => {
+  const busCalls: unknown[] = [];
+  const runtime = createTelegramBusAwareApiRuntime({
+    directRuntime: createDirectRuntime([]),
+    ownsDirect: () => false,
+    getDefaultTarget: () => ({ chatId: 1, threadId: 5 }),
+    callFollowerApi: async (method, args) => {
+      busCalls.push({ method, args });
+      return { message_id: 9 };
+    },
+  });
+  await runtime.sendRichMessage({
+    chat_id: 1,
+    message_thread_id: 7,
+    rich_message: { markdown: "Cross-target" },
+  });
+  await runtime.sendRichMessage({
+    chat_id: 1,
+    message_thread_id: 5,
+    rich_message: { markdown: "Own target" },
+  });
+  assert.deepEqual(busCalls, [
+    {
+      method: "call",
+      args: [
+        "sendRichMessage",
+        {
+          chat_id: 1,
+          message_thread_id: 7,
+          rich_message: { markdown: "Cross-target" },
+          __piTelegramCrossTargetDelivery: true,
+        },
+      ],
+    },
+    {
+      method: "call",
+      args: [
+        "sendRichMessage",
+        {
+          chat_id: 1,
+          message_thread_id: 5,
+          rich_message: { markdown: "Own target" },
+        },
+      ],
+    },
+  ]);
+});
+
 test("Bus-aware API runtime routes follower multipart uploads through the leader", async () => {
   const busCalls: unknown[] = [];
   const runtime = createTelegramBusAwareApiRuntime({

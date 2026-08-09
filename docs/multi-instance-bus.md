@@ -408,7 +408,7 @@ All files containing routing, chat ids, thread ids, or process details use priva
 
 - Messages, edits, callbacks, and reactions check user authorization, not only chat/thread membership.
 - Followers authenticate to the local leader IPC with a leader-minted capability secret carried in the active lock entry; registration, heartbeat, forwarded updates, and follower API calls without the secret are rejected. Registration rejections are surfaced verbatim in the follower `/telegram-connect` result, registration waits through leader-side Telegram thread provisioning, and successful registrations send an immediate heartbeat before the interval ticker so the leader does not prune a live follower before its first scheduled heartbeat. The local bus socket is also created under a private `0700` directory with `0600` socket permissions as a first local-only boundary.
-- Follower Bot API proxying is allowlisted and target-scoped where applicable so a follower can reply in its assigned thread without gaining arbitrary bot control.
+- Follower Bot API proxying is allowlisted and target-scoped where applicable. Ordinary sends remain confined to the follower's assigned thread; trusted runtime-marked `telegram_message` cross-target sends may address only a different thread inside the same paired chat, and the leader strips the internal marker before calling Telegram. This preserves requested inter-thread delivery without granting arbitrary bot or cross-chat control.
 - Button and section callbacks verify authorized `from.id` and owning target/instance.
 - Generated artifacts stay scoped to the owning thread after leader failover.
 - Diagnostics redact bot tokens, large prompts, attachment paths, and handler output.

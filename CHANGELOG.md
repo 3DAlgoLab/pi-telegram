@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.27.3: Follower Cross-Thread Delivery Hotfix
+
+- `Follower Cross-Thread Delivery`: The bus-aware Telegram API runtime now marks sends whose target differs from the follower's assigned thread, and the leader authorizes that internal marker only for a different target inside the same paired chat before stripping it from the Bot API request. Impact: `telegram_message` can fulfill explicit inter-thread delivery from follower instances without opening arbitrary cross-chat or generic follower API access.
+- `Authorization Coverage`: Focused regressions cover follower marker admission, assigned-target rejection, wrong-chat rejection, unmarked rejection, transport metadata stripping, and Rich-message marking while preserving the existing target-aware active-turn guard. Impact: the outbound policy and bus trust boundary now agree end to end instead of allowing a request locally and rejecting it at leader transport.
+
 ## 0.27.2: Target-Aware Direct Message Guard
 
 - `Direct Message Guard`: `telegram_message` now rejects implicit delivery and an explicit target equal to the active Telegram turn, leaving the ordinary final-reply path as the sole current-target response. An explicit different chat/thread target remains allowed for user-requested cross-target delivery, while local/TUI direct sends and automatic Proactive Push remain unchanged. Impact: accidental duplicate replies are prevented without breaking legitimate inter-thread messaging.
