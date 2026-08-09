@@ -229,6 +229,8 @@ export function getTelegramFollowerTargetOwnership(input: {
 }
 
 const TELEGRAM_BUS_AGGREGATE_DELIVERY_FIELD = "__piTelegramAggregateDelivery";
+const TELEGRAM_BUS_CROSS_TARGET_DELIVERY_FIELD =
+  "__piTelegramCrossTargetDelivery";
 
 export function markTelegramBusAggregateDelivery<
   T extends Record<string, unknown>,
@@ -249,12 +251,38 @@ export function isTelegramBusAggregateDelivery(body: unknown): boolean {
   );
 }
 
+export function markTelegramBusCrossTargetDelivery<
+  T extends Record<string, unknown>,
+>(body: T): T {
+  return {
+    ...body,
+    [TELEGRAM_BUS_CROSS_TARGET_DELIVERY_FIELD]: true,
+  };
+}
+
+export function isTelegramBusCrossTargetDelivery(body: unknown): boolean {
+  return Boolean(
+    body &&
+    typeof body === "object" &&
+    !Array.isArray(body) &&
+    (body as Record<string, unknown>)[
+      TELEGRAM_BUS_CROSS_TARGET_DELIVERY_FIELD
+    ] === true,
+  );
+}
+
 export function stripTelegramBusApiMetadata<T extends Record<string, unknown>>(
   body: T,
 ): T {
-  if (!(TELEGRAM_BUS_AGGREGATE_DELIVERY_FIELD in body)) return body;
+  if (
+    !(TELEGRAM_BUS_AGGREGATE_DELIVERY_FIELD in body) &&
+    !(TELEGRAM_BUS_CROSS_TARGET_DELIVERY_FIELD in body)
+  ) {
+    return body;
+  }
   const clean = { ...body };
   delete clean[TELEGRAM_BUS_AGGREGATE_DELIVERY_FIELD];
+  delete clean[TELEGRAM_BUS_CROSS_TARGET_DELIVERY_FIELD];
   return clean;
 }
 
@@ -304,6 +332,18 @@ export function isTelegramFollowerApiCallAllowed(input: {
     const record = body as Record<string, unknown>;
     return matchesId(record.chat_id, target.chatId);
   };
+  const isDifferentTargetScoped = (body: unknown): boolean => {
+    if (!target || !isTargetChatScoped(body)) return false;
+    const threadId = (body as Record<string, unknown>).message_thread_id;
+    if (threadId === undefined) return target.threadId !== undefined;
+    const parsedThreadId =
+      typeof threadId === "number" ? threadId : Number(threadId);
+    return (
+      Number.isInteger(parsedThreadId) &&
+      (target.threadId === undefined ||
+        !matchesId(threadId, target.threadId))
+    );
+  };
   const isTargetMessageScoped = (body: unknown): boolean => {
     if (!isTargetChatScoped(body)) return false;
     const messageId = (body as Record<string, unknown>).message_id;
@@ -349,6 +389,12 @@ export function isTelegramFollowerApiCallAllowed(input: {
     ) {
       const body = input.args[1] as Record<string, unknown>;
       return body.message_thread_id === undefined && isTargetChatScoped(body);
+    }
+    if (
+      (apiMethod === "sendMessage" || apiMethod === "sendRichMessage") &&
+      isTelegramBusCrossTargetDelivery(input.args[1])
+    ) {
+      return isDifferentTargetScoped(input.args[1]);
     }
     if (
       apiMethod === "deleteMessage" ||

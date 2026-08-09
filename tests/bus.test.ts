@@ -39,6 +39,7 @@ import {
   getTelegramProcessBirthIdentity,
   isTelegramFollowerApiCallAllowed,
   markTelegramBusAggregateDelivery,
+  markTelegramBusCrossTargetDelivery,
   parseTelegramBusEnvelope,
   resolveTelegramBusSocketPath,
   stripTelegramBusApiMetadata,
@@ -855,6 +856,72 @@ test("Bus follower API allowlist permits marked aggregate delivery only in its o
   assert.deepEqual(stripTelegramBusApiMetadata(marked), {
     chat_id: 100,
     text: "Aggregate",
+  });
+});
+
+test("Bus follower API allowlist permits marked cross-target delivery only in the paired chat", () => {
+  const follower = {
+    instanceId: "inst-a",
+    connectedAtMs: 1000,
+    lastHeartbeatMs: 1000,
+    target: { chatId: 100, threadId: 42 },
+  };
+  const marked = markTelegramBusCrossTargetDelivery({
+    chat_id: 100,
+    message_thread_id: 99,
+    rich_message: { markdown: "Cross-target" },
+  });
+  assert.equal(
+    isTelegramFollowerApiCallAllowed({
+      follower,
+      method: "call",
+      args: ["sendRichMessage", marked],
+    }),
+    true,
+  );
+  assert.equal(
+    isTelegramFollowerApiCallAllowed({
+      follower,
+      method: "call",
+      args: [
+        "sendRichMessage",
+        markTelegramBusCrossTargetDelivery({
+          chat_id: 100,
+          message_thread_id: 42,
+        }),
+      ],
+    }),
+    false,
+  );
+  assert.equal(
+    isTelegramFollowerApiCallAllowed({
+      follower,
+      method: "call",
+      args: [
+        "sendRichMessage",
+        markTelegramBusCrossTargetDelivery({
+          chat_id: 101,
+          message_thread_id: 99,
+        }),
+      ],
+    }),
+    false,
+  );
+  assert.equal(
+    isTelegramFollowerApiCallAllowed({
+      follower,
+      method: "call",
+      args: [
+        "sendRichMessage",
+        { chat_id: 100, message_thread_id: 99 },
+      ],
+    }),
+    false,
+  );
+  assert.deepEqual(stripTelegramBusApiMetadata(marked), {
+    chat_id: 100,
+    message_thread_id: 99,
+    rich_message: { markdown: "Cross-target" },
   });
 });
 
