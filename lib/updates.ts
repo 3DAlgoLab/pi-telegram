@@ -303,9 +303,14 @@ export interface TelegramMessageReactionUpdated {
   new_reaction: TelegramReactionType[];
 }
 
+export const TELEGRAM_INTERNAL_AGENT_MESSAGE = Symbol(
+  "telegram.internalAgentMessage",
+);
+
 export interface TelegramUpdateFlow
   extends TelegramUpdateRouting, TelegramUpdateDeletion {
   message_reaction?: TelegramMessageReactionUpdated;
+  [TELEGRAM_INTERNAL_AGENT_MESSAGE]?: true;
 }
 
 export type TelegramUpdateFlowAction<
@@ -807,9 +812,17 @@ export async function executeTelegramUpdate<
     NonNullable<TUpdate["message"] | TUpdate["edited_message"]>
   >,
 ): Promise<void> {
+  const runtimeDeps = update[TELEGRAM_INTERNAL_AGENT_MESSAGE]
+    ? {
+        ...deps,
+        getMessageOwnership: undefined,
+        getTargetOwnership: undefined,
+        recordMessageOwnership: undefined,
+      }
+    : deps;
   await executeTelegramUpdatePlan(
     buildTelegramUpdateExecutionPlanFromUpdate(update, allowedUserId),
-    deps,
+    runtimeDeps,
   );
 }
 

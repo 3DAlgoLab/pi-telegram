@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.27.7: Bidirectional Thread Messaging Hotfix
+
+- `Follower-to-Leader Agent Turns`: Internal cross-instance turns now bypass ownership lookup for the already-sent Telegram message id while retaining that id as reply context. Impact: a follower targeting the leader reaches the leader queue instead of ownership routing the synthetic turn back to the sending follower.
+
 ## 0.27.6: Autonomous Follow-Up Delivery Hotfix
 
 - `Follow-Up Finals`: Completed public assistant blocks from unclassified Pi turns now follow the default-enabled Proactive Push path, alongside explicitly local and autonomous turns. Impact: actor terminal follow-ups and comparable extension-triggered continuations no longer show reasoning/activity in Telegram while silently dropping the final answer.
