@@ -448,6 +448,18 @@ export function createTelegramFollowerApiCallAuthorizer(deps: {
     });
 }
 
+export interface TelegramBusAgentTargetSelector {
+  chatId?: number;
+  threadId?: number;
+  threadName?: string;
+}
+
+export interface TelegramBusAgentMessage {
+  target: TelegramTarget & { threadId: number };
+  messageId: number;
+  text: string;
+}
+
 export type TelegramBusEnvelope = (
   | {
       kind: "follower.register";
@@ -509,6 +521,22 @@ export type TelegramBusEnvelope = (
       target: TelegramTarget & { threadId: number };
       oldTarget?: TelegramTarget & { threadId: number };
       reason: "thread-restore";
+      sentAtMs: number;
+    }
+  | {
+      kind: "follower.resolveAgentTarget";
+      requestId: string;
+      instanceId: string;
+      registrationGeneration?: string;
+      selector: TelegramBusAgentTargetSelector;
+      sentAtMs: number;
+    }
+  | {
+      kind: "follower.routeAgentMessage";
+      requestId: string;
+      instanceId: string;
+      registrationGeneration?: string;
+      message: TelegramBusAgentMessage;
       sentAtMs: number;
     }
   | {
@@ -604,6 +632,12 @@ export function parseTelegramBusEnvelope(
       break;
     case "leader.replaceFollowerTarget":
       envelope = parseReplaceFollowerTargetEnvelope(value, requestId);
+      break;
+    case "follower.resolveAgentTarget":
+      envelope = parseResolveAgentTargetEnvelope(value, requestId);
+      break;
+    case "follower.routeAgentMessage":
+      envelope = parseRouteAgentMessageEnvelope(value, requestId);
       break;
     case "follower.callApi":
       envelope = parseCallApiEnvelope(value, requestId);
@@ -1578,6 +1612,86 @@ function parseReplaceFollowerTargetEnvelope(
     target,
     ...(oldTarget ? { oldTarget } : {}),
     reason: value.reason,
+    sentAtMs: value.sentAtMs,
+  };
+}
+
+function parseResolveAgentTargetEnvelope(
+  value: Record<string, unknown>,
+  requestId: string,
+): TelegramBusEnvelope | undefined {
+  const selectorValue = isRecord(value.selector) ? value.selector : undefined;
+  if (
+    typeof value.instanceId !== "string" ||
+    !selectorValue ||
+    typeof value.sentAtMs !== "number"
+  ) {
+    return undefined;
+  }
+  const chatId =
+    typeof selectorValue.chatId === "number" &&
+    Number.isInteger(selectorValue.chatId)
+      ? selectorValue.chatId
+      : undefined;
+  const threadId =
+    typeof selectorValue.threadId === "number" &&
+    Number.isInteger(selectorValue.threadId) &&
+    selectorValue.threadId > 0
+      ? selectorValue.threadId
+      : undefined;
+  const threadName =
+    typeof selectorValue.threadName === "string" &&
+    selectorValue.threadName.trim()
+      ? selectorValue.threadName.trim()
+      : undefined;
+  if ((threadId === undefined) === (threadName === undefined)) return undefined;
+  return {
+    kind: "follower.resolveAgentTarget",
+    requestId,
+    instanceId: value.instanceId,
+    ...(typeof value.registrationGeneration === "string"
+      ? { registrationGeneration: value.registrationGeneration }
+      : {}),
+    selector: {
+      ...(chatId !== undefined ? { chatId } : {}),
+      ...(threadId !== undefined ? { threadId } : {}),
+      ...(threadName !== undefined ? { threadName } : {}),
+    },
+    sentAtMs: value.sentAtMs,
+  };
+}
+
+function parseRouteAgentMessageEnvelope(
+  value: Record<string, unknown>,
+  requestId: string,
+): TelegramBusEnvelope | undefined {
+  const messageValue = isRecord(value.message) ? value.message : undefined;
+  const target = parseThreadTarget(messageValue?.target);
+  if (
+    typeof value.instanceId !== "string" ||
+    !messageValue ||
+    !target ||
+    typeof messageValue.messageId !== "number" ||
+    !Number.isInteger(messageValue.messageId) ||
+    messageValue.messageId <= 0 ||
+    typeof messageValue.text !== "string" ||
+    !messageValue.text.trim() ||
+    typeof value.sentAtMs !== "number"
+  ) {
+    return undefined;
+  }
+  return {
+    kind: "follower.routeAgentMessage",
+    requestId,
+    instanceId: value.instanceId,
+    ...(typeof value.registrationGeneration === "string"
+      ? { registrationGeneration: value.registrationGeneration }
+      : {}),
+    message: {
+      target,
+      messageId: messageValue.messageId,
+      text: messageValue.text,
+    },
     sentAtMs: value.sentAtMs,
   };
 }

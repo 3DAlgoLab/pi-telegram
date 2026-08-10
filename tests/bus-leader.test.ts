@@ -1745,6 +1745,77 @@ test("Bus leader rejects unauthenticated envelopes when a secret is configured",
   }
 });
 
+test("Bus leader generation-fences agent message routing", async () => {
+  const registry = createTelegramBusFollowerRegistry();
+  registry.register({
+    instanceId: "inst-a",
+    connectedAtMs: 1000,
+    registrationGeneration: "generation-a",
+    target: { chatId: 100, threadId: 42 },
+  });
+  const routed: unknown[] = [];
+  const handle = createTelegramBusLeaderEnvelopeHandler({
+    followerRegistry: registry,
+    resolveAgentTarget: (_follower, selector) =>
+      selector.threadName === "Hazel"
+        ? { chatId: 100, threadId: 99 }
+        : undefined,
+    routeAgentMessage: (follower, message) => {
+      routed.push({ follower: follower.instanceId, message });
+    },
+  });
+  assert.deepEqual(
+    await handle({
+      kind: "follower.resolveAgentTarget",
+      requestId: "resolve",
+      instanceId: "inst-a",
+      registrationGeneration: "generation-a",
+      selector: { threadName: "Hazel" },
+      sentAtMs: 2000,
+    }),
+    {
+      kind: "bus.ack",
+      requestId: "resolve",
+      ok: true,
+      result: { chatId: 100, threadId: 99 },
+    },
+  );
+  const message = {
+    target: { chatId: 100, threadId: 99 },
+    messageId: 8,
+    text: "Review",
+  };
+  assert.deepEqual(
+    await handle({
+      kind: "follower.routeAgentMessage",
+      requestId: "route",
+      instanceId: "inst-a",
+      registrationGeneration: "generation-a",
+      message,
+      sentAtMs: 3000,
+    }),
+    { kind: "bus.ack", requestId: "route", ok: true },
+  );
+  assert.deepEqual(routed, [{ follower: "inst-a", message }]);
+  assert.deepEqual(
+    await handle({
+      kind: "follower.routeAgentMessage",
+      requestId: "stale",
+      instanceId: "inst-a",
+      registrationGeneration: "old",
+      message,
+      sentAtMs: 4000,
+    }),
+    {
+      kind: "bus.ack",
+      requestId: "stale",
+      ok: false,
+      message: "Stale Telegram bus follower registration generation.",
+    },
+  );
+  assert.equal(routed.length, 1);
+});
+
 test("Bus leader authorizes scoped follower API calls", async () => {
   const registry = createTelegramBusFollowerRegistry();
   registry.register({

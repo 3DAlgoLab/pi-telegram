@@ -495,6 +495,66 @@ test("Direct outbound message allows an explicit different thread", async () => 
   ]);
 });
 
+test("Direct outbound message routes a named live thread into its agent turn", async () => {
+  const events: unknown[] = [];
+  const result = await sendTelegramOutboundMessage({
+    text: "Review the release",
+    agentThread: "Hazel",
+    getActiveTurn: () => ({
+      chatId: 7,
+      target: createTelegramThreadTarget(7, 42),
+    }),
+    resolveAgentTarget: async (selector) => {
+      events.push(["resolve", selector]);
+      return { chatId: 7, threadId: 99 };
+    },
+    routeAgentMessage: async (message) => {
+      events.push(["route", message]);
+    },
+    canSendDirect: () => true,
+    planMessage: (markdown) => ({ markdown }),
+    sendMarkdownMessage: async (chatId, markdown, options) => {
+      events.push(["send", chatId, markdown, options?.target]);
+      return 101;
+    },
+  });
+  assert.deepEqual(events, [
+    ["resolve", { chatId: undefined, threadName: "Hazel" }],
+    ["send", 7, "Review the release", { chatId: 7, threadId: 99 }],
+    [
+      "route",
+      {
+        target: { chatId: 7, threadId: 99 },
+        messageId: 101,
+        text: "Review the release",
+      },
+    ],
+  ]);
+  assert.equal(result.details.messageId, 101);
+});
+
+test("Direct outbound message fails live-target preflight before Telegram send", async () => {
+  let sent = false;
+  await assert.rejects(
+    sendTelegramOutboundMessage({
+      text: "Review the release",
+      agentThread: "Missing",
+      resolveAgentTarget: async () => {
+        throw new Error("Telegram agent target is unavailable.");
+      },
+      routeAgentMessage: async () => {},
+      canSendDirect: () => true,
+      planMessage: (markdown) => ({ markdown }),
+      sendMarkdownMessage: async () => {
+        sent = true;
+        return 101;
+      },
+    }),
+    /target is unavailable/,
+  );
+  assert.equal(sent, false);
+});
+
 test("Direct outbound files carry internal thread target", async () => {
   const sentFields: Array<Record<string, string>> = [];
   await sendTelegramOutboundFiles({

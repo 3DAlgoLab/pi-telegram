@@ -258,6 +258,20 @@ export interface TelegramBusLeaderRuntimeDeps<TContext> {
     args: unknown[];
   }) => boolean;
   recordFollowerMessageOwnership?: TelegramBusFollowerMessageOwnershipRecorder;
+  resolveAgentTarget?: (
+    follower: TelegramBusFollowerView,
+    selector: Extract<
+      TelegramBusEnvelope,
+      { kind: "follower.resolveAgentTarget" }
+    >["selector"],
+  ) => Promise<TelegramTarget | undefined> | TelegramTarget | undefined;
+  routeAgentMessage?: (
+    follower: TelegramBusFollowerView,
+    message: Extract<
+      TelegramBusEnvelope,
+      { kind: "follower.routeAgentMessage" }
+    >["message"],
+  ) => Promise<void> | void;
   provisionFollowerTarget?: (
     registration: TelegramBusInstanceRegistration,
   ) => Promise<TelegramTarget | undefined> | TelegramTarget | undefined;
@@ -1024,6 +1038,20 @@ export function createTelegramBusLeaderEnvelopeHandler(deps: {
     args: unknown[];
   }) => boolean;
   recordFollowerMessageOwnership?: TelegramBusFollowerMessageOwnershipRecorder;
+  resolveAgentTarget?: (
+    follower: TelegramBusFollowerView,
+    selector: Extract<
+      TelegramBusEnvelope,
+      { kind: "follower.resolveAgentTarget" }
+    >["selector"],
+  ) => Promise<TelegramTarget | undefined> | TelegramTarget | undefined;
+  routeAgentMessage?: (
+    follower: TelegramBusFollowerView,
+    message: Extract<
+      TelegramBusEnvelope,
+      { kind: "follower.routeAgentMessage" }
+    >["message"],
+  ) => Promise<void> | void;
   provisionFollowerTarget?: (
     registration: TelegramBusInstanceRegistration,
   ) =>
@@ -1044,6 +1072,67 @@ export function createTelegramBusLeaderEnvelopeHandler(deps: {
   const getNowMs = deps.getNowMs ?? Date.now;
   const runFollowerMutation =
     deps.runFollowerMutation ?? createTelegramBusFollowerMutationRunner();
+  const handleAgentRequest = async (
+    envelope: Extract<
+      TelegramBusEnvelope,
+      {
+        kind:
+          | "follower.resolveAgentTarget"
+          | "follower.routeAgentMessage";
+      }
+    >,
+  ): Promise<TelegramBusEnvelope> => {
+    const follower = deps.followerRegistry.get(envelope.instanceId);
+    if (!follower) {
+      return {
+        kind: "bus.ack",
+        requestId: envelope.requestId,
+        ok: false,
+        message: "Unknown Telegram bus follower instance.",
+      };
+    }
+    if (
+      follower.registrationGeneration &&
+      envelope.registrationGeneration !== follower.registrationGeneration
+    ) {
+      return {
+        kind: "bus.ack",
+        requestId: envelope.requestId,
+        ok: false,
+        message: "Stale Telegram bus follower registration generation.",
+      };
+    }
+    deps.followerRegistry.heartbeat(envelope.instanceId, getNowMs());
+    if (envelope.kind === "follower.resolveAgentTarget") {
+      const target = await deps.resolveAgentTarget?.(
+        follower,
+        envelope.selector,
+      );
+      return target
+        ? {
+            kind: "bus.ack",
+            requestId: envelope.requestId,
+            ok: true,
+            result: target,
+          }
+        : {
+            kind: "bus.ack",
+            requestId: envelope.requestId,
+            ok: false,
+            message: "Telegram agent target is unavailable or ambiguous.",
+          };
+    }
+    if (!deps.routeAgentMessage) {
+      return {
+        kind: "bus.ack",
+        requestId: envelope.requestId,
+        ok: false,
+        message: "Telegram agent message routing is unavailable.",
+      };
+    }
+    await deps.routeAgentMessage(follower, envelope.message);
+    return { kind: "bus.ack", requestId: envelope.requestId, ok: true };
+  };
   const forwardToFollower = async (
     envelope: Extract<
       TelegramBusEnvelope,
@@ -1251,6 +1340,9 @@ export function createTelegramBusLeaderEnvelopeHandler(deps: {
               message: "Unknown Telegram bus follower instance.",
             };
       }
+      case "follower.resolveAgentTarget":
+      case "follower.routeAgentMessage":
+        return handleAgentRequest(envelope);
       case "leader.forwardCallback":
       case "leader.forwardReaction":
       case "leader.forwardMessage":
@@ -1619,6 +1711,8 @@ export function createTelegramBusLeaderRuntime<TContext>(
       callApi: deps.callApi,
       authorizeFollowerApiCall: deps.authorizeFollowerApiCall,
       recordFollowerMessageOwnership: deps.recordFollowerMessageOwnership,
+      resolveAgentTarget: deps.resolveAgentTarget,
+      routeAgentMessage: deps.routeAgentMessage,
       provisionFollowerTarget: deps.provisionFollowerTarget,
       onFollowerDisconnected: deps.onFollowerDisconnected,
       getCurrentLeaderEpoch: deps.getCurrentLeaderEpoch,

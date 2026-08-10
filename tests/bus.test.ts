@@ -370,6 +370,50 @@ test("Bus contract encodes and parses follower target replacement envelopes", ()
   );
 });
 
+test("Bus contract encodes and parses cross-instance agent message envelopes", () => {
+  const resolveEnvelope = {
+    kind: "follower.resolveAgentTarget" as const,
+    requestId: "inst-a:4",
+    instanceId: "inst-a",
+    registrationGeneration: "generation-a",
+    selector: { threadName: "Hazel" },
+    sentAtMs: 4000,
+  };
+  assert.deepEqual(
+    parseTelegramBusEnvelope(
+      encodeTelegramBusEnvelope(resolveEnvelope).trimEnd(),
+    ),
+    resolveEnvelope,
+  );
+  const routeEnvelope = {
+    kind: "follower.routeAgentMessage" as const,
+    requestId: "inst-a:5",
+    instanceId: "inst-a",
+    registrationGeneration: "generation-a",
+    message: {
+      target: { chatId: 7, threadId: 42 },
+      messageId: 99,
+      text: "Check the release",
+    },
+    sentAtMs: 5000,
+  };
+  assert.deepEqual(
+    parseTelegramBusEnvelope(
+      encodeTelegramBusEnvelope(routeEnvelope).trimEnd(),
+    ),
+    routeEnvelope,
+  );
+  assert.equal(
+    parseTelegramBusEnvelope(
+      JSON.stringify({
+        ...resolveEnvelope,
+        selector: { threadId: 42, threadName: "Hazel" },
+      }),
+    ),
+    undefined,
+  );
+});
+
 test("Bus contract encodes and parses follower API call envelopes", () => {
   const richBody = {
     chat_id: 1,
