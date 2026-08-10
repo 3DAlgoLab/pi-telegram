@@ -245,6 +245,39 @@ test("File transaction publishes a private directory guard with owner metadata",
   }
 });
 
+test("File transaction retries transient guard publication errors after contention disappears", () => {
+  const temp = createTempLockPath();
+  const transactionPath = `${temp.path}.transaction`;
+  let publishAttempts = 0;
+  let operations = 0;
+  try {
+    withTelegramFileTransaction(
+      transactionPath,
+      () => {
+        operations += 1;
+      },
+      {
+        attempts: 2,
+        retryDelayMs: 0,
+        publishRename(fromPath, toPath) {
+          publishAttempts += 1;
+          if (publishAttempts === 1) {
+            throw Object.assign(new Error("transient publication contention"), {
+              code: "EPERM",
+            });
+          }
+          renameSync(fromPath, toPath);
+        },
+      },
+    );
+    assert.equal(publishAttempts, 2);
+    assert.equal(operations, 1);
+    assert.equal(existsSync(transactionPath), false);
+  } finally {
+    rmSync(temp.dir, { recursive: true, force: true });
+  }
+});
+
 test("Lock transaction recovers a directory guard left by a dead process", () => {
   const temp = createTempLockPath();
   const transactionPath = `${temp.path}.transaction`;
