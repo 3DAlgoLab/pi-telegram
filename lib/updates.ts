@@ -813,12 +813,7 @@ export async function executeTelegramUpdate<
   >,
 ): Promise<void> {
   const runtimeDeps = update[TELEGRAM_INTERNAL_AGENT_MESSAGE]
-    ? {
-        ...deps,
-        getMessageOwnership: undefined,
-        getTargetOwnership: undefined,
-        recordMessageOwnership: undefined,
-      }
+    ? { ...deps, getMessageOwnership: undefined }
     : deps;
   await executeTelegramUpdatePlan(
     buildTelegramUpdateExecutionPlanFromUpdate(update, allowedUserId),

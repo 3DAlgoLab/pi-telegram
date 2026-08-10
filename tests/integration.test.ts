@@ -12,6 +12,7 @@ import testRoot, { mock, type TestContext } from "node:test";
 
 import { registerTelegramActivityHandler } from "../api/activity.ts";
 import { createTelegramActivityVerbosityRuntime } from "../lib/activity-verbosity.ts";
+import * as AgentMessages from "../lib/agent-messages.ts";
 import * as BusApi from "../lib/bus-api.ts";
 import * as BusFollower from "../lib/bus-follower.ts";
 import * as BusLeader from "../lib/bus-leader.ts";
@@ -19,6 +20,7 @@ import * as Bus from "../lib/bus.ts";
 import * as Delivery from "../lib/delivery.ts";
 import * as Routing from "../lib/routing.ts";
 import * as Threads from "../lib/threads.ts";
+import * as Updates from "../lib/updates.ts";
 import {
   createTelegramBridgeApiRuntime,
   type TelegramApiClient,
@@ -51,6 +53,89 @@ async function getRuntimeTelegramExtension(): Promise<RuntimeTelegramExtension> 
   runtimeTelegramExtension = (await import("../index.ts")).default;
   return runtimeTelegramExtension;
 }
+
+test("Cross-instance agent turns route in both leader and follower directions", async () => {
+  const followerRegistry = Bus.createTelegramBusFollowerRegistry();
+  followerRegistry.register({
+    instanceId: "follower",
+    connectedAtMs: 1,
+    registrationGeneration: "follower-generation",
+    target: { chatId: 7, threadId: 99 },
+    threadName: "Birch",
+  });
+  const events: string[] = [];
+  const handleUpdate = async (update: Updates.TelegramUpdateFlow) => {
+    await Updates.executeTelegramUpdate(update, 7, {
+      ctx: "ctx",
+      getCurrentInstanceId: () => "leader",
+      getMessageOwnership: () => ({ instanceId: "source-instance" }),
+      getTargetOwnership: (target) =>
+        target.threadId === 99
+          ? {
+              instanceId: "follower",
+              ownerGeneration: "follower-generation",
+            }
+          : { instanceId: "leader" },
+      recordMessageOwnership: ({ instanceId, messageId }) => {
+        events.push(`record:${instanceId}:${messageId}`);
+      },
+      foreignOwnedUpdateForwarder: {
+        forwardMessage: async ({ message, ownership }) => {
+          events.push(
+            `forward:${ownership.instanceId}:${ownership.ownerGeneration}:${message.message_thread_id}`,
+          );
+          return true;
+        },
+      },
+      removePendingMediaGroupMessages: () => {},
+      removeQueuedTelegramTurnsByMessageIds: () => 0,
+      handleAuthorizedTelegramReactionUpdate: async () => {},
+      pairTelegramUserIfNeeded: async () => false,
+      answerCallbackQuery: async () => {},
+      answerGuestQuery: async () => {},
+      handleAuthorizedTelegramCallbackQuery: async () => {},
+      sendTextReply: async () => undefined,
+      handleAuthorizedTelegramMessage: async (message) => {
+        events.push(`local:${message.message_thread_id}`);
+      },
+      handleAuthorizedTelegramEditedMessage: async () => {},
+    });
+  };
+  const runtime = AgentMessages.createTelegramAgentMessageRuntime({
+    instanceId: "leader",
+    getAllowedChatId: () => 7,
+    getLeaderTarget: () => ({ chatId: 7, threadId: 42 }),
+    getLeaderThreadName: () => "Aster",
+    followerRegistry,
+    getContext: () => "ctx",
+    handleUpdate,
+  });
+
+  await runtime.route({
+    sourceTarget: { chatId: 7, threadId: 42 },
+    sourceThreadName: "Aster",
+    message: {
+      target: { chatId: 7, threadId: 99 },
+      messageId: 101,
+      text: "Leader to follower",
+    },
+  });
+  await runtime.route({
+    sourceTarget: { chatId: 7, threadId: 99 },
+    sourceThreadName: "Birch",
+    message: {
+      target: { chatId: 7, threadId: 42 },
+      messageId: 102,
+      text: "Follower to leader",
+    },
+  });
+
+  assert.deepEqual(events, [
+    "record:follower:101",
+    "forward:follower:follower-generation:99",
+    "local:42",
+  ]);
+});
 
 async function flushMicrotasks(iterations = 10): Promise<void> {
   for (let i = 0; i < iterations; i++) {

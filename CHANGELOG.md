@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.27.8: Bidirectional Thread Routing Hotfix
+
+- `Directional Ownership`: Internal cross-instance turns now bypass only ownership of the already-sent Telegram message id while preserving ownership of the destination thread. Impact: follower-to-leader turns avoid bouncing back to their sender, while leader-to-follower and follower-to-follower turns still forward through the destination follower's live registration.
+- `Regression Coverage`: Focused tests independently prove source-message ownership bypass, destination-thread ownership forwarding with exact registration generation, and preservation of the internal agent-turn marker. Impact: both routing directions remain explicit instead of one fix silently disabling the opposite direction.
+
 ## 0.27.7: Bidirectional Thread Messaging Hotfix
 
 - `Follower-to-Leader Agent Turns`: Internal cross-instance turns now bypass ownership lookup for the already-sent Telegram message id while retaining that id as reply context. Impact: a follower targeting the leader reaches the leader queue instead of ownership routing the synthetic turn back to the sending follower.

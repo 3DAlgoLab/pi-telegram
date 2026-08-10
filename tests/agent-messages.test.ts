@@ -10,6 +10,7 @@ import test from "node:test";
 import { createTelegramAgentMessageRuntime } from "../lib/agent-messages.ts";
 import { createTelegramBusFollowerRegistry } from "../lib/bus.ts";
 import type { TelegramRoutedMessage } from "../lib/routing.ts";
+import { TELEGRAM_INTERNAL_AGENT_MESSAGE } from "../lib/updates.ts";
 
 test("Agent message runtime resolves live names and injects attributed turns", async () => {
   const registry = createTelegramBusFollowerRegistry();
@@ -19,7 +20,10 @@ test("Agent message runtime resolves live names and injects attributed turns", a
     target: { chatId: 7, threadId: 99 },
     threadName: "Hazel",
   });
-  const updates: Array<{ message: TelegramRoutedMessage }> = [];
+  const updates: Array<{
+    message: TelegramRoutedMessage;
+    [TELEGRAM_INTERNAL_AGENT_MESSAGE]?: true;
+  }> = [];
   const runtime = createTelegramAgentMessageRuntime({
     instanceId: "isle",
     getAllowedChatId: () => 7,
@@ -27,7 +31,10 @@ test("Agent message runtime resolves live names and injects attributed turns", a
     getLeaderThreadName: () => "Isle",
     followerRegistry: registry,
     getContext: () => ({ id: "ctx" }),
-    handleUpdate: async (update: { message: TelegramRoutedMessage }) => {
+    handleUpdate: async (update: {
+      message: TelegramRoutedMessage;
+      [TELEGRAM_INTERNAL_AGENT_MESSAGE]?: true;
+    }) => {
       updates.push(update);
     },
     getNowMs: () => 5_000,
@@ -56,6 +63,7 @@ test("Agent message runtime resolves live names and injects attributed turns", a
     },
   });
   assert.equal(updates.length, 1);
+  assert.equal(updates[0]![TELEGRAM_INTERNAL_AGENT_MESSAGE], true);
   assert.equal(updates[0]!.message.message_thread_id, 99);
   assert.equal(
     updates[0]!.message.text,
