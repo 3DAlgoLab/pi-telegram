@@ -121,6 +121,8 @@ interface TelegramCommandsAndToolsBindingDeps {
   callMultipart: OutboundHandlers.TelegramVoiceReplySenderDeps["sendMultipart"];
   getDefaultChatId: () => number | undefined;
   getDefaultTarget?: () => OutboundAttachments.TelegramQueuedOutboundAttachmentTurnView["target"];
+  resolveAgentTarget?: OutboundAttachments.TelegramOutboundMessageToolRegistrationDeps["resolveAgentTarget"];
+  routeAgentMessage?: OutboundAttachments.TelegramOutboundMessageToolRegistrationDeps["routeAgentMessage"];
   canSendDirect: () => boolean;
   updateStatus: TelegramBridgeStatusUpdater;
   recordRuntimeEvent: TelegramRuntimeEventRecorder;
@@ -143,6 +145,8 @@ export function registerTelegramCommandsAndTools({
   callMultipart,
   getDefaultChatId,
   getDefaultTarget,
+  resolveAgentTarget,
+  routeAgentMessage,
   canSendDirect,
   recordRuntimeEvent,
   updateStatus,
@@ -159,6 +163,8 @@ export function registerTelegramCommandsAndTools({
     getDefaultChatId,
     getDefaultTarget,
     getActiveTurn: activeTurnRuntime.get,
+    resolveAgentTarget,
+    routeAgentMessage,
     canSendDirect,
     planMessage:
       OutboundHandlers.createTelegramOutboundReplyPlanner(buttonActionStore),

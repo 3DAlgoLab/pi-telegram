@@ -5,6 +5,7 @@
  */
 
 import * as Activity from "./lib/activity.ts";
+import * as AgentMessages from "./lib/agent-messages.ts";
 import * as ActivityVerbosity from "./lib/activity-verbosity.ts";
 import * as Bindings from "./lib/bindings.ts";
 import * as BusApi from "./lib/bus-api.ts";
@@ -811,6 +812,17 @@ export default function (pi: Pi.ExtensionAPI) {
       handleAuthorizedReactionUpdate:
         inboundRouteRuntime.handleAuthorizedReactionUpdate,
     });
+  const agentMessageRuntime = AgentMessages.createTelegramAgentMessageRuntime({
+    instanceId: telegramInstanceId,
+    getAllowedChatId: configStore.getAllowedUserId,
+    getLeaderTarget: telegramBusLeaderState.getTarget,
+    getLeaderThreadName() {
+      return findCurrentThreadRecord()?.threadName;
+    },
+    followerRegistry: telegramBusFollowerRegistry,
+    getContext: telegramSessionContextStore.get,
+    handleUpdate: inboundRouteRuntime.handleUpdate,
+  });
   const telegramBusFollowerAssemblyDeps =
     BusFollower.createTelegramBusFollowerRuntimeAssemblyDeps<
       Pi.ExtensionContext,
@@ -898,6 +910,16 @@ export default function (pi: Pi.ExtensionAPI) {
         startPolling: pollingRuntime.start,
         stopPolling: pollingRuntime.stop,
         authorizeFollowerApiCall,
+        resolveAgentTarget(follower, selector) {
+          return agentMessageRuntime.resolveTarget(selector, follower.target);
+        },
+        routeAgentMessage(follower, message) {
+          return agentMessageRuntime.route({
+            sourceTarget: follower.target,
+            sourceThreadName: follower.threadName,
+            message,
+          });
+        },
         isFollowerProcessAlive: Locks.isProcessAlive,
         shouldCleanupConfirmedDeadFollower:
           configControls.resolveAutomaticThreadCleanupEnabled,
@@ -1094,6 +1116,32 @@ export default function (pi: Pi.ExtensionAPI) {
     callMultipart,
     getDefaultChatId: proactivePushChatIdGetter,
     getDefaultTarget: proactivePushTargetGetter,
+    async resolveAgentTarget(selector) {
+      if (lockRuntime.owns()) {
+        const target = agentMessageRuntime.resolveTarget(
+          selector,
+          proactivePushTargetGetter(),
+        );
+        if (!target) {
+          throw new Error(
+            "Telegram agent target is unavailable, ambiguous, or not live.",
+          );
+        }
+        return target;
+      }
+      return telegramBusFollowerClients.agentMessages.resolveTarget(selector);
+    },
+    async routeAgentMessage(message) {
+      if (lockRuntime.owns()) {
+        await agentMessageRuntime.route({
+          sourceTarget: proactivePushTargetGetter(),
+          sourceThreadName: findCurrentThreadRecord()?.threadName,
+          message,
+        });
+        return;
+      }
+      await telegramBusFollowerClients.agentMessages.routeMessage(message);
+    },
     canSendDirect() {
       return (
         ownsTelegramDirectDelivery() ||

@@ -9,6 +9,10 @@ import { basename } from "node:path";
 
 import { Type } from "@sinclair/typebox";
 
+import type {
+  TelegramBusAgentMessage,
+  TelegramBusAgentTargetSelector,
+} from "./bus.ts";
 import type { ExtensionAPI } from "./pi.ts";
 import {
   TELEGRAM_ATTACH_PROMPT_GUIDELINES,
@@ -84,6 +88,10 @@ export interface TelegramOutboundMessageToolRegistrationDeps extends TelegramOut
   getActiveTurn?: () =>
     | { chatId: number; target?: TelegramTarget }
     | undefined;
+  resolveAgentTarget?: (
+    selector: TelegramBusAgentTargetSelector,
+  ) => Promise<TelegramTarget & { threadId: number }>;
+  routeAgentMessage?: (message: TelegramBusAgentMessage) => Promise<void>;
   canSendDirect: () => boolean;
   planMessage: (markdown: string) => TelegramOutboundMessagePlan;
   sendMarkdownMessage: (
@@ -515,6 +523,12 @@ export function registerTelegramOutboundMessageTool(
           description: "Optional Telegram topic thread id with chat_id",
         }),
       ),
+      thread: Type.Optional(
+        Type.Union([Type.String(), Type.Number()], {
+          description:
+            "Optional live Pi thread name or numeric id for visible delivery plus a target-agent turn",
+        }),
+      ),
     }),
     async execute(_toolCallId, params) {
       try {
@@ -522,9 +536,12 @@ export function registerTelegramOutboundMessageTool(
           text: params.text,
           chatId: params.chat_id,
           threadId: params.thread_id,
+          agentThread: params.thread,
           getDefaultChatId: deps.getDefaultChatId,
           getDefaultTarget: deps.getDefaultTarget,
           getActiveTurn: deps.getActiveTurn,
+          resolveAgentTarget: deps.resolveAgentTarget,
+          routeAgentMessage: deps.routeAgentMessage,
           canSendDirect: deps.canSendDirect,
           planMessage: deps.planMessage,
           sendMarkdownMessage: deps.sendMarkdownMessage,
@@ -736,12 +753,17 @@ export async function sendTelegramOutboundMessage(options: {
   text: string;
   chatId?: number;
   threadId?: number;
+  agentThread?: string | number;
   target?: TelegramTarget;
   getDefaultChatId?: () => number | undefined;
   getDefaultTarget?: () => TelegramTarget | undefined;
   getActiveTurn?: () =>
     | { chatId: number; target?: TelegramTarget }
     | undefined;
+  resolveAgentTarget?: (
+    selector: TelegramBusAgentTargetSelector,
+  ) => Promise<TelegramTarget & { threadId: number }>;
+  routeAgentMessage?: (message: TelegramBusAgentMessage) => Promise<void>;
   canSendDirect: () => boolean;
   planMessage: (markdown: string) => TelegramOutboundMessagePlan;
   sendMarkdownMessage: (
@@ -754,17 +776,41 @@ export async function sendTelegramOutboundMessage(options: {
   details: { chatId: number; messageId?: number };
 }> {
   assertTelegramDirectDeliveryAllowed(options.canSendDirect);
+  const activeTurn = options.getActiveTurn?.();
+  const requestedAgentSelector: TelegramBusAgentTargetSelector | undefined =
+    options.agentThread !== undefined
+      ? typeof options.agentThread === "number"
+        ? { chatId: options.chatId, threadId: options.agentThread }
+        : { chatId: options.chatId, threadName: options.agentThread }
+      : activeTurn &&
+          options.resolveAgentTarget &&
+          options.routeAgentMessage &&
+          ((options.target?.threadId !== undefined) ||
+            (options.chatId !== undefined && options.threadId !== undefined))
+        ? {
+            chatId: options.target?.chatId ?? options.chatId,
+            threadId: options.target?.threadId ?? options.threadId,
+          }
+        : undefined;
+  let agentTarget: (TelegramTarget & { threadId: number }) | undefined;
+  if (requestedAgentSelector) {
+    if (!options.resolveAgentTarget || !options.routeAgentMessage) {
+      throw new Error("Telegram agent turn routing is unavailable.");
+    }
+    agentTarget = await options.resolveAgentTarget(requestedAgentSelector);
+  }
   const { chatId, target } = resolveTelegramOutboundTarget({
-    chatId: options.chatId,
-    threadId: options.threadId,
-    target: options.target,
+    chatId: agentTarget?.chatId ?? options.chatId,
+    threadId: agentTarget?.threadId ?? options.threadId,
+    target: agentTarget ?? options.target,
     getDefaultChatId: options.getDefaultChatId,
     getDefaultTarget: options.getDefaultTarget,
   });
-  const activeTurn = options.getActiveTurn?.();
   if (activeTurn) {
     const hasExplicitTarget =
-      options.chatId !== undefined || options.target !== undefined;
+      options.chatId !== undefined ||
+      options.target !== undefined ||
+      options.agentThread !== undefined;
     const activeTarget = activeTurn.target ?? { chatId: activeTurn.chatId };
     const requestedTarget = target ?? { chatId };
     const targetsMatch =
@@ -781,6 +827,18 @@ export async function sendTelegramOutboundMessage(options: {
     replyMarkup: plan.replyMarkup,
     target,
   });
+  if (agentTarget) {
+    if (messageId === undefined) {
+      throw new Error(
+        "Telegram message was sent but no message id was returned for agent routing.",
+      );
+    }
+    await options.routeAgentMessage!({
+      target: agentTarget,
+      messageId,
+      text: options.text,
+    });
+  }
   return {
     content: [
       {

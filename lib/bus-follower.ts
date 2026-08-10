@@ -25,6 +25,8 @@ import {
   getTelegramBusSocketPath,
   resolveTelegramBusSocketPath,
   sendTelegramBusLocalEnvelope,
+  type TelegramBusAgentMessage,
+  type TelegramBusAgentTargetSelector,
   type TelegramBusEnvelope,
   type TelegramBusSocketPathSource,
 } from "./bus.ts";
@@ -736,6 +738,12 @@ export function createTelegramBusFollowerClientRuntime<
       getAuthSecret: deps.getApiAuthSecret,
       getRegistrationGeneration: deps.getRegistrationGeneration,
     }),
+    agentMessages: createTelegramBusAgentMessageClient({
+      ...sharedClientDeps,
+      instanceId: deps.instanceId,
+      getAuthSecret: deps.getApiAuthSecret,
+      getRegistrationGeneration: deps.getRegistrationGeneration,
+    }),
     foreignOwnedUpdateForwarder: createTelegramBusForeignOwnedUpdateForwarder<
       TContext,
       TReactionUpdate,
@@ -752,6 +760,79 @@ export function createTelegramBusFollowerClientRuntime<
       ...sharedClientDeps,
       getAuthSecret: deps.getForwardingAuthSecret,
     }),
+  };
+}
+
+export function createTelegramBusAgentMessageClient(
+  deps: TelegramBusFollowerApiCallerDeps,
+): {
+  resolveTarget: (
+    selector: TelegramBusAgentTargetSelector,
+  ) => Promise<TelegramTarget & { threadId: number }>;
+  routeMessage: (message: TelegramBusAgentMessage) => Promise<void>;
+} {
+  const getNowMs = deps.getNowMs ?? Date.now;
+  const timeoutMs =
+    deps.timeoutMs ?? TELEGRAM_BUS_FOLLOWER_CLIENT_TIMEOUT_MS;
+  const request = async (
+    envelope:
+      | Extract<TelegramBusEnvelope, { kind: "follower.resolveAgentTarget" }>
+      | Extract<TelegramBusEnvelope, { kind: "follower.routeAgentMessage" }>,
+  ): Promise<unknown> => {
+    const socketPath = resolveTelegramBusSocketPath(deps.socketPath);
+    const response = await sendTelegramBusLocalEnvelope({
+      socketPath,
+      timeoutMs,
+      retry: getTelegramBusTransportRetryPolicy({
+        endpoint: socketPath,
+        operation: "operation",
+      }),
+      envelope,
+    });
+    if (response?.kind === "bus.ack" && response.ok) return response.result;
+    throw new Error(
+      response?.kind === "bus.ack"
+        ? response.message ?? "Telegram bus agent message failed."
+        : "Telegram bus agent message did not return an acknowledgement.",
+    );
+  };
+  const registrationFields = () => ({
+    auth: deps.getAuthSecret?.(),
+    instanceId: deps.instanceId,
+    ...(deps.getRegistrationGeneration?.()
+      ? { registrationGeneration: deps.getRegistrationGeneration?.() }
+      : {}),
+  });
+  return {
+    async resolveTarget(selector) {
+      const result = await request({
+        kind: "follower.resolveAgentTarget",
+        requestId: deps.createRequestId(),
+        ...registrationFields(),
+        selector,
+        sentAtMs: getNowMs(),
+      });
+      if (!result || typeof result !== "object" || Array.isArray(result)) {
+        throw new Error("Telegram bus returned an invalid agent target.");
+      }
+      const target = result as Record<string, unknown>;
+      if (
+        typeof target.chatId !== "number" ||
+        typeof target.threadId !== "number"
+      ) {
+        throw new Error("Telegram bus returned an invalid agent target.");
+      }
+      return { chatId: target.chatId, threadId: target.threadId };
+    },
+    async routeMessage(message) {
+      await request({
+        kind: "follower.routeAgentMessage",
+        requestId: deps.createRequestId(),
+        ...registrationFields(),
+        message,
+        sentAtMs: getNowMs(),
+      });
+    },
   };
 }
 

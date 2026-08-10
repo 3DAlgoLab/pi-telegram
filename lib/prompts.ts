@@ -29,9 +29,9 @@ export const TELEGRAM_MESSAGE_PROMPT_SNIPPET =
   "Send direct Telegram Markdown text when the user explicitly asks for Telegram delivery outside the normal reply flow.";
 export const TELEGRAM_MESSAGE_PROMPT_GUIDELINES = [
   "Use telegram_message only when the user explicitly asks to send a message to Telegram from the local/TUI side, or names a concrete Telegram delivery target.",
-  "For an explicit thread target, provide chat_id plus thread_id; registered multi-instance followers default to their assigned thread target.",
+  "For a live Pi thread target, provide thread as its case-insensitive name or numeric id; the bridge sends visibly and admits one attributed turn to that live instance. Unknown, ambiguous, same, or offline targets fail before sending.",
   "Add buttons by embedding the same top-level telegram_button HTML comments used in normal Telegram replies; Telegram does not support standalone buttons.",
-  "During an active Telegram turn, omit telegram_message for the current target and answer normally; use it only with an explicit different chat_id/thread_id when the user requests cross-target delivery.",
+  "During an active Telegram turn, omit telegram_message for the current target and answer normally; use thread only when the user requests delivery to a different live Pi thread.",
 ] as const;
 
 const TELEGRAM_MODEL_CONTEXT_TOOL_NAMES = new Set([

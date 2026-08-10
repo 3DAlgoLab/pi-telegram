@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.27.5: Cross-Instance Agent Turns
+
+- `Live Thread Addressing`: `telegram_message` now accepts `thread` as a case-insensitive live thread name or numeric id. Resolution uses leader-owned live registrations and rejects unknown, ambiguous, same-target, offline, and cross-chat destinations before visible Telegram mutation.
+- `Agent Turn Routing`: A successful targeted send routes the same text through the authenticated, generation-fenced bus into the owning Pi instance as `[agent|from-thread:<name>]`, preserving one visible Telegram message without impersonating direct user input. Leader and follower targets share the ordinary inbound queue path, request deduplication, rendering, buttons, and authority fencing.
+- `Compatibility and Coverage`: Existing default and `chat_id` / `thread_id` behavior remains compatible; active-turn cross-thread sends gain agent routing when available. Regressions cover protocol parsing, stale generations, name resolution, ambiguity, attribution, preflight ordering, and tool delivery.
+
 ## 0.27.4: Disconnect Leadership Release Hotfix
 
 - `Leadership Release`: Manual disconnect now treats thread deletion as a durable cleanup side effect rather than a prerequisite for relinquishing transport leadership. A leader or promoted follower persists the exact cleanup intent, attempts close/delete under its epoch, and then stops polling and releases the owner lock even when Telegram rejects cleanup or the epoch changes. Impact: `Telegram Error` after `/telegram-disconnect` can no longer leave a live process pinning leadership and force newly connected instances to become followers.
