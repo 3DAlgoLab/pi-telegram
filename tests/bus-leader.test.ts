@@ -88,6 +88,67 @@ test("Bus leader preserves a binding through follower reload handoff", async () 
   }
 });
 
+test("Bus leader emits one connected notice across an immediate follower session handoff", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-follower-notice-handoff-"));
+  const store = createTelegramTopicTargetStore({
+    path: join(dir, "state.json"),
+    getNowMs: () => 1000,
+  });
+  const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
+  let syncState = {};
+  const provision = createTelegramBusFollowerTargetProvisioner({
+    getAllowedUserId: () => 7,
+    topicTargetStore: store,
+    async callApi<TResponse>(method: string, body: Record<string, unknown>) {
+      calls.push({ method, body });
+      if (method === "createForumTopic") {
+        return { message_thread_id: 42 } as TResponse;
+      }
+      return { ok: true } as TResponse;
+    },
+    getNowMs: () => 1000,
+    getSyncState: () => syncState,
+    setSyncState: (state) => {
+      syncState = state;
+    },
+    recordRuntimeEvent() {},
+  });
+  try {
+    const initialTarget = await provision({
+      instanceId: "follower-old",
+      profileKey: "manual:owner-a",
+      connectedAtMs: 1000,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.deepEqual(
+      await provision({
+        instanceId: "follower-new",
+        previousInstanceId: "follower-old",
+        profileKey: "manual:owner-a",
+        target: initialTarget,
+        connectedAtMs: 1001,
+      }),
+      initialTarget,
+    );
+    assert.deepEqual(calls.map((call) => call.method), [
+      "createForumTopic",
+      "sendMessage",
+      "sendChatAction",
+    ]);
+    assert.equal(
+      calls.filter((call) => call.method === "sendMessage").length,
+      1,
+    );
+    assert.deepEqual(calls.at(-1)?.body, {
+      chat_id: 7,
+      message_thread_id: 42,
+      action: "typing",
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("Bus leader migrates a reloaded follower from generation to stable identity", async () => {
   const dir = mkdtempSync(join(tmpdir(), "pi-telegram-follower-identity-migration-"));
   const store = createTelegramTopicTargetStore({
@@ -135,7 +196,16 @@ test("Bus leader migrates a reloaded follower from generation to stable identity
       }),
       { chatId: 7, threadId: 42, slot: "C", threadName: "Cedar" },
     );
-    assert.deepEqual(calls.map((call) => call.method), ["sendMessage"]);
+    assert.deepEqual(calls, [
+      {
+        method: "sendChatAction",
+        body: {
+          chat_id: 7,
+          message_thread_id: 42,
+          action: "typing",
+        },
+      },
+    ]);
     assert.equal(store.list().length, 1);
     assert.equal(
       store.getByProfileKey("manual:75433:start:stable")?.instanceId,
