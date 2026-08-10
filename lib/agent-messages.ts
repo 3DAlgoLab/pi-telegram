@@ -11,6 +11,7 @@ import type {
 } from "./bus.ts";
 import type { TelegramRoutedMessage } from "./routing.ts";
 import type { TelegramTarget } from "./target.ts";
+import { TELEGRAM_INTERNAL_AGENT_MESSAGE } from "./updates.ts";
 
 export interface TelegramAgentMessageRuntimeDeps<TContext, TUpdate> {
   instanceId: string;
@@ -110,7 +111,10 @@ export function createTelegramAgentMessageRuntime<TContext, TUpdate>(
         message_thread_id: target.threadId,
         text: `[agent|from-thread:${sourceLabel}]\n\n${input.message.text}`,
       } as TelegramRoutedMessage;
-      await deps.handleUpdate({ message } as TUpdate, ctx);
+      await deps.handleUpdate(
+        { message, [TELEGRAM_INTERNAL_AGENT_MESSAGE]: true } as TUpdate,
+        ctx,
+      );
     },
   };
 }

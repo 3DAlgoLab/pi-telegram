@@ -27,6 +27,7 @@ import {
   handleAuthorizedTelegramReactionUpdate,
   normalizeTelegramReactionEmoji,
   registerTelegramUpdateHandler,
+  TELEGRAM_INTERNAL_AGENT_MESSAGE,
   TELEGRAM_PRIORITY_REACTION_EMOJIS,
   TELEGRAM_PRIORITY_REACTIONS,
   TELEGRAM_REMOVAL_REACTION_EMOJIS,
@@ -1302,6 +1303,50 @@ test("Update runtime routes edited messages without creating normal message turn
     },
   );
   assert.deepEqual(events, ["edited-message"]);
+});
+
+test("Internal agent messages bypass outbound message ownership forwarding", async () => {
+  const events: string[] = [];
+  await executeTelegramUpdate(
+    {
+      [TELEGRAM_INTERNAL_AGENT_MESSAGE]: true,
+      message: {
+        message_id: 99,
+        date: 1,
+        chat: { id: 7, type: "private" },
+        from: { id: 7, is_bot: false },
+        message_thread_id: 42,
+        text: "[agent|from-thread:Hazel]\n\nHello",
+      },
+    },
+    7,
+    {
+      ctx: TEST_CONTEXT,
+      getCurrentInstanceId: () => "leader",
+      getMessageOwnership: () => ({ instanceId: "follower" }),
+      getTargetOwnership: () => ({ instanceId: "follower" }),
+      recordMessageOwnership: () => events.push("record"),
+      foreignOwnedUpdateForwarder: {
+        forwardMessage: async () => {
+          events.push("forward");
+          return true;
+        },
+      },
+      removePendingMediaGroupMessages: () => {},
+      removeQueuedTelegramTurnsByMessageIds: () => 0,
+      handleAuthorizedTelegramReactionUpdate: async () => {},
+      pairTelegramUserIfNeeded: async () => false,
+      answerCallbackQuery: async () => {},
+      answerGuestQuery: async () => {},
+      handleAuthorizedTelegramCallbackQuery: async () => {},
+      sendTextReply: async () => undefined,
+      handleAuthorizedTelegramMessage: async () => {
+        events.push("message");
+      },
+      handleAuthorizedTelegramEditedMessage: async () => {},
+    },
+  );
+  assert.deepEqual(events, ["message"]);
 });
 
 test("Update runtime answers callbacks owned by another instance without handling", async () => {
