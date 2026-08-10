@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.27.11: Follower Connection Notice Hotfix
+
+- `Follower Connection Notice`: An exact immediate follower session handoff now verifies its carried thread with a target-scoped chat action instead of sending the connected notice again. Impact: fresh follower startup still announces the assigned instance once, while the automatic session replacement no longer produces duplicate `Instance <name> connected` messages.
+- `Handoff Coverage`: A regression now exercises fresh thread provisioning followed by exact session handoff and requires one visible connected notice plus a non-message visibility probe. Impact: target validation and stale-thread recovery remain intact without reintroducing duplicate chat bubbles.
+
 ## 0.27.10: Leader Thread Rebind Hotfix
 
 - `Live Leader Target`: Reclaiming or replacing the current leader thread now updates the process-local leader identity immediately after the durable binding commits. Impact: live thread-name resolution no longer returns the deleted previous leader target, so another instance can address the rebound leader without receiving `message thread not found`.

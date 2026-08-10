@@ -523,6 +523,12 @@ export function createTelegramBusFollowerTargetProvisioner(
       }
       const probeRequiredRecord =
         reconnectRecord?.status === "probe-required";
+      const exactSessionHandoff =
+        crossSessionReuse &&
+        !!requestedTarget &&
+        registration.previousInstanceId === reconnectRecord?.instanceId &&
+        requestedTarget.chatId === reconnectRecord.target.chatId &&
+        requestedTarget.threadId === reconnectRecord.target.threadId;
       const requiresVisibilityProbe =
         crossSessionReuse ||
         probeRequiredRecord ||
@@ -538,12 +544,21 @@ export function createTelegramBusFollowerTargetProvisioner(
           : undefined;
       if (requiresVisibilityProbe && connectedAnnouncement) {
         try {
-          await deps.callApi("sendMessage", {
-            chat_id: connectedAnnouncement.target.chatId,
-            message_thread_id: connectedAnnouncement.target.threadId,
-            text: connectedAnnouncement.text,
-            parse_mode: connectedAnnouncement.parseMode,
-          });
+          await deps.callApi(
+            exactSessionHandoff ? "sendChatAction" : "sendMessage",
+            exactSessionHandoff
+              ? {
+                  chat_id: connectedAnnouncement.target.chatId,
+                  message_thread_id: connectedAnnouncement.target.threadId,
+                  action: "typing",
+                }
+              : {
+                  chat_id: connectedAnnouncement.target.chatId,
+                  message_thread_id: connectedAnnouncement.target.threadId,
+                  text: connectedAnnouncement.text,
+                  parse_mode: connectedAnnouncement.parseMode,
+                },
+          );
           if (recoverableTarget || probeRequiredRecord) {
             const activatedRecord = deps.topicTargetStore.upsert({
               ...result.record,
