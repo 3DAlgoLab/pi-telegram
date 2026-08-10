@@ -167,6 +167,7 @@ export function createTelegramManualThreadDisconnectHandler<
 >(deps: TelegramManualThreadDisconnectDeps<TSyncState>): () => Promise<string> {
   return async () => {
     const currentRecord = deps.getCurrentThreadRecord();
+    let cleanupPending = false;
     if (currentRecord?.target.threadId) {
       const isManualFollower = currentRecord.owner?.kind === "manual-follower";
       const leaderEpoch = deps.getCurrentLeaderEpoch?.();
@@ -228,11 +229,7 @@ export function createTelegramManualThreadDisconnectHandler<
             recordRuntimeEvent: deps.recordRuntimeEvent,
           },
         );
-        if (cleanup.incompleteActions?.length) {
-          throw new Error(
-            "Telegram thread deletion was not confirmed; inspect /telegram-status --debug and retry /telegram-disconnect.",
-          );
-        }
+        cleanupPending = Boolean(cleanup.incompleteActions?.length);
       }
       const leaderTarget = deps.getLeaderTarget();
       if (
@@ -248,7 +245,10 @@ export function createTelegramManualThreadDisconnectHandler<
         }) as TSyncState,
       );
     }
-    return deps.stopPolling();
+    const stopped = await deps.stopPolling();
+    return cleanupPending
+      ? `${stopped} Telegram thread cleanup remains pending for the next leader.`
+      : stopped;
   };
 }
 
