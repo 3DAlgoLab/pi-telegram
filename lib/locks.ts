@@ -276,20 +276,15 @@ function createLockTransactionContentionError(path: string): Error {
   );
 }
 
-function isLockTransactionContentionError(
-  error: unknown,
-  path: string,
-): boolean {
+function isLockTransactionContentionError(error: unknown): boolean {
   const code = (error as { code?: unknown })?.code;
-  if (
+  return (
     code === "EEXIST" ||
     code === "ENOTEMPTY" ||
     code === "ENOTDIR" ||
-    code === "EISDIR"
-  ) {
-    return true;
-  }
-  return existsSync(path) && (code === "EPERM" || code === "EACCES");
+    code === "EISDIR" ||
+    isRetryableLockWriteError(error)
+  );
 }
 
 function removeLockTransactionGuard(path: string): void {
@@ -298,6 +293,7 @@ function removeLockTransactionGuard(path: string): void {
 
 function createLockTransactionGuard(
   path: string,
+  options: TelegramFileTransactionOptions = {},
 ): TelegramLockTransactionOwner {
   const owner: TelegramLockTransactionOwner = {
     pid: process.pid,
@@ -313,7 +309,7 @@ function createLockTransactionGuard(
       { encoding: "utf8", flag: "wx", mode: 0o600 },
     );
     if (existsSync(path)) throw createLockTransactionContentionError(path);
-    renameSync(stagedPath, path);
+    (options.publishRename ?? renameSync)(stagedPath, path);
     return owner;
   } finally {
     try {
@@ -368,6 +364,7 @@ type TelegramTransactionGlobal = typeof globalThis & {
 
 export interface TelegramFileTransactionOptions {
   recoveryRename?: typeof renameSync;
+  publishRename?: typeof renameSync;
   attempts?: number;
   retryDelayMs?: number;
 }
@@ -465,9 +462,9 @@ function acquireRecoverableDirectoryGuard(
 ): TelegramLockTransactionOwner | undefined {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      return createLockTransactionGuard(path);
+      return createLockTransactionGuard(path, options);
     } catch (error) {
-      if (!isLockTransactionContentionError(error, path)) throw error;
+      if (!isLockTransactionContentionError(error)) throw error;
       if (!reclaimAbandonedDirectoryGuard(path, options)) return undefined;
     }
   }
@@ -528,11 +525,12 @@ function acquireLegacyRecoveryGuard(
 
 function createRecoveredLockTransactionGuard(
   path: string,
+  options: TelegramFileTransactionOptions = {},
 ): TelegramLockTransactionOwner | undefined {
   try {
-    return createLockTransactionGuard(path);
+    return createLockTransactionGuard(path, options);
   } catch (error) {
-    if (isLockTransactionContentionError(error, path)) return undefined;
+    if (isLockTransactionContentionError(error)) return undefined;
     throw error;
   }
 }
@@ -550,7 +548,7 @@ function recoverAbandonedLockTransaction(
   }
   if (isDirectory) {
     if (!reclaimAbandonedDirectoryGuard(path, options)) return undefined;
-    const recoveredOwner = createRecoveredLockTransactionGuard(path);
+    const recoveredOwner = createRecoveredLockTransactionGuard(path, options);
     try {
       reclaimAbandonedDirectoryGuard(`${path}.recovery`, options);
       return recoveredOwner;
@@ -584,7 +582,7 @@ function recoverAbandonedLockTransaction(
     } catch {
       /* stale debris cannot retain transaction authority */
     }
-    recoveredOwner = createRecoveredLockTransactionGuard(path);
+    recoveredOwner = createRecoveredLockTransactionGuard(path, options);
     return recoveredOwner;
   } finally {
     try {
@@ -617,9 +615,9 @@ function acquireLockTransaction(
   mkdirSync(dirname(path), { recursive: true });
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      return createLockTransactionGuard(path);
+      return createLockTransactionGuard(path, options);
     } catch (error) {
-      if (!isLockTransactionContentionError(error, path)) throw error;
+      if (!isLockTransactionContentionError(error)) throw error;
       const recoveredOwner = recoverAbandonedLockTransaction(path, options);
       if (recoveredOwner !== undefined) return recoveredOwner;
       if (attempt === attempts - 1) {

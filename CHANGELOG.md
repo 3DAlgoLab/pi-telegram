@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.27.12: Windows Log Serialization Hotfix
+
+- `Windows Log Serialization`: File-transaction guard publication now retries transient `EPERM`, `EBUSY`, and `EACCES` failures even when the competing guard disappears before the error is classified. Impact: concurrent runtime JSONL writers no longer drop one process's complete batch during the narrow Windows publication race, while permanent failures remain bounded and fail closed.
+- `Transaction Coverage`: A deterministic regression injects a vanished-path `EPERM` during guard publication and requires the transaction operation to run exactly once after retry. Impact: cross-process diagnostics retain all lines without weakening guard ownership or recovery fencing.
+
 ## 0.27.11: Follower Connection Notice Hotfix
 
 - `Follower Connection Notice`: An exact immediate follower session handoff now verifies its carried thread with a target-scoped chat action instead of sending the connected notice again. Impact: fresh follower startup still announces the assigned instance once, while the automatic session replacement no longer produces duplicate `Instance <name> connected` messages.
