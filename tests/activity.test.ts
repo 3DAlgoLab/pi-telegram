@@ -660,18 +660,21 @@ test("Assistant output projection admits public local blocks once and in order",
   runtime.accept(assistantSegment(5, { text: "  " }));
   runtime.accept(assistantSegment(6));
   runtime.accept(assistantSegment(7, { source: "local" }));
+  runtime.accept(assistantSegment(8, { source: "unknown" }));
   await runtime.waitForIdle();
   enabled = false;
-  runtime.accept(assistantSegment(8));
+  runtime.accept(assistantSegment(9));
+  runtime.accept(assistantSegment(10, { source: "unknown" }));
   runtime.accept(
-    assistantSegment(9, { source: "telegram", placement: "intermediate" }),
+    assistantSegment(11, { source: "telegram", placement: "intermediate" }),
   );
   await runtime.waitForIdle();
   assert.deepEqual(sent, [
     "segment-1",
     "segment-2",
     "segment-7",
-    "segment-9",
+    "segment-8",
+    "segment-11",
   ]);
   assert.deepEqual(failures, ["failed"]);
 });

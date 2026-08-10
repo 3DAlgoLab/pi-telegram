@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.27.6: Autonomous Follow-Up Delivery Hotfix
+
+- `Follow-Up Finals`: Completed public assistant blocks from unclassified Pi turns now follow the default-enabled Proactive Push path, alongside explicitly local and autonomous turns. Impact: actor terminal follow-ups and comparable extension-triggered continuations no longer show reasoning/activity in Telegram while silently dropping the final answer.
+- `Safety and Coverage`: Telegram-originated finals remain exclusively owned by active-turn settlement, while unclassified output still requires Proactive Push policy plus fresh direct/follower transport authority. Regression coverage proves unclassified finals deliver once when enabled and remain suppressed when disabled.
+
 ## 0.27.5: Cross-Instance Agent Turns
 
 - `Live Thread Addressing`: `telegram_message` now accepts `thread` as a case-insensitive live thread name or numeric id. Resolution uses leader-owned live registrations and rejects unknown, ambiguous, same-target, offline, and cross-chat destinations before visible Telegram mutation.

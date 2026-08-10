@@ -732,7 +732,9 @@ export function createTelegramAssistantOutputRuntime<TAuthority = undefined>(dep
   const admitted = new Set<string>();
   const isEligibleEvent = (event: TelegramAssistantSegmentEvent): boolean =>
     (event.source === "telegram" && event.placement === "intermediate") ||
-    ((event.source === "local" || event.source === "autonomous") &&
+    ((event.source === "local" ||
+      event.source === "autonomous" ||
+      event.source === "unknown") &&
       deps.isEnabled());
 
   return {
