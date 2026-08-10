@@ -82,7 +82,7 @@ test("Cross-instance agent turns route in both leader and follower directions", 
       foreignOwnedUpdateForwarder: {
         forwardMessage: async ({ message, ownership }) => {
           events.push(
-            `forward:${ownership.instanceId}:${ownership.ownerGeneration}:${message.message_thread_id}`,
+            `forward:${ownership.instanceId}:${ownership.ownerGeneration}:${message.message_thread_id}:${message.pi_telegram_agent_source_thread}`,
           );
           return true;
         },
@@ -96,7 +96,9 @@ test("Cross-instance agent turns route in both leader and follower directions", 
       handleAuthorizedTelegramCallbackQuery: async () => {},
       sendTextReply: async () => undefined,
       handleAuthorizedTelegramMessage: async (message) => {
-        events.push(`local:${message.message_thread_id}`);
+        events.push(
+          `local:${message.message_thread_id}:${message.pi_telegram_agent_source_thread}`,
+        );
       },
       handleAuthorizedTelegramEditedMessage: async () => {},
     });
@@ -132,8 +134,8 @@ test("Cross-instance agent turns route in both leader and follower directions", 
 
   assert.deepEqual(events, [
     "record:follower:101",
-    "forward:follower:follower-generation:99",
-    "local:42",
+    "forward:follower:follower-generation:99:Aster",
+    "local:42:Birch",
   ]);
 });
 

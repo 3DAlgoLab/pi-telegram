@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.27.9: Symmetric Agent-Turn Metadata Hotfix
+
+- `Agent-Turn Prompt Shape`: Cross-instance turns now fold trusted source-thread attribution into the canonical Telegram prefix as `[telegram|thread:<destination>|from-thread:<source>] <message>` instead of emitting a separate `[agent|from-thread:<source>]` block. Impact: inter-thread prompts match the existing compact metadata grammar without allowing ordinary Telegram text to impersonate transport attribution.
+- `Transport Preservation`: Source-thread metadata travels as an internal serialized message field so leader-to-follower bus forwarding preserves it across the local IPC boundary. Focused regressions prove synthetic construction and final prompt formatting.
+
 ## 0.27.8: Bidirectional Thread Routing Hotfix
 
 - `Directional Ownership`: Internal cross-instance turns now bypass only ownership of the already-sent Telegram message id while preserving ownership of the destination thread. Impact: follower-to-leader turns avoid bouncing back to their sender, while leader-to-follower and follower-to-follower turns still forward through the destination follower's live registration.
