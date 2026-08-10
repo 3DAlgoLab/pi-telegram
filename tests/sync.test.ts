@@ -1151,7 +1151,7 @@ test("Manual follower disconnect delegates thread deletion to its live leader", 
   assert.equal(persisted, 0);
 });
 
-test("Manual leader disconnect rejects unconfirmed cleanup after epoch loss", async () => {
+test("Manual leader disconnect releases transport after cleanup loses epoch", async () => {
   const trace: string[] = [];
   let currentEpoch: number | undefined = 1;
   let syncState = createUnknownTelegramSyncState();
@@ -1203,8 +1203,19 @@ test("Manual leader disconnect rejects unconfirmed cleanup after epoch loss", as
     recordRuntimeEvent: () => undefined,
   });
 
-  await assert.rejects(disconnect(), /deletion was not confirmed/);
-  assert.deepEqual(trace, ["upsert-intent", "persist", "closeForumTopic"]);
+  assert.equal(
+    await disconnect(),
+    "stopped Telegram thread cleanup remains pending for the next leader.",
+  );
+  assert.deepEqual(trace, [
+    "upsert-intent",
+    "persist",
+    "closeForumTopic",
+    "get-leader-target",
+    "clear-leader-target",
+    "set-sync-state",
+    "stop-polling",
+  ]);
 });
 
 test("Promoted leader deletes its inherited follower thread under owned epoch", async () => {
@@ -1274,13 +1285,13 @@ test("Promoted leader deletes its inherited follower thread under owned epoch", 
   ]);
 });
 
-test("Manual leader disconnect remains live when deletion is unconfirmed", async () => {
+test("Promoted leader disconnect releases leadership when deletion is unconfirmed", async () => {
   const trace: string[] = [];
   let syncState = createUnknownTelegramSyncState();
   const disconnect = createTelegramManualThreadDisconnectHandler({
     instanceId: "leader-runtime:1",
     getCurrentThreadRecord: () => ({
-      owner: { kind: "leader" },
+      owner: { kind: "manual-follower" },
       instanceId: "leader-runtime:1",
       target: { chatId: 7, threadId: 42 },
     }),
@@ -1324,11 +1335,17 @@ test("Manual leader disconnect remains live when deletion is unconfirmed", async
     recordRuntimeEvent: () => undefined,
   });
 
-  await assert.rejects(disconnect(), /deletion was not confirmed/);
+  assert.equal(
+    await disconnect(),
+    "stopped Telegram thread cleanup remains pending for the next leader.",
+  );
   assert.deepEqual(trace, [
     "upsert-intent",
     "persist",
     "closeForumTopic",
     "deleteForumTopic",
+    "clear-leader-target",
+    "set-sync-state",
+    "stop-polling",
   ]);
 });

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.27.4: Disconnect Leadership Release Hotfix
+
+- `Leadership Release`: Manual disconnect now treats thread deletion as a durable cleanup side effect rather than a prerequisite for relinquishing transport leadership. A leader or promoted follower persists the exact cleanup intent, attempts close/delete under its epoch, and then stops polling and releases the owner lock even when Telegram rejects cleanup or the epoch changes. Impact: `Telegram Error` after `/telegram-disconnect` can no longer leave a live process pinning leadership and force newly connected instances to become followers.
+- `Successor Recovery`: Incomplete leader cleanup remains recorded with its binding and exact generation for the next elected leader to replay; the disconnect returns a warning instead of throwing before lock release. Successful cleanup behavior remains unchanged, and manual followers still require authenticated live-leader teardown. Impact: thread safety and retryability survive without sacrificing leadership liveness.
+- `Regression Coverage`: Added exact promoted-leader and epoch-loss disconnect regressions proving cleanup diagnostics remain visible while `stopPolling` still runs. Impact: future cleanup hardening cannot silently restore the lock-hostage failure mode.
+
 ## 0.27.3: Follower Cross-Thread Delivery Hotfix
 
 - `Follower Cross-Thread Delivery`: The bus-aware Telegram API runtime now marks sends whose target differs from the follower's assigned thread, and the leader authorizes that internal marker only for a different target inside the same paired chat before stripping it from the Bot API request. Impact: `telegram_message` can fulfill explicit inter-thread delivery from follower instances without opening arbitrary cross-chat or generic follower API access.
