@@ -402,6 +402,12 @@ interface RouteHarnessOptions {
     TestModel
   >["foreignOwnedUpdateForwarder"];
   getCurrentLeaderEpoch?: () => number | string | undefined;
+  setCurrentLeaderIdentity?: Routing.TelegramInboundRouteRuntimeDeps<
+    TestMessage,
+    TestCallbackQuery,
+    TestContext,
+    TestModel
+  >["setCurrentLeaderIdentity"];
   getLiveThreadTargets?: () => Queue.TelegramQueueTarget[];
   getLocalThreadLabelForTarget?: (
     target: Queue.TelegramQueueTarget,
@@ -481,6 +487,7 @@ function createRouteHarness(options: RouteHarnessOptions = {}) {
     getLiveThreadTargets: options.getLiveThreadTargets,
     getLocalThreadLabelForTarget: options.getLocalThreadLabelForTarget,
     getCurrentLeaderEpoch: options.getCurrentLeaderEpoch,
+    setCurrentLeaderIdentity: options.setCurrentLeaderIdentity,
     bridgeRuntime,
     activeTurnRuntime,
     mediaGroupRuntime:
@@ -2203,6 +2210,7 @@ test("Routing runtime routes reroute source to confirmed current leader thread",
 test("Routing runtime assigns a new slot when user explicitly chooses source thread", async () => {
   await withTopicStore(async (threadStore) => {
     const apiCalls: unknown[] = [];
+    const leaderIdentities: unknown[] = [];
     threadStore.upsert({
       profileKey: "cwd:/repo",
       owner: { kind: "leader", cwd: "/repo", instanceId: "leader-a" },
@@ -2218,6 +2226,9 @@ test("Routing runtime assigns a new slot when user explicitly chooses source thr
     await threadStore.persist();
     const { events, routeRuntime, telegramQueueStore } = createRouteHarness({
       threadStore,
+      setCurrentLeaderIdentity: (identity) => {
+        leaderIdentities.push(identity);
+      },
       callApi: async (method, body) => {
         apiCalls.push({ method, body });
         return {} as never;
@@ -2265,6 +2276,13 @@ test("Routing runtime assigns a new slot when user explicitly chooses source thr
     assert.equal(record?.slot, "B");
     assert.equal(record?.threadName, "Coral");
     assert.equal(typeof record?.rerouteConfirmedAtMs, "number");
+    assert.deepEqual(leaderIdentities, [
+      {
+        target: { chatId: 100, threadId: 42 },
+        slot: "B",
+        threadName: "Coral",
+      },
+    ]);
     const queued = telegramQueueStore.getQueuedItems()[0];
     assert.equal(queued?.kind, "prompt");
     assert.deepEqual(queued?.target, { chatId: 100, threadId: 42 });

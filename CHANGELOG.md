@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.27.10: Leader Thread Rebind Hotfix
+
+- `Live Leader Target`: Reclaiming or replacing the current leader thread now updates the process-local leader identity immediately after the durable binding commits. Impact: live thread-name resolution no longer returns the deleted previous leader target, so another instance can address the rebound leader without receiving `message thread not found`.
+- `Rebind Coverage`: The explicit new-slot reroute regression now requires the durable record, live leader target, slot, and thread name to converge before old-thread cleanup. Impact: future Thread reconciler changes cannot update persisted state while leaving agent-message routing on a stale target.
+
 ## 0.27.9: Symmetric Agent-Turn Metadata Hotfix
 
 - `Agent-Turn Prompt Shape`: Cross-instance turns now fold trusted source-thread attribution into the canonical Telegram prefix as `[telegram|thread:<destination>|from-thread:<source>] <message>` instead of emitting a separate `[agent|from-thread:<source>]` block. Impact: inter-thread prompts match the existing compact metadata grammar without allowing ordinary Telegram text to impersonate transport attribution.

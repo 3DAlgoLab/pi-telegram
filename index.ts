@@ -729,6 +729,7 @@ export default function (pi: Pi.ExtensionAPI) {
     recordMessageOwnership: messageOwnershipRuntime.recordRouted,
     ...inboundBusProjectionRuntime,
     getCurrentLeaderEpoch,
+    setCurrentLeaderIdentity: telegramBusLeaderState.set,
     getThreadReconciliationMachineState: threadReconciliationRuntime.getState,
     recordThreadReconciliationPlan,
     handleTelegramTopicLifecycleUpdate: topicLifecycleSync,
