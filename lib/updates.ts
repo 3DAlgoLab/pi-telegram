@@ -129,6 +129,7 @@ export interface TelegramUpdateMessage {
   from?: TelegramUser;
   message_id?: number;
   message_thread_id?: number;
+  pi_telegram_agent_source_thread?: string;
   forum_topic_created?: unknown;
   forum_topic_closed?: unknown;
   forum_topic_reopened?: unknown;

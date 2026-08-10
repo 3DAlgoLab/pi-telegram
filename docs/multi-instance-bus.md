@@ -281,7 +281,7 @@ Follower instances receive normalized events, not raw Telegram transport interna
 
 Followers do not call Telegram Bot API directly for routed Telegram work. Instead, they call a leader-owned transport port:
 
-Explicit `telegram_message(..., thread)` delivery also uses the bus as an agent-message plane. The leader resolves the case-insensitive name or numeric id against live leader/follower registrations, rejects ambiguous, stale, same-instance, cross-chat, and replayed requests, then coordinates visible Bot API delivery with one source-attributed synthetic turn routed through the destination instance's ordinary queue. The destination sees `[agent|from-thread:<name>]`, not an impersonated user message. Generation fencing and request-ledger deduplication apply to both resolution and routing.
+Explicit `telegram_message(..., thread)` delivery also uses the bus as an agent-message plane. The leader resolves the case-insensitive name or numeric id against live leader/follower registrations, rejects ambiguous, stale, same-instance, cross-chat, and replayed requests, then coordinates visible Bot API delivery with one source-attributed synthetic turn routed through the destination instance's ordinary queue. The destination sees `[telegram|thread:<destination>|from-thread:<source>]`, not an impersonated user message. Generation fencing and request-ledger deduplication apply to both resolution and routing.
 
 ```text
 follower reply/preview/upload/chat-action/download/callback-answer -> leader IPC -> Telegram API

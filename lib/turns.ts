@@ -54,6 +54,7 @@ export interface TelegramTurnTarget {
 export interface TelegramTurnMessage {
   message_id: number;
   message_thread_id?: number;
+  pi_telegram_agent_source_thread?: string;
   chat: { id: number; type?: string };
 }
 
@@ -552,7 +553,10 @@ export function createTelegramPromptTurnRuntimeBuilder<
     const threadLabel = firstMessage
       ? deps.getTelegramThreadLabel?.(firstMessage)
       : undefined;
-    const telegramPrefix = createTelegramTurnPrefix({ thread: threadLabel });
+    const telegramPrefix = createTelegramTurnPrefix({
+      thread: threadLabel,
+      "from-thread": firstMessage?.pi_telegram_agent_source_thread,
+    });
     return buildTelegramPromptTurnRuntime({
       telegramPrefix,
       messages,

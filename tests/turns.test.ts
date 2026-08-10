@@ -105,6 +105,25 @@ test("Turn helpers still inject [time] when raw text is empty", () => {
   assert.equal(prompt, "[telegram]\n\n[time] 2026-05-16 14:32:10 UTC");
 });
 
+test("Turn runtime builder folds agent source into Telegram thread metadata", async () => {
+  const buildTurn = createTelegramPromptTurnRuntimeBuilder({
+    allocateQueueOrder: () => 1,
+    downloadFile: async (_fileId, fileName) => `/tmp/${fileName}`,
+    getTelegramThreadLabel: () => "Atlas",
+  });
+  const turn = await buildTurn([
+    {
+      message_id: 42,
+      message_thread_id: 99,
+      chat: { id: 7 },
+      pi_telegram_agent_source_thread: "Boreal",
+      text: "Message",
+    },
+  ]);
+  const text = turn.content.find((block) => block.type === "text")?.text;
+  assert.equal(text, "[telegram|thread:Atlas|from-thread:Boreal] Message");
+});
+
 test("Turn runtime builder calls resolveTimeLine with chatId and embeds result", async () => {
   const seen: number[] = [];
   const buildTurn = createTelegramPromptTurnRuntimeBuilder({
