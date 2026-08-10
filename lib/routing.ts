@@ -523,6 +523,11 @@ export interface TelegramInboundRouteRuntimeDeps<
     target: Queue.TelegramQueueTarget,
   ) => string | undefined;
   getCurrentLeaderEpoch?: () => number | string | undefined;
+  setCurrentLeaderIdentity?: (identity: {
+    target: Queue.TelegramQueueTarget;
+    slot?: string;
+    threadName?: string;
+  }) => void;
   getThreadReconciliationMachineState?: () =>
     ThreadReconciler.ThreadReconciliationMachineState | undefined;
   recordThreadReconciliationPlan?: (
@@ -1359,6 +1364,11 @@ export function createTelegramInboundRouteRuntime<
         rerouteConfirmedAtMs: nowMs,
       });
       await deps.threadStore.persist();
+      deps.setCurrentLeaderIdentity?.({
+        target: sourceTarget,
+        slot,
+        threadName,
+      });
       if (deps.callApi) {
         try {
           await deps.callApi("editForumTopic", {
@@ -2340,6 +2350,11 @@ export function createTelegramInboundRouteRuntime<
             slot,
           });
           await deps.threadStore.persist();
+          deps.setCurrentLeaderIdentity?.({
+            target: { chatId: target.chatId, threadId: target.threadId },
+            slot,
+            threadName,
+          });
           deps.recordRuntimeEvent?.(
             "bus",
             "Bus leader reclaimed unbound thread",
@@ -2449,6 +2464,11 @@ export function createTelegramInboundRouteRuntime<
               slot,
             });
             await deps.threadStore.persist();
+            deps.setCurrentLeaderIdentity?.({
+              target: { chatId: target.chatId, threadId: target.threadId },
+              slot,
+              threadName,
+            });
             deps.recordRuntimeEvent?.(
               "bus",
               "Bus leader reclaimed stale-current unbound thread",
@@ -2515,6 +2535,11 @@ export function createTelegramInboundRouteRuntime<
           slot,
         });
         await deps.threadStore.persist();
+        deps.setCurrentLeaderIdentity?.({
+          target: { chatId: target.chatId, threadId: target.threadId },
+          slot,
+          threadName,
+        });
         deps.recordRuntimeEvent?.(
           "bus",
           "Bus leader reclaimed unbound thread",
