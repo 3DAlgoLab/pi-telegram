@@ -15,6 +15,7 @@ import {
   createTelegramManualThreadDisconnectHandler,
   createTelegramProvisioningActivityRuntime,
   createTelegramSyncStateRuntime,
+  createTelegramThreadDisconnectAssembly,
   createTelegramTopicLifecycleSyncHandler,
   createUnknownTelegramSyncState,
   ensureTelegramLeaderThreadBinding,
@@ -221,6 +222,40 @@ test("Telegram leader health runtime refreshes sync slices outside the entrypoin
     state["transport-health"]?.lastReconcileAction,
     "leader-health-tick",
   );
+});
+
+test("Telegram leader health runtime owns one generation-fenced probe", async () => {
+  let state = createUnknownTelegramSyncState();
+  let calls = 0;
+  const releases: Array<() => void> = [];
+  const runtime = createTelegramLeaderHealthRuntime({
+    intervalMs: 1,
+    callGetMe: () =>
+      new Promise<void>((resolve) => {
+        calls += 1;
+        releases.push(resolve);
+      }),
+    getSyncState: () => state,
+    setSyncState: (nextState) => {
+      state = nextState;
+    },
+    recordEvent: () => undefined,
+  });
+  runtime.start();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(calls, 1);
+  runtime.stop();
+  releases[0]?.();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(state["transport-health"]?.status, "unknown");
+
+  runtime.start();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(calls, 2);
+  releases[1]?.();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(state["transport-health"]?.status, "fresh");
+  runtime.stop();
 });
 
 test("Telegram leader health runtime marks transport suspect on probe failure", async () => {
@@ -932,6 +967,50 @@ test("Leader thread sync force-refresh preserves promoted follower bindings", as
   }
 });
 
+test("Topic lifecycle sync rechecks execution authority after loading bindings", async () => {
+  let current = true;
+  let reconciled = 0;
+  const handler = createTelegramTopicLifecycleSyncHandler({
+    topicTargetStore: {
+      async load() {
+        current = false;
+      },
+      list: () => [],
+      listReservations: () => [],
+      listPendingProvisions: () => [],
+      markStaleByTarget: () => {
+        reconciled += 1;
+        return true;
+      },
+      markActiveByTarget: () => {
+        reconciled += 1;
+        return true;
+      },
+      removePendingProvision: () => false,
+      persist: async () => {
+        reconciled += 1;
+      },
+    },
+    isBusEnabled: () => true,
+    async callApi<TResponse>() {
+      return undefined as TResponse;
+    },
+    assertExecutionCurrent() {
+      if (!current) throw new DOMException("Aborted", "AbortError");
+    },
+  });
+
+  await assert.rejects(
+    handler({
+      kind: "closed",
+      target: { chatId: 7, threadId: 42 },
+      message: {},
+    }),
+    /Abort/u,
+  );
+  assert.equal(reconciled, 0);
+});
+
 test("Topic lifecycle sync marks known topics stale or active", async () => {
   const store = createTopicStore([
     { target: { chatId: 7, threadId: 42 }, status: "active" },
@@ -1104,6 +1183,42 @@ test("Topic lifecycle sync does not delete unknown created topics during provisi
   assert.deepEqual(calls, []);
   assert.equal(store.persisted, false);
   assert.equal(events[0]?.phase, "topic-lifecycle-provisioning-skip");
+});
+
+test("Thread disconnect assembly distinguishes manual stop from restart suspension", async () => {
+  const events: string[] = [];
+  const assembly = createTelegramThreadDisconnectAssembly({
+    instanceId: "runtime:1",
+    getCurrentThreadRecord: () => undefined,
+    topicTargetStore: {
+      markStaleByTarget: () => false,
+      persist: async () => {},
+      upsertPendingCleanup: () => {},
+      removePendingCleanup: () => false,
+    },
+    callApi: async () => {
+      throw new Error("Unexpected Telegram API call.");
+    },
+    getLeaderTarget: () => undefined,
+    clearLeaderTarget: () => {},
+    getSyncState: createUnknownTelegramSyncState,
+    setSyncState: () => {},
+    stopPolling: async () => {
+      events.push("stop");
+      return "stopped";
+    },
+    suspendPolling: async () => {
+      events.push("suspend");
+    },
+    recordRuntimeEvent: () => {},
+  });
+
+  assert.equal(await assembly.disconnect(), "stopped");
+  assert.equal(
+    await assembly.cleanupForSessionRestart(),
+    "Telegram bridge suspended for session restart.",
+  );
+  assert.deepEqual(events, ["stop", "suspend"]);
 });
 
 test("Manual follower disconnect delegates thread deletion to its live leader", async () => {

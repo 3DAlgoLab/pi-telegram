@@ -664,6 +664,33 @@ test("Retry-safe Telegram API methods replay 5xx responses", async () => {
   }
 });
 
+test("Telegram API retry waits settle immediately when their owner aborts", async () => {
+  const controller = new AbortController();
+  const reason = { kind: "polling-request-expired" };
+  let calls = 0;
+  const restoreFetch = setApiTestFetch(async () => {
+    calls += 1;
+    if (calls === 1) {
+      setTimeout(() => controller.abort(reason), 0);
+      return createApiErrorResponse(502, "Bad Gateway");
+    }
+    return createApiJsonResponse("unexpected replay");
+  });
+  try {
+    await assert.rejects(
+      () =>
+        callTelegram<string>("123:abc", "getMe", {}, {
+          signal: controller.signal,
+          retryBaseDelayMs: 10_000,
+        }),
+      (error) => error === reason,
+    );
+    assert.equal(calls, 1);
+  } finally {
+    restoreFetch();
+  }
+});
+
 test("Retry-safe Telegram API transport falls back to IPv4 once", async () => {
   const familySeen: boolean[] = [];
   let calls = 0;

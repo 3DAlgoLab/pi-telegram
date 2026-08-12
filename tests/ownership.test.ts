@@ -12,11 +12,12 @@ import {
 } from "../lib/ownership.ts";
 import { createTelegramThreadTarget } from "../lib/target.ts";
 
-test("Bus ownership runtime scopes follower authority to registration generation", () => {
+test("Bus ownership runtime rebinds stable follower authority to a replacement generation", () => {
   let followers = [
     {
       instanceId: "follower-a",
       connectedAtMs: 10,
+      profileKey: "manual:owner-a",
       registrationGeneration: "generation-a",
     },
   ];
@@ -40,21 +41,36 @@ test("Bus ownership runtime scopes follower authority to registration generation
     }),
     true,
   );
+  assert.equal(
+    runtime.store.get(7, 9)?.recipientBindingKey,
+    "manual:owner-a",
+  );
   followers = [
     {
-      instanceId: "follower-a",
+      instanceId: "follower-b",
       connectedAtMs: 20,
+      profileKey: "manual:owner-a",
       registrationGeneration: "generation-b",
     },
   ];
-  assert.equal(runtime.store.get(7, 9), undefined);
+  assert.deepEqual(runtime.store.get(7, 9), {
+    chatId: 7,
+    messageId: 9,
+    target: { chatId: 7, threadId: 11 },
+    instanceId: "follower-b",
+    profileKey: "default",
+    ownerGeneration: "generation-b",
+    recipientBindingKey: "manual:owner-a",
+    createdAt: runtime.store.entries()[0]!.createdAt,
+    updatedAt: runtime.store.entries()[0]!.updatedAt,
+  });
   assert.equal(
     runtime.isOwnedByFollower({
       chatId: 7,
       messageId: 9,
       follower: followers[0]!,
     }),
-    false,
+    true,
   );
 });
 

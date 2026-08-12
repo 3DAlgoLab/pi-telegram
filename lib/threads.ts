@@ -226,6 +226,8 @@ function getNextMonotonicSlot(
 
 export interface TelegramTopicTargetStore {
   load: () => Promise<void>;
+  /** Discard process-local projections and reload owner-published state. */
+  refresh?: () => Promise<void>;
   persist: () => Promise<void>;
   list: () => TelegramTopicTargetRecord[];
   getFollowerRecoveryHintByTarget?: (
@@ -1295,6 +1297,11 @@ export function createTelegramTopicTargetStore(
     async load() {
       if (dirty) return;
       await loadFromDisk();
+    },
+    refresh() {
+      const refresh = persistQueue.then(loadFromDisk);
+      persistQueue = refresh.catch(() => undefined);
+      return refresh;
     },
     persist() {
       const persist = persistQueue.then(async () => {
@@ -2459,7 +2466,7 @@ export interface TelegramCurrentInstanceThreadRuntime {
   getRestorationIdentity(): TelegramInstanceThreadIdentityCandidate;
 }
 
-export function createTelegramCurrentInstanceThreadRuntime(deps: {
+export interface TelegramCurrentInstanceThreadRuntimeDeps {
   instanceId: string;
   listRecords(): readonly TelegramTopicTargetRecord[];
   getPreferredTarget(): TelegramTarget | undefined;
@@ -2467,7 +2474,11 @@ export function createTelegramCurrentInstanceThreadRuntime(deps: {
     | (TelegramInstanceThreadIdentityCandidate & { registered: boolean })
     | undefined;
   getLeader(): TelegramInstanceThreadIdentityCandidate | undefined;
-}): TelegramCurrentInstanceThreadRuntime {
+}
+
+export function createTelegramCurrentInstanceThreadRuntime(
+  deps: TelegramCurrentInstanceThreadRuntimeDeps,
+): TelegramCurrentInstanceThreadRuntime {
   const findRecord = function (): TelegramTopicTargetRecord | undefined {
     return findCurrentTelegramInstanceThreadRecord({
       records: deps.listRecords(),
@@ -2563,6 +2574,11 @@ export interface TelegramThreadStatusProjectionRuntime {
     followerTarget?: TelegramTarget;
     followerSlot?: string;
     followerThreadName?: string;
+    leaderProtocol?: {
+      protocolVersion: number;
+      runtimeBuild: string;
+      capabilities: string[];
+    };
   };
   getTopicTargets(): ReturnType<typeof listTelegramThreadStatusTargets>;
   getThreadReservations(): ReturnType<
@@ -2575,7 +2591,7 @@ export interface TelegramThreadStatusProjectionRuntime {
   getInstanceThreadName(): string | undefined;
 }
 
-export function createTelegramThreadStatusProjectionRuntime(deps: {
+export interface TelegramThreadStatusProjectionRuntimeDeps {
   getThreadMode(): "unknown" | "enabled" | "disabled";
   isBusPollingStarted(): boolean;
   isFollowerRegistered(): boolean;
@@ -2589,8 +2605,19 @@ export function createTelegramThreadStatusProjectionRuntime(deps: {
   getFollowerTarget(): TelegramTarget | undefined;
   getFollowerSlot(): string | undefined;
   getFollowerThreadName(): string | undefined;
+  getLeaderProtocol?():
+    | {
+        protocolVersion: number;
+        runtimeBuild: string;
+        capabilities: string[];
+      }
+    | undefined;
   getCurrentIdentity(): TelegramInstanceThreadIdentityCandidate;
-}): TelegramThreadStatusProjectionRuntime {
+}
+
+export function createTelegramThreadStatusProjectionRuntime(
+  deps: TelegramThreadStatusProjectionRuntimeDeps,
+): TelegramThreadStatusProjectionRuntime {
   return {
     getBusRole() {
       if (deps.getThreadMode() === "disabled") return undefined;
@@ -2606,6 +2633,7 @@ export function createTelegramThreadStatusProjectionRuntime(deps: {
     getLocalBus() {
       const leaderSocketPath = deps.getLeaderSocketPath();
       const followerSocketPath = deps.getFollowerSocketPath();
+      const leaderProtocol = deps.getLeaderProtocol?.();
       return {
         leaderSocketPath,
         leaderTransport: deps.getTransportKind(leaderSocketPath),
@@ -2615,6 +2643,7 @@ export function createTelegramThreadStatusProjectionRuntime(deps: {
         followerTarget: deps.getFollowerTarget(),
         followerSlot: deps.getFollowerSlot(),
         followerThreadName: deps.getFollowerThreadName(),
+        ...(leaderProtocol ? { leaderProtocol } : {}),
       };
     },
     getTopicTargets: () => listTelegramThreadStatusTargets(deps.listRecords()),
@@ -2633,11 +2662,84 @@ export function createTelegramThreadStatusProjectionRuntime(deps: {
   };
 }
 
+export interface TelegramCurrentThreadAssemblyDeps {
+  instanceId: string;
+  listRecords: TelegramCurrentInstanceThreadRuntimeDeps["listRecords"];
+  getActiveTurnTarget(): TelegramTarget | undefined;
+  getFollowerTarget(): TelegramTarget | undefined;
+  isFollowerRegistered(): boolean;
+  getFollowerSlot(): string | undefined;
+  getFollowerThreadName(): string | undefined;
+  getLeaderIdentity(): TelegramInstanceThreadIdentityCandidate | undefined;
+  getLeaderTarget(): TelegramTarget | undefined;
+  getLeaderProtocol?: TelegramThreadStatusProjectionRuntimeDeps["getLeaderProtocol"];
+  status: Pick<
+    TelegramThreadStatusProjectionRuntimeDeps,
+    | "getThreadMode"
+    | "isBusPollingStarted"
+    | "listFollowers"
+    | "listReservations"
+    | "listSyncObservations"
+    | "getLeaderSocketPath"
+    | "getFollowerSocketPath"
+    | "getTransportKind"
+  >;
+}
+
+export interface TelegramCurrentThreadAssembly {
+  current: TelegramCurrentInstanceThreadRuntime;
+  status: TelegramThreadStatusProjectionRuntime;
+}
+
+/** Own current-thread preference and its matching status projection. */
+export function createTelegramCurrentThreadAssembly(
+  deps: TelegramCurrentThreadAssemblyDeps,
+): TelegramCurrentThreadAssembly {
+  const getFollower = () => {
+    const target = deps.getFollowerTarget();
+    if (!target) return undefined;
+    return {
+      registered: deps.isFollowerRegistered(),
+      target,
+      slot: deps.getFollowerSlot(),
+      threadName: deps.getFollowerThreadName(),
+    };
+  };
+  const current = createTelegramCurrentInstanceThreadRuntime({
+    instanceId: deps.instanceId,
+    listRecords: deps.listRecords,
+    getPreferredTarget: () =>
+      deps.getActiveTurnTarget() ??
+      deps.getFollowerTarget() ??
+      deps.getLeaderTarget(),
+    getFollower,
+    getLeader: deps.getLeaderIdentity,
+  });
+  return {
+    current,
+    status: createTelegramThreadStatusProjectionRuntime({
+      ...deps.status,
+      isFollowerRegistered: deps.isFollowerRegistered,
+      listRecords: deps.listRecords,
+      getFollowerTarget: deps.getFollowerTarget,
+      getFollowerSlot: deps.getFollowerSlot,
+      getFollowerThreadName: deps.getFollowerThreadName,
+      getLeaderProtocol: deps.getLeaderProtocol,
+      getCurrentIdentity: current.getRestorationIdentity,
+    }),
+  };
+}
+
 export interface TelegramThreadStatusFollowerView {
   instanceId: string;
   cwd?: string;
   lastHeartbeatMs: number;
   target?: TelegramTarget;
+  protocol?: {
+    protocolVersion: number;
+    runtimeBuild: string;
+    capabilities: string[];
+  };
 }
 
 function getTelegramThreadStatusName(
@@ -2660,6 +2762,11 @@ export function listTelegramThreadStatusFollowers(options: {
   cwd?: string;
   lastHeartbeatMs: number;
   target?: TelegramTarget;
+  protocol?: {
+    protocolVersion: number;
+    runtimeBuild: string;
+    capabilities: string[];
+  };
   slot?: string;
   threadName?: string;
   status?: string;
@@ -2676,6 +2783,7 @@ export function listTelegramThreadStatusFollowers(options: {
       cwd: follower.cwd,
       lastHeartbeatMs: follower.lastHeartbeatMs,
       target: follower.target,
+      ...(follower.protocol ? { protocol: follower.protocol } : {}),
       slot: record?.slot,
       threadName: getTelegramThreadStatusName(record),
       status: record?.status,

@@ -294,6 +294,32 @@ export interface TelegramActivityVerbosityRuntime {
   waitForIdle: () => Promise<void>;
 }
 
+export interface TelegramActivityVerbosityBinding
+  extends TelegramActivityVerbosityRuntime {
+  bind: (runtime: TelegramActivityVerbosityRuntime) => void;
+}
+
+export function createTelegramActivityVerbosityBinding(): TelegramActivityVerbosityBinding {
+  let runtime: TelegramActivityVerbosityRuntime | undefined;
+  return {
+    bind(next) {
+      runtime = next;
+    },
+    accept(event) {
+      runtime?.accept(event);
+    },
+    reset() {
+      runtime?.reset();
+    },
+    stop() {
+      runtime?.stop();
+    },
+    waitForIdle() {
+      return runtime?.waitForIdle() ?? Promise.resolve();
+    },
+  };
+}
+
 export function createTelegramActivityVerbosityRuntime<TAuthority>(deps: {
   getActivityMode: () => "quiet" | "thinking" | "tools" | "verbose";
   refreshActivityMode?: () => Promise<void>;

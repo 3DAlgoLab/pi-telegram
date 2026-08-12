@@ -648,8 +648,31 @@ function getTelegramRetryDelayMs(
   return Math.max(0, baseDelayMs * 2 ** attempt);
 }
 
-function sleepTelegramRetry(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function getTelegramApiAbortReason(signal: AbortSignal): unknown {
+  return signal.reason ?? new DOMException("Aborted", "AbortError");
+}
+
+function throwIfTelegramApiCallAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw getTelegramApiAbortReason(signal);
+}
+
+function sleepTelegramRetry(
+  ms: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (signal?.aborted) return Promise.reject(getTelegramApiAbortReason(signal));
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timeout);
+      reject(getTelegramApiAbortReason(signal!));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+  });
 }
 
 function assertTelegramFileSizeWithinLimit(
@@ -1030,8 +1053,13 @@ async function callTelegramWithRetry<TResponse>(
       isTelegramApiMethodRetrySafe(method));
   const maxAttempts = Math.max(1, options?.maxAttempts ?? 3);
   const retryBaseDelayMs = options?.retryBaseDelayMs ?? 500;
-  const sleep = options?.sleep ?? sleepTelegramRetry;
+  const waitBeforeRetry = async (ms: number): Promise<void> => {
+    if (options?.sleep) await options.sleep(ms);
+    else await sleepTelegramRetry(ms, options?.signal);
+    throwIfTelegramApiCallAborted(options?.signal);
+  };
   for (let attempt = 0; ; attempt += 1) {
+    throwIfTelegramApiCallAborted(options?.signal);
     try {
       return unwrapTelegramApiResult(
         method,
@@ -1042,16 +1070,16 @@ async function callTelegramWithRetry<TResponse>(
       );
     } catch (error) {
       const retryable =
-      isRetryableTelegramApiError(error) &&
-      !(
-        options?.retryRateLimit === false &&
-        error instanceof TelegramApiHttpError &&
-        error.status === 429
-      );
+        isRetryableTelegramApiError(error) &&
+        !(
+          options?.retryRateLimit === false &&
+          error instanceof TelegramApiHttpError &&
+          error.status === 429
+        );
       if (!retrySafe) {
         if (error instanceof TelegramApiHttpError && error.status === 429) {
           if (attempt >= maxAttempts - 1) throw error;
-          await sleep(
+          await waitBeforeRetry(
             getTelegramRetryDelayMs(error, attempt, retryBaseDelayMs),
           );
           continue;
@@ -1068,7 +1096,9 @@ async function callTelegramWithRetry<TResponse>(
         throw error;
       }
       if (attempt >= maxAttempts - 1 || !retryable) throw error;
-      await sleep(getTelegramRetryDelayMs(error, attempt, retryBaseDelayMs));
+      await waitBeforeRetry(
+        getTelegramRetryDelayMs(error, attempt, retryBaseDelayMs),
+      );
     }
   }
 }

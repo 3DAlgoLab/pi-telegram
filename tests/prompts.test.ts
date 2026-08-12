@@ -9,6 +9,7 @@ import test from "node:test";
 import {
   buildTelegramBridgeSystemPrompt,
   createTelegramBeforeAgentStartHook,
+  createTelegramModelContextAvailabilityBinding,
   createTelegramModelContextAvailabilityRuntime,
   createTelegramProactiveBeforeAgentStartHook,
   getTelegramHelpText,
@@ -212,6 +213,15 @@ test("Prompt helpers skip suffix injection when Telegram transport is unavailabl
     "ctx",
   );
   assert.deepEqual(result, { systemPrompt: "base" });
+});
+
+test("Model-context availability binding safely delegates after late composition", () => {
+  const calls: string[] = [];
+  const binding = createTelegramModelContextAvailabilityBinding();
+  binding.reconcile();
+  binding.bind({ reconcile: () => calls.push("reconcile") });
+  binding.reconcile();
+  assert.deepEqual(calls, ["reconcile"]);
 });
 
 test("Model-context availability removes only active Telegram tools and restores that subset", () => {

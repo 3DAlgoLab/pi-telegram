@@ -366,9 +366,13 @@ function updateTelegramRuntimeStatusSafely<TContext>(
   try {
     updateStatus(ctx, options.error);
   } catch (statusError) {
-    options.recordRuntimeEvent?.(options.category, statusError, {
-      phase: options.phase,
-    });
+    try {
+      options.recordRuntimeEvent?.(options.category, statusError, {
+        phase: options.phase,
+      });
+    } catch {
+      // Status diagnostics cannot escape an asynchronous runtime owner.
+    }
   }
 }
 
@@ -383,6 +387,7 @@ export interface TelegramTypingLoopStarterDeps<
   ) => Promise<unknown>;
   sendAggregateTypingAction?: (chatId: number) => Promise<unknown>;
   updateStatus: (ctx: TContext, error?: string) => void;
+  isContextActive?: (ctx: TContext) => boolean;
   intervalMs?: number;
 }
 
@@ -402,6 +407,7 @@ export function createTelegramTypingLoopStarter<TContext>(
         try {
           await deps.sendTypingAction(targetChatId, actionOptions);
         } catch (error) {
+          if (deps.isContextActive?.(ctx) === false) return;
           const message =
             error instanceof Error ? error.message : String(error);
           updateTelegramRuntimeStatusSafely(deps.updateStatus, ctx, {
@@ -410,9 +416,13 @@ export function createTelegramTypingLoopStarter<TContext>(
             phase: "status-update",
             recordRuntimeEvent: deps.recordRuntimeEvent,
           });
-          deps.recordRuntimeEvent?.("typing", error, {
-            chatId: targetChatId,
-          });
+          try {
+            deps.recordRuntimeEvent?.("typing", error, {
+              chatId: targetChatId,
+            });
+          } catch {
+            // Typing diagnostics cannot escape the in-flight action owner.
+          }
         }
       },
       sendAggregateTypingAction: deps.sendAggregateTypingAction
@@ -420,6 +430,7 @@ export function createTelegramTypingLoopStarter<TContext>(
             try {
               await deps.sendAggregateTypingAction?.(targetChatId);
             } catch (error) {
+              if (deps.isContextActive?.(ctx) === false) return;
               const message =
                 error instanceof Error ? error.message : String(error);
               updateTelegramRuntimeStatusSafely(deps.updateStatus, ctx, {
@@ -428,10 +439,14 @@ export function createTelegramTypingLoopStarter<TContext>(
                 phase: "status-update",
                 recordRuntimeEvent: deps.recordRuntimeEvent,
               });
-              deps.recordRuntimeEvent?.("typing", error, {
-                chatId: targetChatId,
-                aggregate: true,
-              });
+              try {
+                deps.recordRuntimeEvent?.("typing", error, {
+                  chatId: targetChatId,
+                  aggregate: true,
+                });
+              } catch {
+                // Typing diagnostics cannot escape the in-flight action owner.
+              }
             }
           }
         : undefined,
@@ -578,6 +593,7 @@ export interface TelegramPromptDispatchRuntimeDeps<
   ) => Promise<unknown>;
   sendAggregateTypingAction?: (chatId: number) => Promise<unknown>;
   updateStatus: (ctx: TContext, error?: string) => void;
+  isContextActive?: (ctx: TContext) => boolean;
   intervalMs?: number;
 }
 

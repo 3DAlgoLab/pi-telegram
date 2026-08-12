@@ -13,6 +13,7 @@ export interface TelegramMessageOwnershipRecord {
   instanceId: string;
   profileKey?: string;
   ownerGeneration?: string;
+  recipientBindingKey?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -25,6 +26,7 @@ export interface TelegramMessageOwnershipStore {
     instanceId: string;
     profileKey?: string;
     ownerGeneration?: string;
+    recipientBindingKey?: string;
     now?: number;
   }) => TelegramMessageOwnershipRecord;
   get: (
@@ -45,6 +47,7 @@ export interface TelegramMessageOwnershipStore {
 export interface TelegramFollowerOwnershipView {
   instanceId: string;
   connectedAtMs: number;
+  profileKey?: string;
   registrationGeneration?: string;
 }
 
@@ -100,6 +103,22 @@ export function createTelegramBusMessageOwnershipRuntime(deps: {
         );
       });
     },
+    resolveOwnerReplacement(record) {
+      if (!record.recipientBindingKey) return undefined;
+      const follower = deps
+        .listFollowers()
+        .find(
+          (candidate) =>
+            candidate.profileKey === record.recipientBindingKey,
+        );
+      return follower
+        ? {
+            instanceId: follower.instanceId,
+            ownerGeneration: getTelegramFollowerOwnershipGeneration(follower),
+            recipientBindingKey: record.recipientBindingKey,
+          }
+        : undefined;
+    },
   });
   const recordFollower = function (input: {
     chatId: number;
@@ -113,6 +132,7 @@ export function createTelegramBusMessageOwnershipRuntime(deps: {
       target: input.target,
       instanceId: input.follower.instanceId,
       ownerGeneration: getTelegramFollowerOwnershipGeneration(input.follower),
+      recipientBindingKey: input.follower.profileKey,
     });
   };
   return {
@@ -155,6 +175,7 @@ function createTelegramMessageOwnershipRecord(input: {
   instanceId: string;
   profileKey?: string;
   ownerGeneration?: string;
+  recipientBindingKey?: string;
   now: number;
   previous?: TelegramMessageOwnershipRecord;
 }): TelegramMessageOwnershipRecord {
@@ -167,6 +188,9 @@ function createTelegramMessageOwnershipRecord(input: {
     ...(input.ownerGeneration
       ? { ownerGeneration: input.ownerGeneration }
       : {}),
+    ...(input.recipientBindingKey
+      ? { recipientBindingKey: input.recipientBindingKey }
+      : {}),
     createdAt: input.previous?.createdAt ?? input.now,
     updatedAt: input.now,
   };
@@ -176,6 +200,14 @@ export function createTelegramMessageOwnershipStore(
   options: {
     getProfileKey?: () => string | undefined;
     isOwnerGenerationLive?: (record: TelegramMessageOwnershipRecord) => boolean;
+    resolveOwnerReplacement?: (
+      record: TelegramMessageOwnershipRecord,
+    ) =>
+      | Pick<
+          TelegramMessageOwnershipRecord,
+          "instanceId" | "ownerGeneration" | "recipientBindingKey"
+        >
+      | undefined;
   } = {},
 ): TelegramMessageOwnershipStore {
   const records = new Map<string, TelegramMessageOwnershipRecord>();
@@ -198,20 +230,23 @@ export function createTelegramMessageOwnershipStore(
       return record;
     },
     get: (chatId, messageId) => {
-      const record = records.get(
-        getTelegramMessageOwnershipKey(
-          chatId,
-          messageId,
-          options.getProfileKey?.(),
-        ),
+      const key = getTelegramMessageOwnershipKey(
+        chatId,
+        messageId,
+        options.getProfileKey?.(),
       );
+      const record = records.get(key);
       if (!record) return undefined;
       if (
         record.ownerGeneration &&
         options.isOwnerGenerationLive &&
         !options.isOwnerGenerationLive(record)
       ) {
-        return undefined;
+        const replacement = options.resolveOwnerReplacement?.(record);
+        if (!replacement) return undefined;
+        const rebound = { ...record, ...replacement };
+        records.set(key, rebound);
+        return rebound;
       }
       return record;
     },

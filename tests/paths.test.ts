@@ -13,10 +13,12 @@ import {
   getTelegramProfilePathSuffix,
   resolveAgentDir,
   resolveTelegramConfigPath,
+  resolveTelegramFollowerJournalPath,
   resolveTelegramOwnersPath,
   resolveTelegramProfileTempFilePath,
   resolveTelegramRuntimeLogPath,
   resolveTelegramTempDir,
+  resolveTelegramUpdateJournalPath,
 } from "../lib/paths.ts";
 
 await test("resolveAgentDir", async (t) => {
@@ -84,6 +86,45 @@ await test("resolveTelegramRuntimeLogPath", () => {
       join("tmp", "telegram", "logs.jsonl"),
     ),
     "runtime log path ends with the platform-native logs.jsonl suffix",
+  );
+});
+
+await test("update journal paths are profile-scoped", () => {
+  assert.equal(
+    resolveTelegramUpdateJournalPath("/agent", "default"),
+    join("/agent", "tmp", "telegram", "inbox.json"),
+  );
+  assert.equal(
+    resolveTelegramUpdateJournalPath("/agent", "work"),
+    join("/agent", "tmp", "telegram", "inbox.work.json"),
+  );
+});
+
+await test("follower journal paths are stable binding and profile scoped", () => {
+  const first = resolveTelegramFollowerJournalPath(
+    "manual-follower:owner-a",
+    "/agent",
+    "work",
+  );
+  assert.equal(
+    first,
+    resolveTelegramFollowerJournalPath(
+      "manual-follower:owner-a",
+      "/agent",
+      "work",
+    ),
+  );
+  assert.notEqual(
+    first,
+    resolveTelegramFollowerJournalPath(
+      "manual-follower:owner-b",
+      "/agent",
+      "work",
+    ),
+  );
+  assert.match(
+    first,
+    /follower-inbox-[a-f0-9]{16}\.work\.json$/u,
   );
 });
 

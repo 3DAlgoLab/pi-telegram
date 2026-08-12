@@ -22,27 +22,22 @@ import {
   type DownloadTelegramMessageFilesDeps,
   type TelegramMediaMessage,
 } from "./media.ts";
-import type {
-  PendingTelegramTurn,
-  TelegramPromptContent,
-  TelegramQueueItem,
-  TelegramQueueStore,
+import {
+  createTelegramQueueAdmissionReceipt,
+  truncateTelegramQueueSummary,
+  type PendingTelegramTurn,
+  type TelegramPromptContent,
+  type TelegramQueueAdmissionReceipt,
+  type TelegramQueueItem,
+  type TelegramQueueStore,
 } from "./queue.ts";
 
 import {
   computeVoicePromptContribution,
   computeVoiceTurnFlags,
   getTelegramVoiceReplyMode,
-  TELEGRAM_VOICE_REPLY_MODES,
   type TelegramVoiceReplyMode,
 } from "./voice.ts";
-
-// Re-export for backward compatibility with existing namespace imports (e.g. Turns.getTelegramVoiceReplyMode in routing.ts)
-export {
-  getTelegramVoiceReplyMode,
-  TELEGRAM_VOICE_REPLY_MODES,
-  type TelegramVoiceReplyMode,
-};
 
 export const TELEGRAM_PREFIX = "[telegram]";
 
@@ -55,6 +50,7 @@ export interface TelegramTurnMessage {
   message_id: number;
   message_thread_id?: number;
   pi_telegram_agent_source_thread?: string;
+  pi_telegram_source_update_id?: number;
   chat: { id: number; type?: string };
 }
 
@@ -93,7 +89,6 @@ export function formatTelegramTurnPrefix(
   return basePrefix;
 }
 
-import { truncateTelegramQueueSummary } from "./queue.ts";
 export { truncateTelegramQueueSummary };
 
 export function formatTelegramTurnStatusSummary(
@@ -417,6 +412,8 @@ export interface BuildTelegramPromptTurnOptions {
   inferImageMimeType: (path: string) => string | undefined;
   voiceReplyMode?: TelegramVoiceReplyMode;
   voicePromptContribution?: string;
+  admissionScope?: string;
+  admissionJournalBinding?: string;
 }
 
 export type BuildTelegramPromptTurnRuntimeOptions = Omit<
@@ -445,6 +442,9 @@ export interface TelegramPromptTurnRuntimeBuilderDeps<
     message_thread_id?: number;
   }) => string | undefined;
   getAllowedUserId?: () => number | undefined;
+  getAdmissionScope?: () => string | undefined;
+  getAdmissionJournalBinding?: () => string | undefined;
+  assertExecutionCurrent?: (message: TelegramTurnMessage) => void;
 }
 
 export function createTelegramPromptTurnRuntimeBuilder<
@@ -460,12 +460,14 @@ export function createTelegramPromptTurnRuntimeBuilder<
   return async (messages, historyTurns = [], ctx) => {
     const rawText = extractTelegramMessagesText(messages);
     const firstMessage = messages[0];
+    if (firstMessage) deps.assertExecutionCurrent?.(firstMessage);
     const replyFiles = firstMessage?.reply_to_message
       ? await downloadTelegramMessageFiles(
           [firstMessage.reply_to_message as typeof firstMessage],
           { downloadFile: deps.downloadFile },
         )
       : [];
+    if (firstMessage) deps.assertExecutionCurrent?.(firstMessage);
     const replyContext = firstMessage
       ? buildTelegramReplyContextBlock(firstMessage, replyFiles)
       : "";
@@ -490,9 +492,11 @@ export function createTelegramPromptTurnRuntimeBuilder<
     const files = await downloadTelegramMessageFiles(messages, {
       downloadFile: deps.downloadFile,
     });
+    if (firstMessage) deps.assertExecutionCurrent?.(firstMessage);
     const processed = deps.processAttachments
       ? await deps.processAttachments(files, rawText, ctx as TContext)
       : { rawText, promptFiles: files };
+    if (firstMessage) deps.assertExecutionCurrent?.(firstMessage);
     const sourceBlocks: string[] = [];
     let promptRawText = processed.rawText;
     const forwardedFilePaths = new Set<string>();
@@ -579,6 +583,8 @@ export function createTelegramPromptTurnRuntimeBuilder<
         files,
         rawText,
       ),
+      admissionScope: deps.getAdmissionScope?.(),
+      admissionJournalBinding: deps.getAdmissionJournalBinding?.(),
     });
   };
 }
@@ -594,6 +600,58 @@ function getTelegramVoicePromptContext(
     return undefined;
   }
   return { delivery: "automatic voice" };
+}
+
+function collectTelegramTurnAdmissionReceipts(
+  messages: TelegramTurnMessage[],
+  historyTurns: PendingTelegramTurn[],
+  admissionScope: string | undefined,
+  admissionJournalBinding: string | undefined,
+): TelegramQueueAdmissionReceipt[] {
+  const receipts = new Map<string, TelegramQueueAdmissionReceipt>();
+  const addReceipt = (receipt: TelegramQueueAdmissionReceipt): void => {
+    const existing = receipts.get(receipt.receiptId);
+    if (existing) {
+      if (
+        existing.queueKind !== receipt.queueKind ||
+        existing.journalBindingKey !== receipt.journalBindingKey ||
+        existing.sourceUpdateIds.length !== receipt.sourceUpdateIds.length ||
+        existing.sourceUpdateIds.some(
+          (updateId, index) => updateId !== receipt.sourceUpdateIds[index],
+        )
+      ) {
+        throw new Error(
+          `Conflicting Telegram turn receipt: ${receipt.receiptId}`,
+        );
+      }
+      return;
+    }
+    receipts.set(receipt.receiptId, structuredClone(receipt));
+  };
+  for (const turn of historyTurns) {
+    for (const receipt of turn.admissionReceipts ?? []) addReceipt(receipt);
+  }
+  const sourceUpdateIds = messages.flatMap((message) =>
+    typeof message.pi_telegram_source_update_id === "number"
+      ? [message.pi_telegram_source_update_id]
+      : [],
+  );
+  if (sourceUpdateIds.length > 0) {
+    const currentReceipt = createTelegramQueueAdmissionReceipt({
+      queueKind: "prompt",
+      scope: admissionScope ?? "",
+      sourceUpdateIds,
+    });
+    if (currentReceipt) {
+      addReceipt({
+        ...currentReceipt,
+        ...(admissionJournalBinding
+          ? { journalBindingKey: admissionJournalBinding }
+          : {}),
+      });
+    }
+  }
+  return [...receipts.values()];
 }
 
 export async function buildTelegramPromptTurn(
@@ -648,6 +706,12 @@ export async function buildTelegramPromptTurn(
       textItem.text = `${textItem.text}\n\n${options.voicePromptContribution.trim()}`;
     }
   }
+  const admissionReceipts = collectTelegramTurnAdmissionReceipts(
+    options.messages,
+    options.historyTurns ?? [],
+    options.admissionScope,
+    options.admissionJournalBinding,
+  );
 
   return {
     kind: "prompt",
@@ -673,6 +737,7 @@ export async function buildTelegramPromptTurn(
       options.displayFiles ?? options.promptFiles ?? options.files,
       options.handlerOutputs,
     ),
+    ...(admissionReceipts.length > 0 ? { admissionReceipts } : {}),
     // Voice tagging (used for preview suppression and prompt guidance)
     ...computeVoiceTurnFlags(voiceReplyMode, hasVoiceFile),
   };

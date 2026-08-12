@@ -198,6 +198,13 @@ test("Model helpers resolve scoped model patterns and sort current models first"
   );
   const sorted = sortScopedModels(resolved, models[0]);
   assert.equal(sorted[0]?.model.id, "gpt-5");
+  assert.deepEqual(
+    resolveScopedModelPatterns(
+      ["openai/gpt-5"],
+      [models[0]!, { ...models[0]! }],
+    ),
+    [],
+  );
 });
 
 test("Pending model-switch store owns selection state helpers", () => {

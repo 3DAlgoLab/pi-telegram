@@ -71,6 +71,23 @@ export interface TelegramModelContextAvailabilityRuntime {
   reconcile: () => void;
 }
 
+export interface TelegramModelContextAvailabilityBinding
+  extends TelegramModelContextAvailabilityRuntime {
+  bind: (runtime: TelegramModelContextAvailabilityRuntime) => void;
+}
+
+export function createTelegramModelContextAvailabilityBinding(): TelegramModelContextAvailabilityBinding {
+  let runtime: TelegramModelContextAvailabilityRuntime | undefined;
+  return {
+    bind(next) {
+      runtime = next;
+    },
+    reconcile() {
+      runtime?.reconcile();
+    },
+  };
+}
+
 export function createTelegramModelContextAvailabilityRuntime(deps: {
   getActiveTools: () => string[];
   setActiveTools: (names: string[]) => void;

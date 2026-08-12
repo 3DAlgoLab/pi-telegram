@@ -150,6 +150,7 @@ test("Domain test filenames mirror their owning lib domain", () => {
     "index",
     "integration",
     "invariants",
+    "journal-downgrade",
     "process-shutdown",
     "public-api",
   ]);
@@ -268,7 +269,27 @@ test("Entrypoint stays a composition root without local runtime adapters", () =>
   assert.deepEqual(localFunctionDeclarations, []);
   assert.equal(source.includes("=>"), false);
   assert.equal(source.includes("process.env"), false);
+  assert.equal(source.includes("process.pid"), false);
+  assert.equal(/\blet\s+\w+/.test(source), false);
+  assert.equal(source.includes("new Map"), false);
+  assert.equal(source.includes("new Set"), false);
+  assert.equal(source.includes("!."), false);
   assert.equal(/\bpi\./.test(source), false);
+  assert.deepEqual(
+    [
+      "Queue.createTelegramQueueMutationController",
+      "Queue.createTelegramQueueDispatchRuntime",
+      "Queue.createTelegramQueueDispatchWatchdogRuntime",
+      "Threads.createTelegramCurrentInstanceThreadRuntime",
+      "Threads.createTelegramThreadStatusProjectionRuntime",
+      "Sync.createTelegramManualThreadDisconnectHandler",
+      "Sync.createTelegramSessionRestartThreadCleanupHandler",
+      "Updates.createTelegramQueueHandoffReconciler",
+      "Updates.createTelegramUpdateWorkerOwnerRuntime",
+      "Updates.createTelegramUpdateAdmissionLifecycleAssembly",
+    ].filter((factory) => source.includes(factory)),
+    [],
+  );
 });
 
 test("Visible thread identity never falls back directly to bare slot labels", () => {

@@ -229,6 +229,7 @@ export interface TelegramMenuCallbackRuntimeDeps<
     prompt: string,
     ctx: TContext,
     target?: { chatId: number; threadId?: number },
+    source?: unknown,
   ) => Promise<void>;
   deleteMessage?: (chatId: number, messageId: number) => Promise<void>;
   isVoiceReplyActive?: () => boolean;
@@ -478,6 +479,7 @@ export interface TelegramMenuCallbackRuntimeAdapterDeps<
     prompt: string,
     ctx: TContext,
     target?: { chatId: number; threadId?: number },
+    source?: unknown,
   ) => Promise<void>;
   deleteMessage?: (chatId: number, messageId: number) => Promise<void>;
 }
@@ -588,7 +590,7 @@ export async function handleTelegramMenuCallbackRuntime<
                 deps.sendInteractiveMessage ?? (async () => undefined),
               enqueuePrompt: deps.enqueueSectionPrompt
                 ? (prompt: string) =>
-                    deps.enqueueSectionPrompt!(prompt, ctx, target)
+                    deps.enqueueSectionPrompt!(prompt, ctx, target, query)
                 : async () => {},
               deleteMessage: deps.deleteMessage ?? (async () => {}),
             },
@@ -611,7 +613,7 @@ export async function handleTelegramMenuCallbackRuntime<
                   deps.sendInteractiveMessage ?? (async () => undefined),
                 enqueuePrompt: deps.enqueueSectionPrompt
                   ? (prompt: string) =>
-                      deps.enqueueSectionPrompt!(prompt, ctx, target)
+                      deps.enqueueSectionPrompt!(prompt, ctx, target, query)
                   : async () => {},
                 deleteMessage: deps.deleteMessage ?? (async () => {}),
               },
@@ -636,7 +638,7 @@ export async function handleTelegramMenuCallbackRuntime<
                 deps.sendInteractiveMessage ?? (async () => undefined),
               enqueuePrompt: deps.enqueueSectionPrompt
                 ? (prompt: string) =>
-                    deps.enqueueSectionPrompt!(prompt, ctx, target)
+                    deps.enqueueSectionPrompt!(prompt, ctx, target, query)
                 : async () => {},
               deleteMessage: deps.deleteMessage ?? (async () => {}),
             },

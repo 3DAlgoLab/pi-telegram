@@ -63,6 +63,10 @@ test("Public package subpaths expose the stable extension API", async () => {
     "registerTelegramActivityHandler",
   ]);
   assert.deepEqual(Object.keys(updates).sort(), [
+    "assertTelegramUpdateExecutionCurrent",
+    "carryTelegramUpdateExecutionFence",
+    "createTelegramUpdateExecutionFenceGuard",
+    "getTelegramUpdateExecutionFence",
     "registerTelegramUpdateHandler",
   ]);
   assert.deepEqual(Object.keys(commands).sort(), ["registerTelegramCommand"]);

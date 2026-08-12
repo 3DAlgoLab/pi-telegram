@@ -3,7 +3,7 @@
  * Covers route-level wiring from paired updates into prompt queueing
  */
 
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
@@ -19,7 +19,7 @@ import * as Routing from "../lib/routing.ts";
 import * as Runtime from "../lib/runtime.ts";
 import * as TextGroups from "../lib/text-groups.ts";
 import * as Threads from "../lib/threads.ts";
-import type * as Updates from "../lib/updates.ts";
+import * as Updates from "../lib/updates.ts";
 
 interface TestContext {
   cwd: string;
@@ -57,17 +57,43 @@ interface TestCallbackQuery extends Routing.TelegramRoutedCallbackQuery {
 }
 
 interface TestUpdate extends Updates.TelegramUpdateFlow {
+  update_id?: number;
   message?: TestMessage;
   edited_message?: TestMessage;
   callback_query?: TestCallbackQuery;
 }
 
+function acceptedForeignUpdateSettlement(sourceUpdateId = 1) {
+  return {
+    status: "accepted" as const,
+    delivery: {
+      deliveryId: `test-delivery-${sourceUpdateId}`,
+      sourceUpdateId,
+      recipientBindingKey: "test-recipient",
+    },
+  };
+}
+
+function retryableForeignUpdateSettlement() {
+  return {
+    status: "retryable" as const,
+    failureClass: "acknowledgement-rejected" as const,
+    message: "retry",
+  };
+}
+
 test("Inbound bus projection owns target authority and local labels", () => {
   const follower = {
     instanceId: "follower-a",
+    profileKey: "manual:follower-a",
     connectedAtMs: 1,
     lastHeartbeatMs: 2,
     registrationGeneration: "registration-a",
+    protocol: {
+      protocolVersion: 1 as const,
+      runtimeBuild: "0.28.0",
+      capabilities: ["durable-follower-admission-v1"],
+    },
     target: { chatId: 7, threadId: 11 },
   };
   const runtime = Routing.createTelegramInboundBusProjectionRuntime({
@@ -89,6 +115,7 @@ test("Inbound bus projection owns target authority and local labels", () => {
     {
       instanceId: "follower-a",
       ownerGeneration: "registration-a",
+      recipientBindingKey: "manual:follower-a",
     },
   );
   assert.deepEqual(runtime.getLiveThreadTargets(), [
@@ -418,6 +445,18 @@ interface RouteHarnessOptions {
     TestMessage,
     TestContext
   >;
+  downloadFile?: Routing.TelegramInboundRouteRuntimeDeps<
+    TestMessage,
+    TestCallbackQuery,
+    TestContext,
+    TestModel
+  >["downloadFile"];
+  processInbound?: Routing.TelegramInboundRouteRuntimeDeps<
+    TestMessage,
+    TestCallbackQuery,
+    TestContext,
+    TestModel
+  >["inboundHandlerRuntime"]["process"];
 }
 
 function createRouteHarness(options: RouteHarnessOptions = {}) {
@@ -484,6 +523,7 @@ function createRouteHarness(options: RouteHarnessOptions = {}) {
     replaceFollowerThreadTarget: options.replaceFollowerThreadTarget,
     foreignOwnedUpdateForwarder: options.foreignOwnedUpdateForwarder,
     getCurrentInstanceId: () => options.instanceId ?? "leader-a",
+    getAdmissionScope: () => "profile-a:bot-a",
     getLiveThreadTargets: options.getLiveThreadTargets,
     getLocalThreadLabelForTarget: options.getLocalThreadLabelForTarget,
     getCurrentLeaderEpoch: options.getCurrentLeaderEpoch,
@@ -506,12 +546,14 @@ function createRouteHarness(options: RouteHarnessOptions = {}) {
     openQueueMenu: async () => undefined,
     queueMenuCallbackHandler: async () => false,
     inboundHandlerRuntime: {
-      process: async (files, rawText) => ({
-        rawText,
-        promptFiles: files,
-        handlerOutputs: [],
-        handledFiles: [],
-      }),
+      process:
+        options.processInbound ??
+        (async (files, rawText) => ({
+          rawText,
+          promptFiles: files,
+          handlerOutputs: [],
+          handledFiles: [],
+        })),
     },
     threadStore: options.threadStore,
     buttonActionStore,
@@ -542,7 +584,9 @@ function createRouteHarness(options: RouteHarnessOptions = {}) {
       }),
     setMyCommands: async () => undefined,
     getCommands: options.getCommands ?? (() => []),
-    downloadFile: async (_fileId, fileName) => `/tmp/${fileName}`,
+    downloadFile:
+      options.downloadFile ??
+      (async (_fileId, fileName) => `/tmp/${fileName}`),
     getThinkingLevel: () => "high",
     setThinkingLevel: () => undefined,
     setModel: async () => true,
@@ -559,16 +603,281 @@ function createRouteHarness(options: RouteHarnessOptions = {}) {
   return { buttonActionStore, events, routeRuntime, telegramQueueStore };
 }
 
+test("Routing admission returns exact queued outcomes for messages and callbacks", async () => {
+  const { routeRuntime, telegramQueueStore } = createRouteHarness();
+  const handle = Updates.createTelegramUpdateAdmissionHandle<
+    TestUpdate & { update_id: number },
+    TestContext
+  >({
+    registry: {
+      version: 1,
+      add: () => () => {},
+      dispatch: async () => "pass",
+    },
+    defaultHandle: routeRuntime.handleUpdate,
+  });
+  const signal = new AbortController().signal;
+  const messageOutcome = await handle(
+    {
+      update_id: 71,
+      message: {
+        message_id: 11,
+        chat: { id: 100, type: "private" },
+        from: { id: 7, is_bot: false },
+        text: "journaled prompt",
+      },
+    },
+    { cwd: "/repo" },
+    signal,
+  );
+  const callbackOutcome = await handle(
+    {
+      update_id: 72,
+      callback_query: {
+        id: "callback-72",
+        from: { id: 7, is_bot: false },
+        data: "companion:approve",
+        message: {
+          message_id: 12,
+          chat: { id: 100, type: "private" },
+          from: { id: 7, is_bot: false },
+        },
+      },
+    },
+    { cwd: "/repo" },
+    signal,
+  );
+
+  assert.equal(messageOutcome.kind, "queued");
+  assert.deepEqual(
+    messageOutcome.kind === "queued"
+      ? messageOutcome.sourceUpdateIds
+      : undefined,
+    [71],
+  );
+  assert.equal(callbackOutcome.kind, "queued");
+  assert.deepEqual(
+    callbackOutcome.kind === "queued"
+      ? callbackOutcome.sourceUpdateIds
+      : undefined,
+    [72],
+  );
+  assert.deepEqual(
+    telegramQueueStore
+      .getQueuedItems()
+      .flatMap((item) => item.admissionReceipts ?? [])
+      .map((receipt) => receipt.sourceUpdateIds),
+    [[71], [72]],
+  );
+});
+
+test("Routing admission rejects stale queue commit after asynchronous file download", async () => {
+  const controller = new AbortController();
+  let inboundHandlerCalls = 0;
+  const { routeRuntime, telegramQueueStore } = createRouteHarness({
+    downloadFile: async (_fileId, fileName) => {
+      controller.abort();
+      return `/tmp/${fileName}`;
+    },
+    processInbound: async (files, rawText) => {
+      inboundHandlerCalls += 1;
+      return {
+        rawText,
+        promptFiles: files,
+        handlerOutputs: [],
+        handledFiles: [],
+      };
+    },
+  });
+  const handle = Updates.createTelegramUpdateAdmissionHandle<
+    TestUpdate & { update_id: number },
+    TestContext
+  >({
+    registry: {
+      version: 1,
+      add: () => () => {},
+      dispatch: async () => "pass",
+    },
+    defaultHandle: routeRuntime.handleUpdate,
+  });
+
+  await assert.rejects(
+    handle(
+      {
+        update_id: 73,
+        message: {
+          message_id: 13,
+          chat: { id: 100, type: "private" },
+          from: { id: 7, is_bot: false },
+          document: { file_id: "doc-73", file_name: "stale.txt" },
+        },
+      },
+      { cwd: "/repo" },
+      controller.signal,
+    ),
+    /Abort/u,
+  );
+  assert.equal(inboundHandlerCalls, 0);
+  assert.deepEqual(telegramQueueStore.getQueuedItems(), []);
+});
+
+test("Routing admission rejects stale queue commit after asynchronous inbound handler", async () => {
+  const controller = new AbortController();
+  const { routeRuntime, telegramQueueStore } = createRouteHarness({
+    processInbound: async (files, rawText) => {
+      controller.abort();
+      return {
+        rawText,
+        promptFiles: files,
+        handlerOutputs: [],
+        handledFiles: [],
+      };
+    },
+  });
+  const handle = Updates.createTelegramUpdateAdmissionHandle<
+    TestUpdate & { update_id: number },
+    TestContext
+  >({
+    registry: {
+      version: 1,
+      add: () => () => {},
+      dispatch: async () => "pass",
+    },
+    defaultHandle: routeRuntime.handleUpdate,
+  });
+
+  await assert.rejects(
+    handle(
+      {
+        update_id: 74,
+        message: {
+          message_id: 14,
+          chat: { id: 100, type: "private" },
+          from: { id: 7, is_bot: false },
+          text: "stale handler",
+        },
+      },
+      { cwd: "/repo" },
+      controller.signal,
+    ),
+    /Abort/u,
+  );
+  assert.deepEqual(telegramQueueStore.getQueuedItems(), []);
+});
+
+test("Routing admission defers media groups then reports one exact late receipt", async () => {
+  const timers: Array<{
+    callback: () => void;
+    cleared: boolean;
+  }> = [];
+  const mediaGroupRuntime = Media.createTelegramMediaGroupController<
+    TestMessage,
+    TestContext
+  >({
+    setTimer: (callback) => {
+      const timer = { callback, cleared: false };
+      timers.push(timer);
+      return timer as unknown as ReturnType<typeof setTimeout>;
+    },
+    clearTimer: (timer) => {
+      (timer as unknown as { cleared: boolean }).cleared = true;
+    },
+  });
+  const { routeRuntime, telegramQueueStore } = createRouteHarness({
+    mediaGroupRuntime,
+  });
+  const lateOutcomes: Array<{
+    outcome: Updates.TelegramUpdateAdmissionOutcome;
+    updateId: number;
+  }> = [];
+  const lateErrors: unknown[] = [];
+  const handle = Updates.createTelegramUpdateAdmissionHandle<
+    TestUpdate & { update_id: number },
+    TestContext
+  >({
+    registry: {
+      version: 1,
+      add: () => () => {},
+      dispatch: async () => "pass",
+    },
+    defaultHandle: routeRuntime.handleUpdate,
+    onLateOutcome: (outcome, details) => {
+      lateOutcomes.push({ outcome, updateId: details.updateId });
+    },
+    onLateOutcomeError: (error) => lateErrors.push(error),
+  });
+  const signal = new AbortController().signal;
+  const first = await handle(
+    {
+      update_id: 81,
+      message: {
+        message_id: 21,
+        media_group_id: "album-a",
+        chat: { id: 100, type: "private" },
+        from: { id: 7, is_bot: false },
+        caption: "first",
+      },
+    },
+    { cwd: "/repo" },
+    signal,
+  );
+  const second = await handle(
+    {
+      update_id: 82,
+      message: {
+        message_id: 22,
+        media_group_id: "album-a",
+        chat: { id: 100, type: "private" },
+        from: { id: 7, is_bot: false },
+        caption: "second",
+      },
+    },
+    { cwd: "/repo" },
+    signal,
+  );
+  assert.deepEqual(first, { kind: "deferred" });
+  assert.deepEqual(second, { kind: "deferred" });
+
+  timers.findLast((timer) => !timer.cleared)?.callback();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.equal(telegramQueueStore.getQueuedItems().length, 1);
+  assert.deepEqual(
+    telegramQueueStore.getQueuedItems()[0]?.admissionReceipts?.map(
+      (receipt) => receipt.sourceUpdateIds,
+    ),
+    [[81, 82]],
+  );
+  assert.deepEqual(
+    lateOutcomes.map(({ outcome, updateId }) => ({
+      updateId,
+      kind: outcome.kind,
+      sourceUpdateIds:
+        outcome.kind === "queued" ? outcome.sourceUpdateIds : undefined,
+    })),
+    [
+      { updateId: 81, kind: "queued", sourceUpdateIds: [81, 82] },
+      { updateId: 82, kind: "queued", sourceUpdateIds: [81, 82] },
+    ],
+  );
+  assert.deepEqual(lateErrors, []);
+});
+
 async function withTopicStore<T>(
-  run: (store: Threads.TelegramTopicTargetStore) => Promise<T>,
+  run: (
+    store: Threads.TelegramTopicTargetStore,
+    path: string,
+  ) => Promise<T>,
 ): Promise<T> {
   const dir = await mkdtemp(join(tmpdir(), "pi-telegram-routing-"));
   try {
+    const path = join(dir, "telegram-targets.json");
     const store = Threads.createTelegramTopicTargetStore({
-      path: join(dir, "telegram-targets.json"),
+      path,
       getNowMs: () => 2000,
     });
-    return await run(store);
+    return await run(store, path);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -585,6 +894,45 @@ function unboundTopicUpdate(text = "hello"): TestUpdate {
     },
   };
 }
+
+test("Routing runtime silently completes journal replay from a confirmed deleted thread", async () => {
+  await withTopicStore(async (threadStore, path) => {
+    threadStore.upsert({
+      profileKey: "old",
+      target: { chatId: 100, threadId: 42 },
+      status: "active",
+      createdAtMs: 1000,
+      updatedAtMs: 1000,
+      instanceId: "old-leader",
+    });
+    threadStore.markStaleByTarget(
+      { chatId: 100, threadId: 42 },
+      "deleted",
+    );
+    await threadStore.persist();
+    const snapshot = JSON.parse(await readFile(path, "utf8")) as {
+      threads?: unknown[];
+    };
+    snapshot.threads = [];
+    await writeFile(path, `${JSON.stringify(snapshot)}\n`, "utf8");
+    await threadStore.load();
+    const apiCalls: unknown[] = [];
+    const { routeRuntime, telegramQueueStore } = createRouteHarness({
+      threadStore,
+      callApi: async (method, body) => {
+        apiCalls.push({ method, body });
+        return {} as never;
+      },
+    });
+
+    await routeRuntime.handleUpdate(unboundTopicUpdate("replayed"), {
+      cwd: "/repo",
+    });
+
+    assert.deepEqual(apiCalls, []);
+    assert.deepEqual(telegramQueueStore.getQueuedItems(), []);
+  });
+});
 
 test("Routing runtime binds the first unbound thread to the leader without visible rename when leader has no active thread", async () => {
   await withTopicStore(async (threadStore) => {
@@ -2024,9 +2372,9 @@ test("Routing runtime retries only failed foreign media-group messages", async (
           forwardedMessages.push(message);
           if (message.photo?.[0]?.file_id === "photo-b" && !photoBFailed) {
             photoBFailed = true;
-            return false;
+            return retryableForeignUpdateSettlement();
           }
-          return true;
+          return acceptedForeignUpdateSettlement();
         },
       },
     });
@@ -2438,7 +2786,9 @@ test("Routing runtime retries failed follower restore delivery before cleanup", 
         forwardMessage: ({ message }) => {
           forwardedMessages.push(message);
           forwardAttempts += 1;
-          return forwardAttempts > 1;
+          return forwardAttempts > 1
+            ? acceptedForeignUpdateSettlement()
+            : retryableForeignUpdateSettlement();
         },
       },
     });

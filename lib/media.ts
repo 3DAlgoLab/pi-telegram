@@ -101,6 +101,8 @@ export interface TelegramMediaGroupState<TMessage, TContext = unknown> {
   context?: TContext;
   flushTimer?: ReturnType<typeof setTimeout>;
   dispatching?: boolean;
+  dispatchPromise?: Promise<void>;
+  dispatchNow?: () => Promise<void>;
   suspended?: boolean;
   reschedule?: () => void;
 }
@@ -118,6 +120,7 @@ export interface TelegramMediaGroupController<
     ) => unknown | Promise<unknown>;
   }) => boolean;
   removeMessages: (messageIds: number[]) => number;
+  flushMessage: (messageId: number) => Promise<boolean>;
   suspend: () => void;
   resume: (context: TContext) => void;
   clear: () => void;
@@ -129,6 +132,7 @@ export interface TelegramMediaGroupDispatchRuntimeDeps<
 > {
   mediaGroups: TelegramMediaGroupController<TMessage, TContext>;
   dispatchMessages: (messages: TMessage[], ctx: TContext) => Promise<void>;
+  onDeferredMessage?: (message: TMessage) => void;
 }
 
 export interface TelegramMediaGroupDispatchRuntime<
@@ -504,45 +508,59 @@ export function queueTelegramMediaGroupMessage<
   const key = getTelegramMediaGroupKey(options.message);
   if (!key) return false;
   const existing = options.groups.get(key) ?? { messages: [] };
-  existing.messages.push(options.message);
+  const duplicateIndex = existing.messages.findIndex(
+    (message) => message.message_id === options.message.message_id,
+  );
+  if (duplicateIndex >= 0) {
+    existing.messages[duplicateIndex] = options.message;
+  } else {
+    existing.messages.push(options.message);
+  }
   existing.context = options.context;
+  const dispatchQueued = (): Promise<void> => {
+    existing.flushTimer = undefined;
+    const state = options.groups.get(key);
+    if (!state) return Promise.resolve();
+    if (state.dispatching) return state.dispatchPromise ?? Promise.resolve();
+    const dispatchedMessages = [...state.messages];
+    const dispatchedIds = new Set(
+      dispatchedMessages.map((message) => message.message_id),
+    );
+    state.dispatching = true;
+    const operation = Promise.resolve(
+      options.dispatchMessages(dispatchedMessages, state.context),
+    ).then(
+      () => {
+        if (options.groups.get(key) !== state) return;
+        state.messages = state.messages.filter(
+          (message) => !dispatchedIds.has(message.message_id),
+        );
+        state.dispatching = false;
+        state.dispatchPromise = undefined;
+        if (state.messages.length === 0) options.groups.delete(key);
+        else if (!state.flushTimer) scheduleDispatch();
+      },
+      (error) => {
+        if (options.groups.get(key) === state) {
+          state.dispatching = false;
+          state.dispatchPromise = undefined;
+          if (!state.flushTimer) scheduleDispatch();
+        }
+        throw error;
+      },
+    );
+    state.dispatchPromise = operation;
+    return operation;
+  };
   const scheduleDispatch = (): void => {
     if (existing.suspended) return;
     existing.flushTimer = options.setTimer(() => {
-      existing.flushTimer = undefined;
-      const state = options.groups.get(key);
-      if (!state) return;
-      if (state.dispatching) {
-        scheduleDispatch();
-        return;
-      }
-      const dispatchedMessages = [...state.messages];
-      const dispatchedIds = new Set(
-        dispatchedMessages.map((message) => message.message_id),
-      );
-      state.dispatching = true;
-      void Promise.resolve(
-        options.dispatchMessages(dispatchedMessages, state.context),
-      ).then(
-        () => {
-          if (options.groups.get(key) !== state) return;
-          state.messages = state.messages.filter(
-            (message) => !dispatchedIds.has(message.message_id),
-          );
-          state.dispatching = false;
-          if (state.messages.length === 0) options.groups.delete(key);
-          else if (!state.flushTimer) scheduleDispatch();
-        },
-        () => {
-          if (options.groups.get(key) !== state) return;
-          state.dispatching = false;
-          if (!state.flushTimer) scheduleDispatch();
-        },
-      );
+      void dispatchQueued().catch(() => undefined);
     }, options.debounceMs);
     existing.flushTimer.unref?.();
   };
   existing.reschedule = scheduleDispatch;
+  existing.dispatchNow = dispatchQueued;
   if (existing.flushTimer) options.clearTimer(existing.flushTimer);
   scheduleDispatch();
   options.groups.set(key, existing);
@@ -575,6 +593,24 @@ export function createTelegramMediaGroupController<
       }),
     removeMessages: (messageIds) =>
       removePendingTelegramMediaGroupMessages(groups, messageIds, clearTimer),
+    async flushMessage(messageId) {
+      for (const state of groups.values()) {
+        if (!state.messages.some((message) => message.message_id === messageId)) {
+          continue;
+        }
+        if (state.flushTimer) clearTimer(state.flushTimer);
+        state.flushTimer = undefined;
+        await state.dispatchNow?.();
+        if (
+          state.messages.some((message) => message.message_id === messageId) &&
+          !state.dispatching
+        ) {
+          await state.dispatchNow?.();
+        }
+        return true;
+      }
+      return false;
+    },
     suspend: () => {
       for (const state of groups.values()) {
         state.suspended = true;
@@ -614,7 +650,10 @@ export function createTelegramMediaGroupDispatchRuntime<
             ? Promise.resolve()
             : deps.dispatchMessages(messages, queuedCtx),
       });
-      if (queuedMediaGroup) return;
+      if (queuedMediaGroup) {
+        deps.onDeferredMessage?.(message);
+        return;
+      }
       await deps.dispatchMessages([message], ctx);
     },
   };

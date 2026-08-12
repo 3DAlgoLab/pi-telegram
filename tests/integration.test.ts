@@ -4,11 +4,22 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  readlink,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as waitForTimeout } from "node:timers/promises";
 import testRoot, { mock, type TestContext } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { registerTelegramActivityHandler } from "../api/activity.ts";
 import { createTelegramActivityVerbosityRuntime } from "../lib/activity-verbosity.ts";
@@ -20,6 +31,9 @@ import * as Bus from "../lib/bus.ts";
 import * as Delivery from "../lib/delivery.ts";
 import * as Routing from "../lib/routing.ts";
 import * as Threads from "../lib/threads.ts";
+import * as Journal from "../lib/journal.ts";
+import * as Locks from "../lib/locks.ts";
+import * as Queue from "../lib/queue.ts";
 import * as Updates from "../lib/updates.ts";
 import {
   createTelegramBridgeApiRuntime,
@@ -30,12 +44,267 @@ import {
 type RuntimeTestHandler = (context: TestContext) => void | Promise<void>;
 type RuntimeTelegramExtension = (typeof import("../index.ts"))["default"];
 
-function test(name: string, fn: RuntimeTestHandler): void {
-  void testRoot(name, { concurrency: false, timeout: 5000 }, fn);
+function test(
+  name: string,
+  fn: RuntimeTestHandler,
+  timeoutMs = 5_000,
+): void {
+  void testRoot(name, { concurrency: false, timeout: timeoutMs }, fn);
 }
 
 let runtimeTelegramExtension: RuntimeTelegramExtension | undefined;
 let runtimeAgentDir: string | undefined;
+
+const queueOwnerWorkerPath = fileURLToPath(
+  new URL("./fixtures/queue-owner-worker.ts", import.meta.url),
+);
+
+interface QueueOwnerTransportHandoffInput {
+  journalPath: string;
+  recipientJournalPath: string;
+  ownersPath: string;
+  socketPath: string;
+  authSecret: string;
+  donorInstanceId: string;
+  donorCwd: string;
+  recipientInstanceId: string;
+  recipientProfileKey: string;
+  recipientRegistrationGeneration: string;
+  target: { chatId: number; threadId: number };
+  dropHandoffAck?: boolean;
+}
+
+interface QueueOwnerTransportHandoffProcess {
+  child: ReturnType<typeof spawn>;
+  ready: Promise<{
+    phase: "ready";
+    pid: number;
+    processBirthId: string;
+    transportOwned: boolean;
+    executionCount: number;
+    foreignQueuedCount: number;
+    recipientJournalBindingKey: string;
+  }>;
+  stop: (command?: "stop" | "execute-control") => Promise<{
+    phase: "stopped";
+    executionCount: number;
+    foreignQueuedCount: number;
+    donorEntryCount: number;
+    recipientEntryCount: number;
+    recipientQueueCount: number;
+    handoffCount: number;
+    controlExecutions: string[];
+    droppedHandoffAck: boolean;
+  }>;
+}
+
+function spawnQueueOwnerTransportHandoffProcess(
+  input: QueueOwnerTransportHandoffInput,
+): QueueOwnerTransportHandoffProcess {
+  const child = spawn(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      queueOwnerWorkerPath,
+      input.journalPath,
+      "transport-handoff",
+      JSON.stringify(input),
+    ],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  let buffer = "";
+  let stderr = "";
+  const lines: unknown[] = [];
+  let wake: (() => void) | undefined;
+  child.stdout.on("data", (chunk) => {
+    buffer += chunk;
+    for (;;) {
+      const newlineIndex = buffer.indexOf("\n");
+      if (newlineIndex < 0) break;
+      const line = buffer.slice(0, newlineIndex);
+      buffer = buffer.slice(newlineIndex + 1);
+      if (line.trim()) lines.push(JSON.parse(line));
+      wake?.();
+      wake = undefined;
+    }
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
+  let closed: { exitCode: number | null } | undefined;
+  child.once("close", (exitCode) => {
+    closed = { exitCode };
+    wake?.();
+    wake = undefined;
+  });
+  const nextLine = async <T>(): Promise<T> => {
+    while (lines.length === 0) {
+      if (closed) {
+        throw new Error(
+          `queue owner transport worker exited ${closed.exitCode}: ${stderr}`,
+        );
+      }
+      await new Promise<void>((resolve) => {
+        wake = resolve;
+      });
+    }
+    return lines.shift() as T;
+  };
+  return {
+    child,
+    ready: nextLine(),
+    async stop(command = "stop") {
+      child.stdin.write(`${command}\n`);
+      const result = await nextLine<{
+        phase: "stopped";
+        executionCount: number;
+        foreignQueuedCount: number;
+        donorEntryCount: number;
+        recipientEntryCount: number;
+        recipientQueueCount: number;
+        handoffCount: number;
+        controlExecutions: string[];
+        droppedHandoffAck: boolean;
+      }>();
+      child.kill("SIGKILL");
+      await new Promise((resolve) => child.once("close", resolve));
+      return result;
+    },
+  };
+}
+
+interface RegistrationRecoveryRaceResult {
+  phase: "result";
+  registrationOk: boolean;
+  recoveryStatus: string;
+  registeredPid: number;
+  registeredProcessBirthId: string;
+  ownerAlive: boolean;
+  journalState: string;
+  journalOwnerPid: number;
+}
+
+function runRegistrationRecoveryRaceProcess(input: {
+  journalPath: string;
+  socketPath: string;
+  startPath: string;
+  instanceId: string;
+  profileKey: string;
+  registrationGeneration: string;
+  target: { chatId: number; threadId: number };
+}): Promise<RegistrationRecoveryRaceResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        queueOwnerWorkerPath,
+        input.journalPath,
+        "registration-recovery-race",
+        JSON.stringify(input),
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    let buffer = "";
+    let stderr = "";
+    let started = false;
+    let result: RegistrationRecoveryRaceResult | undefined;
+    child.stdout.on("data", (chunk) => {
+      buffer += chunk;
+      for (;;) {
+        const newlineIndex = buffer.indexOf("\n");
+        if (newlineIndex < 0) break;
+        const line = buffer.slice(0, newlineIndex);
+        buffer = buffer.slice(newlineIndex + 1);
+        if (!line.trim()) continue;
+        const message = JSON.parse(line) as { phase?: string };
+        if (message.phase === "ready" && !started) {
+          started = true;
+          void writeFile(input.startPath, "start", "utf8").catch(reject);
+        } else if (message.phase === "result") {
+          result = message as RegistrationRecoveryRaceResult;
+          child.kill("SIGKILL");
+        }
+      }
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.once("error", reject);
+    child.once("close", (exitCode, signal) => {
+      if (result) {
+        resolve(result);
+        return;
+      }
+      reject(
+        new Error(
+          `registration recovery worker exited ${exitCode ?? signal}: ${stderr}`,
+        ),
+      );
+    });
+  });
+}
+
+function runQueueOwnerReplacementProcess(
+  path: string,
+  mode: "observe" | "recover" = "observe",
+): Promise<{
+  executionCount: number;
+  foreignQueuedCount: number;
+  queuedClaimCount: number;
+  entryCount: number;
+  directCompletionError?: string;
+  recoveryStatus?: string;
+}> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      ["--experimental-strip-types", queueOwnerWorkerPath, path, mode],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.once("error", reject);
+    child.once("close", (exitCode) => {
+      if (exitCode !== 0) {
+        reject(
+          new Error(
+            `queue owner replacement exited ${exitCode}: ${stderr}`,
+          ),
+        );
+        return;
+      }
+      try {
+        resolve(JSON.parse(stdout.trim()) as {
+          executionCount: number;
+          foreignQueuedCount: number;
+          queuedClaimCount: number;
+          entryCount: number;
+          directCompletionError?: string;
+          recoveryStatus?: string;
+        });
+      } catch (error) {
+        reject(
+          new Error(`queue owner replacement returned invalid JSON: ${stdout}`, {
+            cause: error,
+          }),
+        );
+      }
+    });
+  });
+}
 
 async function ensureRuntimeAgentDir(): Promise<string> {
   if (!runtimeAgentDir) {
@@ -84,7 +353,14 @@ test("Cross-instance agent turns route in both leader and follower directions", 
           events.push(
             `forward:${ownership.instanceId}:${ownership.ownerGeneration}:${message.message_thread_id}:${message.pi_telegram_agent_source_thread}`,
           );
-          return true;
+          return {
+            status: "accepted",
+            delivery: {
+              deliveryId: "test-delivery",
+              sourceUpdateId: 1,
+              recipientBindingKey: "test-recipient",
+            },
+          };
         },
       },
       removePendingMediaGroupMessages: () => {},
@@ -147,7 +423,7 @@ async function flushMicrotasks(iterations = 10): Promise<void> {
 
 async function waitForEventLoopCondition(
   predicate: () => boolean,
-  iterations = 100,
+  iterations = 1_000,
 ): Promise<void> {
   for (let i = 0; i < iterations; i++) {
     if (predicate()) return;
@@ -167,6 +443,19 @@ async function waitForCondition(
   }
   if (predicate()) return;
   throw new Error("Timed out waiting for condition");
+}
+
+async function waitForAsyncCondition(
+  predicate: () => Promise<boolean>,
+  timeoutMs = 2000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  if (await predicate()) return;
+  throw new Error("Timed out waiting for async condition");
 }
 
 function parseJsonRequestBody(
@@ -208,6 +497,18 @@ async function createRuntimeTelegramConfigFixture() {
   return {
     write: async (config: Record<string, unknown>) => {
       await mkdir(agentDir, { recursive: true });
+      const telegramTempDir = join(agentDir, "tmp", "telegram");
+      const tempEntries = await readdir(telegramTempDir).catch(() => []);
+      await Promise.all(
+        tempEntries
+          .filter((entry) => entry.startsWith("inbox"))
+          .map((entry) =>
+            rm(join(telegramTempDir, entry), {
+              recursive: true,
+              force: true,
+            }),
+          ),
+      );
       const assistant =
         typeof config.assistant === "object" && config.assistant !== null
           ? (config.assistant as Record<string, unknown>)
@@ -253,17 +554,31 @@ async function writeRuntimeTelegramLocks(
   );
 }
 
-async function writeRuntimeTelegramState(
-  state: Record<string, unknown>,
-): Promise<void> {
+async function stageRuntimeV02712Artifacts(): Promise<string | undefined> {
   const agentDir = await ensureRuntimeAgentDir();
   const telegramRuntimeDir = join(agentDir, "tmp", "telegram");
   await mkdir(telegramRuntimeDir, { recursive: true });
   await writeFile(
     join(telegramRuntimeDir, "state.json"),
-    JSON.stringify(state, null, "\t") + "\n",
+    `${JSON.stringify({
+      version: 1,
+      source: "snapshot",
+      writtenAtMs: 0,
+      bot: { threadMode: "enabled" },
+      identities: [],
+      reservations: [],
+      pendingProvisions: [],
+      pendingCleanups: [],
+      syncObservations: [],
+      threads: [],
+    })}\n`,
     "utf8",
   );
+  if (process.platform === "win32") return undefined;
+  const busPath = join(telegramRuntimeDir, "bus.sock");
+  await rm(busPath, { force: true });
+  await symlink(".pt-v02712-missing.sock", busPath);
+  return busPath;
 }
 
 function createRuntimeDeferredResponse() {
@@ -431,7 +746,7 @@ function createRuntimePiHarness(options: RuntimePiHarnessOptions = {}) {
   };
 }
 
-test("Graceful leader quit deletes its exact Threaded Mode tab before releasing transport", async () => {
+test("v0.27.12 artifacts and graceful tab cleanup preserve same-directory auto-connect ownership", async () => {
   const telegramConfig = await createRuntimeTelegramConfigFixture();
   const { handlers, commands, pi } = createRuntimePiHarness();
   const methods: Array<{ method: string; body?: Record<string, unknown> }> = [];
@@ -478,27 +793,76 @@ test("Graceful leader quit deletes its exact Threaded Mode tab before releasing 
       botUsername: "test_bot",
       allowedUserId: 77,
       lastUpdateId: 0,
+      threads: { automaticCleanup: true },
     });
     await writeRuntimeTelegramLocks({});
-    await writeRuntimeTelegramState({
-      version: 1,
-      source: "snapshot",
-      writtenAtMs: 0,
-      bot: { threadMode: "enabled" },
-      threads: [],
-      pendingCleanups: [],
+    const legacyBusPath = await stageRuntimeV02712Artifacts();
+    const runtimeAgentPath = await ensureRuntimeAgentDir();
+    const journalPath = join(runtimeAgentPath, "tmp", "telegram", "inbox.json");
+    const journal = Journal.createTelegramUpdateJournalStore({
+      path: journalPath,
+      botIdentity: Journal.createTelegramUpdateJournalBotIdentity({
+        botToken: "123:abc",
+        botId: 123,
+      }),
     });
+    journal.appendBatch([
+      {
+        update_id: 1,
+        message: {
+          message_id: 1,
+          date: 1,
+          chat: { id: 77, type: "private" },
+          from: { id: 77, is_bot: false, first_name: "Owner" },
+          text: "recover admitted authority",
+        },
+      },
+    ]);
     (await getRuntimeTelegramExtension())(pi);
     const ctx = createRuntimeExtensionContext({ cwd: "/repo/graceful-leader" });
     await handlers.get("session_start")?.({}, ctx);
     await commands.get("telegram-connect")?.handler("", ctx);
-    await waitForCondition(() =>
-      methods.some((entry) => entry.method === "createForumTopic"),
+    await waitForCondition(
+      () => methods.some((entry) => entry.method === "createForumTopic"),
+      10_000,
     );
+    assert.deepEqual(
+      journal.read().entries.map((entry) => entry.updateId),
+      [1],
+      "upgrade startup must preserve pre-existing journal authority",
+    );
+    if (legacyBusPath) {
+      assert.notEqual(
+        await readlink(legacyBusPath),
+        ".pt-v02712-missing.sock",
+      );
+    }
 
     await handlers.get("session_shutdown")?.(
       { type: "session_shutdown", reason: "quit" },
       ctx,
+    );
+
+    const agentDir = await ensureRuntimeAgentDir();
+    const ownersAfterQuit = JSON.parse(
+      await readFile(join(agentDir, "tmp", "telegram", "owners.json"), "utf8"),
+    ) as Record<string, { pid?: number; cwd?: string }>;
+    assert.equal(ownersAfterQuit.default?.pid, process.pid);
+    assert.equal(ownersAfterQuit.default?.cwd, "/repo/graceful-leader");
+
+    const restartedCtx = createRuntimeExtensionContext({
+      cwd: "/repo/graceful-leader",
+    });
+    await handlers.get("session_start")?.({}, restartedCtx);
+    await waitForCondition(
+      () =>
+        methods.filter((entry) => entry.method === "createForumTopic").length >=
+        2,
+      10_000,
+    );
+    await handlers.get("session_shutdown")?.(
+      { type: "session_shutdown", reason: "quit" },
+      restartedCtx,
     );
 
     const deleteCall = methods.find(
@@ -508,36 +872,11 @@ test("Graceful leader quit deletes its exact Threaded Mode tab before releasing 
       chat_id: 77,
       message_thread_id: 42,
     });
-    const agentDir = await ensureRuntimeAgentDir();
-    const state = JSON.parse(
-      await readFile(join(agentDir, "tmp", "telegram", "state.json"), "utf8"),
-    ) as {
-      threads?: Array<{ target?: { chatId?: number; threadId?: number } }>;
-      pendingCleanups?: Array<{
-        target?: { chatId?: number; threadId?: number };
-      }>;
-    };
-    const threads = state.threads ?? [];
-    const pendingCleanups = state.pendingCleanups ?? [];
-    if (threads.length === 0) {
-      assert.deepEqual(pendingCleanups, []);
-    } else {
-      // Exact deletion already succeeded. If the final ownership-fenced state
-      // commit cannot complete during shutdown, retain the exact durable intent
-      // so a successor can confirm and finish reconciliation safely.
-      assert.equal(threads.length, 1);
-      assert.deepEqual(threads[0]?.target, { chatId: 77, threadId: 42 });
-      assert.equal(pendingCleanups.length, 1);
-      assert.deepEqual(pendingCleanups[0]?.target, {
-        chatId: 77,
-        threadId: 42,
-      });
-    }
   } finally {
     restoreFetch();
     await telegramConfig.restore();
   }
-});
+}, 30_000);
 
 test("Graceful follower disconnect persists intent and deletes through its live leader", async () => {
   const dir = await mkdtemp(join(tmpdir(), "pi-telegram-follower-cleanup-integration-"));
@@ -569,6 +908,9 @@ test("Graceful follower disconnect persists intent and deletes through its live 
     handleEnvelope: BusLeader.createTelegramBusLeaderEnvelopeHandler({
       followerRegistry: registry,
       authSecret: "leader-secret",
+      protocolIdentity: Bus.createTelegramBusProtocolIdentity({
+        runtimeBuild: "test",
+      }),
       getNowMs: () => 2000,
       async provisionFollowerTarget(registration) {
         store.upsert({
@@ -601,6 +943,9 @@ test("Graceful follower disconnect persists intent and deletes through its live 
   const follower = BusFollower.createTelegramBusFollowerRegistrationRuntime({
     instanceId: "follower-a",
     createRequestId: () => `follower-a:${++requestSequence}`,
+    protocolIdentity: Bus.createTelegramBusProtocolIdentity({
+      runtimeBuild: "test",
+    }),
     getLeaderAuthSecret: (leader) => leader.busSecret,
     getNowMs: () => 2000,
     registrationTimeoutMs: 5_000,
@@ -1183,6 +1528,1183 @@ test("Extension runtime polls, pairs, and dispatches an inbound Telegram turn in
   }
 });
 
+test("Durable worker keeps a poison source while draining independent journal tail", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-poison-tail-"));
+  const path = join(dir, "inbox.json");
+  const journal = Journal.createTelegramUpdateJournalStore({
+    path,
+    botIdentity: Journal.createTelegramUpdateJournalBotIdentity({
+      botToken: "123:poison-tail",
+    }),
+    getNowMs: () => 1_000,
+  });
+  journal.appendBatch([
+    { update_id: 1, message: { text: "poison" } },
+    { update_id: 2, message: { text: "valid-a" } },
+    { update_id: 3, message: { text: "valid-b" } },
+  ]);
+  const executed: number[] = [];
+  const worker = Updates.createTelegramUpdateWorkerRuntime({
+    journal,
+    hasAuthority: () => true,
+    getNowMs: () => 2_000,
+    classifyExecutionFailure: () => ({
+      disposition: "terminal",
+      failureClass: "invalid-update",
+      summary: "Deterministic poison update.",
+    }),
+    executeUpdate(update) {
+      executed.push(update.update_id);
+      if (update.update_id === 1) throw new Error("poison");
+      return { kind: "complete" };
+    },
+  });
+  try {
+    worker.start("ctx");
+    await worker.waitForDrain();
+    assert.deepEqual(executed, [1, 2, 3]);
+    assert.deepEqual(
+      journal.read().entries.map((entry) => ({
+        updateId: entry.updateId,
+        state: entry.state,
+        failureClass: entry.failure?.failureClass,
+      })),
+      [{ updateId: 1, state: "retry-wait", failureClass: "invalid-update" }],
+    );
+    assert.equal(worker.getState().retryWaitCount, 1);
+    assert.equal(worker.getState().failedCount, 0);
+    assert.equal(worker.getState().journalEntryCount, 1);
+  } finally {
+    await worker.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Live replacement process cannot replay or settle another process queue receipt", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-queue-owner-"));
+  const path = join(dir, "inbox.json");
+  const processBirthId = Bus.getTelegramProcessBirthIdentity(
+    process.pid,
+    "fixture-owner",
+  );
+  const queueOwnerIdentity = {
+    instanceId: `owner-${process.pid}`,
+    processId: process.pid,
+    processBirthId,
+    sessionGeneration: 1,
+  };
+  const journal = Journal.createTelegramUpdateJournalStore({
+    path,
+    botIdentity: Journal.createTelegramUpdateJournalBotIdentity({
+      botToken: "123:queue-owner-worker",
+    }),
+    queueRuntimeIdentity: {
+      instanceId: queueOwnerIdentity.instanceId,
+      processId: process.pid,
+      processBirthId,
+    },
+  });
+  journal.appendBatch([{ update_id: 1, message: { text: "once" } }]);
+  const receipt = {
+    queueKind: "prompt" as const,
+    receiptId: "process-a-receipt",
+    sourceUpdateIds: [1],
+  };
+  let processAHasTransport = true;
+  let processAExecutions = 0;
+  const processA = Updates.createTelegramUpdateWorkerRuntime({
+    journal,
+    hasAuthority: () => processAHasTransport,
+    getQueueOwnerIdentity: () => queueOwnerIdentity,
+    executeUpdate() {
+      processAExecutions += 1;
+      return { kind: "queued", ...receipt };
+    },
+  });
+  try {
+    processA.start("process-a-context");
+    await processA.waitForDrain();
+    assert.equal(processAExecutions, 1);
+    assert.equal(processA.isQueueReceiptCommitted(receipt), true);
+
+    processAHasTransport = false;
+    const replacement = await runQueueOwnerReplacementProcess(path);
+    assert.deepEqual(replacement, {
+      executionCount: 0,
+      foreignQueuedCount: 1,
+      queuedClaimCount: 0,
+      entryCount: 1,
+      directCompletionError: "conflict",
+    });
+    assert.equal(journal.read().entries.length, 1);
+
+    processA.completeQueueReceipts({
+      receipts: [receipt],
+      ctx: "process-a-context",
+      reason: "prompt-handoff",
+    });
+    await processA.waitForDrain();
+    assert.equal(processAExecutions, 1);
+    assert.deepEqual(journal.read().entries, []);
+  } finally {
+    await processA.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Transport takeover hands one live-owned prompt to one exact recipient journal", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-transport-handoff-"));
+  const journalPath = join(dir, "inbox.json");
+  const recipientJournalPath = journalPath;
+  const ownersPath = join(dir, "owners.json");
+  const socketPath = join(dir, "recipient.sock");
+  const donorCwd = "/repo/queue-donor";
+  const donorInstanceId = `donor-${process.pid}`;
+  const donorProcessBirthId = Bus.getTelegramProcessBirthIdentity(
+    process.pid,
+    donorInstanceId,
+  );
+  const donorOwnerIdentity = {
+    instanceId: donorInstanceId,
+    processId: process.pid,
+    processBirthId: donorProcessBirthId,
+    sessionGeneration: 1,
+  };
+  const botIdentity = Journal.createTelegramUpdateJournalBotIdentity({
+    botToken: "123:queue-owner-worker",
+  });
+  const donorJournalBindingKey = Journal.createTelegramUpdateJournalBindingKey({
+    path: journalPath,
+    botIdentity,
+  });
+  const journal = Journal.createTelegramUpdateJournalStore({
+    path: journalPath,
+    botIdentity,
+    queueRuntimeIdentity: donorOwnerIdentity,
+  });
+  journal.appendBatch([{ update_id: 1, message: { text: "handoff once" } }]);
+  const receipt = {
+    queueKind: "prompt" as const,
+    receiptId: "transport-handoff-receipt",
+    sourceUpdateIds: [1],
+    journalBindingKey: donorJournalBindingKey,
+  };
+  const target = { chatId: 7, threadId: 42 };
+  const donorQueue = Queue.createTelegramQueueStore<string>();
+  let donorExecutions = 0;
+  let authenticatedHandoffs = 0;
+  const donorWorker = Updates.createTelegramUpdateWorkerRuntime({
+    journal,
+    hasAuthority: () => true,
+    getJournalBindingKey: () => donorJournalBindingKey,
+    getQueueOwnerIdentity: () => donorOwnerIdentity,
+    executeUpdate() {
+      donorExecutions += 1;
+      return { kind: "queued", ...receipt };
+    },
+    onQueueReceiptCommitted(committedReceipt) {
+      donorQueue.setQueuedItems([{
+        kind: "prompt",
+        chatId: target.chatId,
+        target,
+        transportStamp: { profile: "default", generation: "1" },
+        replyToMessageId: 10,
+        queueOrder: 1,
+        queueLane: "default",
+        laneOrder: 1,
+        statusSummary: "handoff once",
+        admissionReceipts: [committedReceipt],
+        sourceMessageIds: [10],
+        queuedAttachments: [],
+        content: [{ type: "text", text: "handoff once" }],
+        historyText: "handoff once",
+      }]);
+    },
+  });
+  const donorLifecycle = Updates.createTelegramUpdateAdmissionLifecycleRuntime<string>({
+    resolveBinding: () => ({
+      runtimeKey: journalPath,
+      recoveryKey: donorJournalBindingKey,
+      journal,
+    }),
+    getQueueOwnerIdentity: () => donorOwnerIdentity,
+    createWorker: () => donorWorker,
+  });
+  const donorLock = Locks.createTelegramLockRuntime<{ cwd: string }>({
+    locksPath: ownersPath,
+    instanceId: donorInstanceId,
+  });
+  let replacement:
+    | QueueOwnerTransportHandoffProcess
+    | undefined;
+  try {
+    const acquired = donorLock.acquire({ cwd: donorCwd });
+    assert.equal(acquired.ok, true);
+    await donorLifecycle.onSessionStart("donor-context");
+    await donorWorker.waitForDrain();
+    assert.equal(donorExecutions, 1);
+    assert.equal(donorQueue.getQueuedItems().length, 1);
+    assert.equal(journal.read().entries[0]?.queueOwner?.processId, process.pid);
+
+    replacement = spawnQueueOwnerTransportHandoffProcess({
+      journalPath,
+      recipientJournalPath,
+      ownersPath,
+      socketPath,
+      authSecret: "handoff-secret",
+      donorInstanceId,
+      donorCwd,
+      recipientInstanceId: "recipient-process-b",
+      recipientProfileKey: "manual:recipient-process-b",
+      recipientRegistrationGeneration: "recipient-generation-b",
+      target,
+    });
+    const ready = await replacement.ready;
+    assert.deepEqual(
+      {
+        phase: ready.phase,
+        transportOwned: ready.transportOwned,
+        executionCount: ready.executionCount,
+        foreignQueuedCount: ready.foreignQueuedCount,
+      },
+      {
+        phase: "ready",
+        transportOwned: true,
+        executionCount: 0,
+        foreignQueuedCount: 1,
+      },
+    );
+    assert.equal(donorLock.owns({ cwd: donorCwd }), false);
+    assert.equal(process.pid > 0, true);
+
+    const registry = Bus.createTelegramBusFollowerRegistry();
+    registry.register({
+      instanceId: "recipient-process-b",
+      profileKey: "manual:recipient-process-b",
+      target,
+      busSocketPath: socketPath,
+      registrationGeneration: "recipient-generation-b",
+      protocol: Bus.createTelegramBusProtocolIdentity({
+        runtimeBuild: "fixture",
+        capabilities: [Bus.TELEGRAM_BUS_CAPABILITY_QUEUE_HANDOFF],
+      }),
+      pid: ready.pid,
+      processBirthId: ready.processBirthId,
+      sessionGeneration: 1,
+      connectedAtMs: Date.now(),
+    });
+    const reconcile = Updates.createTelegramQueueHandoffReconciler<string>({
+      ownsDirect: () => false,
+      isFollowerRegistered: () => true,
+      isBusEnabled: () => true,
+      canHandoffWithLeader: () => true,
+      listFollowers: () => registry.list().filter(
+        (follower) => follower.instanceId !== donorInstanceId,
+      ),
+      createRecipientJournalBindingKey: () => ready.recipientJournalBindingKey,
+      getQueuedItems: donorQueue.getQueuedItems,
+      getReceiptOwner(receipt) {
+        const owner = donorLifecycle.getQueueReceiptOwner(receipt);
+        assert.ok(owner, `missing donor owner for ${JSON.stringify(receipt)}`);
+        return owner;
+      },
+      getLifecycleForReceipt(receipt) {
+        assert.equal(receipt.journalBindingKey, donorJournalBindingKey);
+        return donorLifecycle;
+      },
+      createHandoffToken: Journal.createTelegramUpdateQueueHandoffToken,
+      createRequestId: () => "transport-handoff:1",
+      donorInstanceId,
+      async stageThroughFollower(input) {
+        const response = await Bus.sendTelegramBusLocalEnvelope({
+          socketPath,
+          timeoutMs: 1_000,
+          envelope: {
+            kind: "leader.offerQueueHandoff",
+            requestId: "transport-handoff:1",
+            auth: "handoff-secret",
+            recipientInstanceId: input.recipient.instanceId,
+            recipientRegistrationGeneration:
+              input.recipient.registrationGeneration!,
+            donorInstanceId,
+            donorProcessId: input.expectedOwner.processId,
+            donorProcessBirthId: input.expectedOwner.processBirthId,
+            donorSessionGeneration: input.expectedOwner.sessionGeneration,
+            donorAcquisitionId: input.expectedOwner.acquisitionId,
+            donorAcquiredAtMs: input.expectedOwner.acquiredAtMs,
+            handoffToken: input.handoffToken,
+            payload: input.payload,
+            sentAtMs: Date.now(),
+          },
+        });
+        if (
+          response?.kind !== "bus.ack" ||
+          !response.ok ||
+          !response.result ||
+          typeof response.result !== "object"
+        ) {
+          throw new Error(
+            response?.kind === "bus.ack"
+              ? response.message ?? "handoff rejected"
+              : "missing handoff response",
+          );
+        }
+        authenticatedHandoffs += 1;
+        return response.result as Queue.TelegramQueueHandoffStageResult;
+      },
+      async routeThroughLeader(input) {
+        const response = await Bus.sendTelegramBusLocalEnvelope({
+          socketPath,
+          timeoutMs: 1_000,
+          envelope: {
+            kind: "leader.offerQueueHandoff",
+            requestId: input.requestId,
+            auth: input.auth,
+            recipientInstanceId: input.recipientInstanceId,
+            recipientRegistrationGeneration:
+              input.recipientRegistrationGeneration,
+            donorInstanceId: input.donorInstanceId,
+            donorProcessId: input.donorProcessId,
+            donorProcessBirthId: input.donorProcessBirthId,
+            donorSessionGeneration: input.donorSessionGeneration,
+            donorAcquisitionId: input.donorAcquisitionId,
+            donorAcquiredAtMs: input.donorAcquiredAtMs,
+            handoffToken: input.handoffToken,
+            payload: input.payload,
+            sentAtMs: input.sentAtMs,
+          },
+        });
+        if (response?.kind === "bus.ack" && response.ok) {
+          authenticatedHandoffs += 1;
+        }
+        return response ?? {
+          kind: "bus.ack",
+          requestId: input.requestId,
+          ok: false,
+          message: "missing handoff response",
+        };
+      },
+      removeDonorItem(exactReceipt) {
+        return Queue.removeTelegramQueueItemByReceipt({
+          receipt: exactReceipt,
+          store: donorQueue,
+        });
+      },
+      recordFailure(error) {
+        throw error;
+      },
+    });
+    await reconcile("donor-context");
+
+    assert.equal(registry.list().length, 1);
+    assert.deepEqual(registry.list()[0]?.target, target);
+    assert.equal(donorQueue.getQueuedItems().length, 0);
+    assert.equal(authenticatedHandoffs, 1);
+    assert.equal(donorExecutions, 1);
+    assert.deepEqual(donorQueue.getQueuedItems(), []);
+    assert.equal(journal.read().entries[0]?.queueOwner?.processId, ready.pid);
+    assert.equal(journal.read().entries[0]?.queueHandoff, undefined);
+    const recipientFile = JSON.parse(
+      await readFile(recipientJournalPath, "utf8"),
+    ) as { entries: unknown[] };
+    assert.equal(recipientFile.entries.length, 1);
+
+    const stopped = await replacement.stop();
+    replacement = undefined;
+    assert.deepEqual(stopped, {
+      phase: "stopped",
+      executionCount: 0,
+      foreignQueuedCount: 1,
+      donorEntryCount: 1,
+      recipientEntryCount: 1,
+      recipientQueueCount: 1,
+      handoffCount: 1,
+      controlExecutions: [],
+      droppedHandoffAck: false,
+    });
+  } finally {
+    if (replacement) {
+      replacement.child.kill("SIGKILL");
+      await new Promise((resolve) => replacement?.child.once("close", resolve));
+    }
+    await donorLifecycle.onSessionShutdown();
+    donorLock.release();
+    await rm(dir, { recursive: true, force: true });
+  }
+}, 10_000);
+
+test("Queued control handoff reconstructs one local execution in the recipient process", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-control-handoff-"));
+  const journalPath = join(dir, "inbox.json");
+  const ownersPath = join(dir, "owners.json");
+  const socketPath = join(dir, "recipient.sock");
+  const donorCwd = "/repo/control-donor";
+  const donorInstanceId = `control-donor-${process.pid}`;
+  const donorProcessBirthId = Bus.getTelegramProcessBirthIdentity(
+    process.pid,
+    donorInstanceId,
+  );
+  const donorOwnerIdentity = {
+    instanceId: donorInstanceId,
+    processId: process.pid,
+    processBirthId: donorProcessBirthId,
+    sessionGeneration: 1,
+  };
+  const botIdentity = Journal.createTelegramUpdateJournalBotIdentity({
+    botToken: "123:queue-owner-worker",
+  });
+  const donorJournalBindingKey = Journal.createTelegramUpdateJournalBindingKey({
+    path: journalPath,
+    botIdentity,
+  });
+  const journal = Journal.createTelegramUpdateJournalStore({
+    path: journalPath,
+    botIdentity,
+    queueRuntimeIdentity: donorOwnerIdentity,
+  });
+  journal.appendBatch([{ update_id: 1, callback_query: { id: "control" } }]);
+  const receipt = {
+    queueKind: "control" as const,
+    receiptId: "control-handoff-receipt",
+    sourceUpdateIds: [1],
+    journalBindingKey: donorJournalBindingKey,
+  };
+  const target = { chatId: 7, threadId: 44 };
+  const donorQueue = Queue.createTelegramQueueStore<string>();
+  let donorControlExecutions = 0;
+  const donorWorker = Updates.createTelegramUpdateWorkerRuntime({
+    journal,
+    hasAuthority: () => true,
+    getJournalBindingKey: () => donorJournalBindingKey,
+    getQueueOwnerIdentity: () => donorOwnerIdentity,
+    executeUpdate: () => ({ kind: "queued", ...receipt }),
+    onQueueReceiptCommitted(committedReceipt) {
+      donorQueue.setQueuedItems([{
+        kind: "control",
+        controlType: "status",
+        chatId: target.chatId,
+        target,
+        transportStamp: { profile: "default", generation: "1" },
+        replyToMessageId: 12,
+        queueOrder: 1,
+        queueLane: "control",
+        laneOrder: 1,
+        statusSummary: "status",
+        admissionReceipts: [committedReceipt],
+        execute: async () => {
+          donorControlExecutions += 1;
+        },
+      }]);
+    },
+  });
+  const donorLifecycle = Updates.createTelegramUpdateAdmissionLifecycleRuntime<string>({
+    resolveBinding: () => ({
+      runtimeKey: journalPath,
+      recoveryKey: donorJournalBindingKey,
+      journal,
+    }),
+    getQueueOwnerIdentity: () => donorOwnerIdentity,
+    createWorker: () => donorWorker,
+  });
+  const donorLock = Locks.createTelegramLockRuntime<{ cwd: string }>({
+    locksPath: ownersPath,
+    instanceId: donorInstanceId,
+  });
+  let replacement: QueueOwnerTransportHandoffProcess | undefined;
+  try {
+    assert.equal(donorLock.acquire({ cwd: donorCwd }).ok, true);
+    await donorLifecycle.onSessionStart("donor-context");
+    await donorWorker.waitForDrain();
+    replacement = spawnQueueOwnerTransportHandoffProcess({
+      journalPath,
+      recipientJournalPath: journalPath,
+      ownersPath,
+      socketPath,
+      authSecret: "handoff-secret",
+      donorInstanceId,
+      donorCwd,
+      recipientInstanceId: "recipient-control",
+      recipientProfileKey: "manual:recipient-control",
+      recipientRegistrationGeneration: "recipient-generation-control",
+      target,
+    });
+    const ready = await replacement.ready;
+    const expectedOwner = donorLifecycle.getQueueReceiptOwner(receipt);
+    assert.ok(expectedOwner);
+    const item = donorQueue.getQueuedItems()[0];
+    assert.ok(item);
+    const result = await Updates.coordinateTelegramQueueHandoff({
+      item,
+      expectedOwner,
+      recipientOwner: {
+        instanceId: "recipient-control",
+        processId: ready.pid,
+        processBirthId: ready.processBirthId,
+        sessionGeneration: 1,
+      },
+      handoffToken: Journal.createTelegramUpdateQueueHandoffToken(),
+      lifecycle: donorLifecycle,
+      async stageRemote(input) {
+        const response = await Bus.sendTelegramBusLocalEnvelope({
+          socketPath,
+          timeoutMs: 1_000,
+          envelope: {
+            kind: "leader.offerQueueHandoff",
+            requestId: "control-handoff:1",
+            auth: "handoff-secret",
+            recipientInstanceId: "recipient-control",
+            recipientRegistrationGeneration: "recipient-generation-control",
+            donorInstanceId,
+            donorProcessId: input.expectedOwner.processId,
+            donorProcessBirthId: input.expectedOwner.processBirthId,
+            donorSessionGeneration: input.expectedOwner.sessionGeneration,
+            donorAcquisitionId: input.expectedOwner.acquisitionId,
+            donorAcquiredAtMs: input.expectedOwner.acquiredAtMs,
+            handoffToken: input.handoffToken,
+            payload: {
+              ...input.payload,
+              admissionReceipts: [{
+                ...input.payload.admissionReceipts[0]!,
+                journalBindingKey: ready.recipientJournalBindingKey,
+              }],
+            },
+            sentAtMs: Date.now(),
+          },
+        });
+        if (
+          response?.kind !== "bus.ack" ||
+          !response.ok ||
+          !response.result ||
+          typeof response.result !== "object"
+        ) {
+          throw new Error("control handoff was rejected");
+        }
+        return response.result as Queue.TelegramQueueHandoffStageResult;
+      },
+      removeDonorItem: () =>
+        Queue.removeTelegramQueueItemByReceipt({ receipt, store: donorQueue }),
+    });
+    assert.equal(result.status, "transferred");
+    assert.equal(donorControlExecutions, 0);
+    assert.deepEqual(donorQueue.getQueuedItems(), []);
+    assert.equal(journal.read().entries[0]?.queueOwner?.processId, ready.pid);
+
+    const stopped = await replacement.stop("execute-control");
+    replacement = undefined;
+    assert.deepEqual(stopped, {
+      phase: "stopped",
+      executionCount: 0,
+      foreignQueuedCount: 1,
+      donorEntryCount: 1,
+      recipientEntryCount: 1,
+      recipientQueueCount: 1,
+      handoffCount: 1,
+      controlExecutions: ["status"],
+      droppedHandoffAck: false,
+    });
+  } finally {
+    if (replacement) {
+      replacement.child.kill("SIGKILL");
+      await new Promise((resolve) => replacement?.child.once("close", resolve));
+    }
+    await donorLifecycle.onSessionShutdown();
+    donorLock.release();
+    await rm(dir, { recursive: true, force: true });
+  }
+}, 10_000);
+
+test("Lost handoff ACK cannot cancel accepted cross-process authority", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-handoff-ack-loss-"));
+  const journalPath = join(dir, "inbox.json");
+  const ownersPath = join(dir, "owners.json");
+  const socketPath = join(dir, "recipient.sock");
+  const donorCwd = "/repo/ack-loss-donor";
+  const donorInstanceId = `ack-loss-donor-${process.pid}`;
+  const donorProcessBirthId = Bus.getTelegramProcessBirthIdentity(
+    process.pid,
+    donorInstanceId,
+  );
+  const donorOwnerIdentity = {
+    instanceId: donorInstanceId,
+    processId: process.pid,
+    processBirthId: donorProcessBirthId,
+    sessionGeneration: 1,
+  };
+  const botIdentity = Journal.createTelegramUpdateJournalBotIdentity({
+    botToken: "123:queue-owner-worker",
+  });
+  const donorJournalBindingKey = Journal.createTelegramUpdateJournalBindingKey({
+    path: journalPath,
+    botIdentity,
+  });
+  const journal = Journal.createTelegramUpdateJournalStore({
+    path: journalPath,
+    botIdentity,
+    queueRuntimeIdentity: donorOwnerIdentity,
+  });
+  journal.appendBatch([{ update_id: 1, message: { text: "ack lost" } }]);
+  const receipt = {
+    queueKind: "prompt" as const,
+    receiptId: "ack-loss-receipt",
+    sourceUpdateIds: [1],
+    journalBindingKey: donorJournalBindingKey,
+  };
+  const target = { chatId: 7, threadId: 43 };
+  const donorQueue = Queue.createTelegramQueueStore<string>();
+  const donorWorker = Updates.createTelegramUpdateWorkerRuntime({
+    journal,
+    hasAuthority: () => true,
+    getJournalBindingKey: () => donorJournalBindingKey,
+    getQueueOwnerIdentity: () => donorOwnerIdentity,
+    executeUpdate: () => ({ kind: "queued", ...receipt }),
+    onQueueReceiptCommitted(committedReceipt) {
+      donorQueue.setQueuedItems([{
+        kind: "prompt",
+        chatId: target.chatId,
+        target,
+        transportStamp: { profile: "default", generation: "1" },
+        replyToMessageId: 11,
+        queueOrder: 1,
+        queueLane: "default",
+        laneOrder: 1,
+        statusSummary: "ack lost",
+        admissionReceipts: [committedReceipt],
+        sourceMessageIds: [11],
+        queuedAttachments: [],
+        content: [{ type: "text", text: "ack lost" }],
+        historyText: "ack lost",
+      }]);
+    },
+  });
+  const donorLifecycle = Updates.createTelegramUpdateAdmissionLifecycleRuntime<string>({
+    resolveBinding: () => ({
+      runtimeKey: journalPath,
+      recoveryKey: donorJournalBindingKey,
+      journal,
+    }),
+    getQueueOwnerIdentity: () => donorOwnerIdentity,
+    createWorker: () => donorWorker,
+  });
+  const donorLock = Locks.createTelegramLockRuntime<{ cwd: string }>({
+    locksPath: ownersPath,
+    instanceId: donorInstanceId,
+  });
+  let replacement: QueueOwnerTransportHandoffProcess | undefined;
+  try {
+    assert.equal(donorLock.acquire({ cwd: donorCwd }).ok, true);
+    await donorLifecycle.onSessionStart("donor-context");
+    await donorWorker.waitForDrain();
+    replacement = spawnQueueOwnerTransportHandoffProcess({
+      journalPath,
+      recipientJournalPath: journalPath,
+      ownersPath,
+      socketPath,
+      authSecret: "handoff-secret",
+      donorInstanceId,
+      donorCwd,
+      recipientInstanceId: "recipient-ack-loss",
+      recipientProfileKey: "manual:recipient-ack-loss",
+      recipientRegistrationGeneration: "recipient-generation-ack-loss",
+      target,
+      dropHandoffAck: true,
+    });
+    const ready = await replacement.ready;
+    const lifecycle = donorLifecycle;
+    const expectedOwner = lifecycle.getQueueReceiptOwner(receipt);
+    assert.ok(expectedOwner);
+    const item = donorQueue.getQueuedItems()[0];
+    assert.ok(item);
+    let cancellationAttempts = 0;
+    const result = await Updates.coordinateTelegramQueueHandoff({
+      item,
+      expectedOwner,
+      recipientOwner: {
+        instanceId: "recipient-ack-loss",
+        processId: ready.pid,
+        processBirthId: ready.processBirthId,
+        sessionGeneration: 1,
+      },
+      handoffToken: Journal.createTelegramUpdateQueueHandoffToken(),
+      lifecycle: {
+        offerQueueReceiptHandoff: lifecycle.offerQueueReceiptHandoff,
+        acceptQueueReceiptHandoff: lifecycle.acceptQueueReceiptHandoff,
+        cancelQueueReceiptHandoff(input) {
+          cancellationAttempts += 1;
+          return lifecycle.cancelQueueReceiptHandoff(input);
+        },
+      },
+      async stageRemote(input) {
+        const response = await Bus.sendTelegramBusLocalEnvelope({
+          socketPath,
+          timeoutMs: 50,
+          envelope: {
+            kind: "leader.offerQueueHandoff",
+            requestId: "ack-loss:1",
+            auth: "handoff-secret",
+            recipientInstanceId: "recipient-ack-loss",
+            recipientRegistrationGeneration: "recipient-generation-ack-loss",
+            donorInstanceId,
+            donorProcessId: input.expectedOwner.processId,
+            donorProcessBirthId: input.expectedOwner.processBirthId,
+            donorSessionGeneration: input.expectedOwner.sessionGeneration,
+            donorAcquisitionId: input.expectedOwner.acquisitionId,
+            donorAcquiredAtMs: input.expectedOwner.acquiredAtMs,
+            handoffToken: input.handoffToken,
+            payload: {
+              ...input.payload,
+              admissionReceipts: [{
+                ...input.payload.admissionReceipts[0]!,
+                journalBindingKey: ready.recipientJournalBindingKey,
+              }],
+            },
+            sentAtMs: Date.now(),
+          },
+        });
+        throw new Error(`unexpected handoff response: ${JSON.stringify(response)}`);
+      },
+      removeDonorItem: () =>
+        Queue.removeTelegramQueueItemByReceipt({ receipt, store: donorQueue }),
+    });
+    assert.equal(result.status, "retained");
+    if (result.status !== "retained") assert.fail("expected retained result");
+    assert.equal(result.cancelled, false);
+    assert.equal(cancellationAttempts, 1);
+    assert.equal(donorQueue.getQueuedItems().length, 1);
+    assert.equal(journal.read().entries[0]?.queueOwner?.processId, ready.pid);
+    assert.equal(journal.read().entries[0]?.queueHandoff, undefined);
+
+    const stopped = await replacement.stop();
+    replacement = undefined;
+    assert.deepEqual(stopped, {
+      phase: "stopped",
+      executionCount: 0,
+      foreignQueuedCount: 1,
+      donorEntryCount: 1,
+      recipientEntryCount: 1,
+      recipientQueueCount: 1,
+      handoffCount: 1,
+      controlExecutions: [],
+      droppedHandoffAck: true,
+    });
+  } finally {
+    if (replacement) {
+      replacement.child.kill("SIGKILL");
+      await new Promise((resolve) => replacement?.child.once("close", resolve));
+    }
+    await donorLifecycle.onSessionShutdown();
+    donorLock.release();
+    await rm(dir, { recursive: true, force: true });
+  }
+}, 10_000);
+
+test("Live owner remains fenced when replacement races dead-owner recovery", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-live-owner-race-"));
+  const path = join(dir, "inbox.json");
+  const processBirthId = Bus.getTelegramProcessBirthIdentity(
+    process.pid,
+    "fixture-live-owner",
+  );
+  const ownerIdentity = {
+    instanceId: `live-owner-${process.pid}`,
+    processId: process.pid,
+    processBirthId,
+    sessionGeneration: 1,
+  };
+  const ownerJournal = Journal.createTelegramUpdateJournalStore({
+    path,
+    botIdentity: Journal.createTelegramUpdateJournalBotIdentity({
+      botToken: "123:queue-owner-worker",
+    }),
+    queueRuntimeIdentity: {
+      instanceId: ownerIdentity.instanceId,
+      processId: process.pid,
+      processBirthId,
+    },
+  });
+  ownerJournal.appendBatch([
+    { update_id: 1, message: { text: "live owner" } },
+  ]);
+  const receipt = {
+    queueKind: "prompt" as const,
+    receiptId: "process-a-receipt",
+    sourceUpdateIds: [1],
+  };
+  const ownerWorker = Updates.createTelegramUpdateWorkerRuntime({
+    journal: ownerJournal,
+    hasAuthority: () => true,
+    getQueueOwnerIdentity: () => ownerIdentity,
+    executeUpdate: () => ({ kind: "queued", ...receipt }),
+  });
+  try {
+    ownerWorker.start("live-owner-context");
+    await ownerWorker.waitForDrain();
+    const replacement = await runQueueOwnerReplacementProcess(
+      path,
+      "recover",
+    );
+    assert.deepEqual(replacement, {
+      executionCount: 0,
+      foreignQueuedCount: 1,
+      queuedClaimCount: 0,
+      entryCount: 1,
+      directCompletionError: "conflict",
+      recoveryStatus: "owner-alive",
+    });
+    assert.equal(ownerWorker.isQueueReceiptCommitted(receipt), true);
+    ownerWorker.completeQueueReceipts({
+      receipts: [receipt],
+      ctx: "live-owner-context",
+      reason: "prompt-handoff",
+    });
+    await ownerWorker.waitForDrain();
+    assert.deepEqual(ownerJournal.read().entries, []);
+  } finally {
+    await ownerWorker.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Live Windows queue owner remains unrecoverable and unreplayable without a birth proof", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-windows-owner-"));
+  const path = join(dir, "inbox.json");
+  const foreignOwner = {
+    instanceId: "windows-owner",
+    processId: 4242,
+    processBirthId: "4242:generation:windows-owner",
+    sessionGeneration: 1,
+    acquisitionId: "windows-acquisition",
+    acquiredAtMs: 1,
+  };
+  await writeFile(
+    path,
+    JSON.stringify({
+      version: 1,
+      profile: "default",
+      botIdentity: Journal.createTelegramUpdateJournalBotIdentity({
+        botToken: "123:queue-owner-worker",
+      }),
+      entries: [
+        {
+          updateId: 1,
+          update: { update_id: 1, message: { text: "windows owner" } },
+          admittedAtMs: 1,
+          state: "queued",
+          queueKind: "prompt",
+          queueReceiptId: "windows-owner-receipt",
+          queueOwner: foreignOwner,
+        },
+      ],
+    }),
+    "utf8",
+  );
+  const replacementIdentity = {
+    instanceId: "windows-replacement",
+    processId: 5252,
+    processBirthId: "5252:generation:windows-replacement",
+    sessionGeneration: 1,
+  };
+  const journal = Journal.createTelegramUpdateJournalStore({
+    path,
+    botIdentity: Journal.createTelegramUpdateJournalBotIdentity({
+      botToken: "123:queue-owner-worker",
+    }),
+    queueRuntimeIdentity: replacementIdentity,
+    getQueueProcessLiveness: (owner) =>
+      Bus.getTelegramProcessLiveness(owner, {
+        platform: "win32",
+        isProcessAlive: () => true,
+      }),
+  });
+  let executionCount = 0;
+  const worker = Updates.createTelegramUpdateWorkerRuntime({
+    journal,
+    hasAuthority: () => true,
+    getQueueOwnerIdentity: () => replacementIdentity,
+    executeUpdate() {
+      executionCount += 1;
+      return { kind: "complete" };
+    },
+  });
+  try {
+    worker.start("windows-replacement-context");
+    await worker.waitForDrain();
+    assert.equal(executionCount, 0);
+    assert.equal(worker.getState().foreignQueuedCount, 1);
+    const result = journal.recoverDeadQueueOwner({
+      queueKind: "prompt",
+      receiptId: "windows-owner-receipt",
+      sourceUpdateIds: [1],
+      deadOwner: foreignOwner,
+      recoveryOwner: replacementIdentity,
+    });
+    assert.equal(result.status, "owner-unverifiable");
+    worker.signal();
+    await worker.waitForDrain();
+    assert.equal(executionCount, 0);
+    assert.deepEqual(journal.read().entries[0]?.queueOwner, foreignOwner);
+    assert.throws(
+      () =>
+        journal.completeQueued([
+          {
+            queueKind: "prompt",
+            receiptId: "windows-owner-receipt",
+            sourceUpdateIds: [1],
+            queueOwner: foreignOwner,
+          },
+        ]),
+      (error) =>
+        error instanceof Journal.TelegramUpdateJournalError &&
+        error.code === "conflict",
+    );
+  } finally {
+    await worker.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Replacement registration stays live while its process races dead-owner recovery", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-registration-recovery-race-"));
+  const journalPath = join(dir, "inbox.json");
+  const socketPath = join(dir, "leader.sock");
+  const startPath = join(dir, "start");
+  const instanceId = "replacement-race";
+  const botIdentity = Journal.createTelegramUpdateJournalBotIdentity({
+    botToken: "123:queue-owner-worker",
+  });
+  await writeFile(
+    journalPath,
+    JSON.stringify({
+      version: 1,
+      profile: "default",
+      botIdentity,
+      entries: [{
+        updateId: 1,
+        update: { update_id: 1, message: { text: "race" } },
+        admittedAtMs: 1,
+        state: "queued",
+        queueKind: "prompt",
+        queueReceiptId: "registration-race-receipt",
+        queueOwner: {
+          instanceId,
+          processId: 2_000_000_000,
+          processBirthId: "2000000000:start:dead",
+          sessionGeneration: 1,
+          acquisitionId: "stale-acquisition",
+          acquiredAtMs: 1,
+        },
+      }],
+    }),
+    "utf8",
+  );
+  try {
+    const result = await runRegistrationRecoveryRaceProcess({
+      journalPath,
+      socketPath,
+      startPath,
+      instanceId,
+      profileKey: "manual:replacement-race",
+      registrationGeneration: "replacement-race:generation-1",
+      target: { chatId: 7, threadId: 45 },
+    });
+    assert.deepEqual(result, {
+      phase: "result",
+      registrationOk: true,
+      recoveryStatus: "owner-alive",
+      registeredPid: result.registeredPid,
+      registeredProcessBirthId: result.registeredProcessBirthId,
+      ownerAlive: true,
+      journalState: "queued",
+      journalOwnerPid: result.registeredPid,
+    });
+    assert.equal(result.registeredPid > 0, true);
+    assert.notEqual(result.registeredProcessBirthId, "2000000000:start:dead");
+    const journal = Journal.createTelegramUpdateJournalStore({
+      path: journalPath,
+      botIdentity,
+    });
+    assert.equal(journal.read().entries[0]?.state, "queued");
+    assert.equal(
+      journal.read().entries[0]?.queueOwner?.acquisitionId,
+      "stale-acquisition",
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}, 10_000);
+
+test("Replacement process recovers dead queue owner before one replay", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-dead-owner-"));
+  const path = join(dir, "inbox.json");
+  const deadOwner = {
+    instanceId: "dead-owner-instance",
+    processId: 2_000_000_000,
+    processBirthId: "2000000000:start:dead",
+    sessionGeneration: 1,
+    acquisitionId: "dead-acquisition",
+    acquiredAtMs: 1,
+  };
+  await writeFile(
+    path,
+    JSON.stringify({
+      version: 1,
+      profile: "default",
+      botIdentity: Journal.createTelegramUpdateJournalBotIdentity({
+        botToken: "123:queue-owner-worker",
+      }),
+      entries: [
+        {
+          updateId: 1,
+          update: { update_id: 1, message: { text: "recover once" } },
+          admittedAtMs: 1,
+          state: "queued",
+          queueKind: "prompt",
+          queueReceiptId: "process-a-receipt",
+          queueOwner: deadOwner,
+        },
+      ],
+    }),
+    "utf8",
+  );
+  try {
+    const replacement = await runQueueOwnerReplacementProcess(
+      path,
+      "recover",
+    );
+    assert.deepEqual(replacement, {
+      executionCount: 1,
+      foreignQueuedCount: 0,
+      queuedClaimCount: 0,
+      entryCount: 0,
+      directCompletionError: "conflict",
+      recoveryStatus: "recovered",
+    });
+    const journal = Journal.createTelegramUpdateJournalStore({
+      path,
+      botIdentity: Journal.createTelegramUpdateJournalBotIdentity({
+        botToken: "123:queue-owner-worker",
+      }),
+    });
+    assert.deepEqual(journal.read().entries, []);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Extension startup preserves queued authority owned by another process", async () => {
+  const telegramConfig = await createRuntimeTelegramConfigFixture();
+  const agentDir = await ensureRuntimeAgentDir();
+  const journalPath = join(agentDir, "tmp", "telegram", "inbox.json");
+  const journal = Journal.createTelegramUpdateJournalStore({
+    path: journalPath,
+    botIdentity: Journal.createTelegramUpdateJournalBotIdentity({
+      botToken: "123:recovery",
+    }),
+  });
+  const dispatched: RuntimeHarnessMessage[] = [];
+  const { handlers, commands, pi } = createRuntimePiHarness({
+    sendUserMessage: (content) => dispatched.push(content),
+  });
+  const restoreFetch = setRuntimeTestFetch(async (input) => {
+    const method = getRuntimeTelegramApiMethod(input);
+    if (method === "deleteWebhook" || method === "setMyCommands") {
+      return createRuntimeTelegramApiResponse(true);
+    }
+    if (method === "getUpdates") {
+      throw new DOMException("stop", "AbortError");
+    }
+    if (method === "sendChatAction") {
+      return createRuntimeTelegramApiResponse(true);
+    }
+    if (method === "getMe") {
+      return createRuntimeTelegramApiResponse({
+        id: 123,
+        username: "recovery_bot",
+        has_topics_enabled: false,
+      });
+    }
+    throw new Error(`Unexpected Telegram API method: ${method}`);
+  });
+  try {
+    await telegramConfig.write({
+      botToken: "123:recovery",
+      allowedUserId: 77,
+      lastUpdateId: 502,
+    });
+    journal.appendBatch([
+      {
+        update_id: 501,
+        message: {
+          message_id: 501,
+          chat: { id: 77, type: "private" },
+          from: { id: 77, is_bot: false, first_name: "Owner" },
+          text: "owned comment",
+        },
+      },
+      {
+        update_id: 502,
+        message: {
+          message_id: 502,
+          chat: { id: 77, type: "private" },
+          from: { id: 77, is_bot: false, first_name: "Owner" },
+          text: "owned follow-up",
+        },
+      },
+    ]);
+    const queued = journal.markQueued({
+      queueKind: "prompt",
+      receiptId: "foreign-process-receipt",
+      sourceUpdateIds: [501, 502],
+      owner: {
+        instanceId: "foreign-instance",
+        processId: process.pid,
+        processBirthId: Bus.getTelegramProcessBirthIdentity(
+          process.pid,
+          "foreign-live-owner",
+        ),
+        sessionGeneration: 4,
+      },
+    });
+    await writeRuntimeTelegramLocks({});
+    (await getRuntimeTelegramExtension())(pi);
+    const ctx = createRuntimeExtensionContext({ cwd: "/repo/journal-recovery" });
+    await handlers.get("session_start")?.({}, ctx);
+    await commands.get("telegram-connect")?.handler("", ctx);
+    await flushMicrotasks();
+    await waitForTimeout(20);
+
+    assert.deepEqual(dispatched, []);
+    const snapshot = journal.read();
+    assert.deepEqual(
+      snapshot.entries.map((entry) => ({
+        updateId: entry.updateId,
+        state: entry.state,
+        queueReceiptId: entry.queueReceiptId,
+        queueOwner: entry.queueOwner,
+      })),
+      [
+        {
+          updateId: 501,
+          state: "queued",
+          queueReceiptId: "foreign-process-receipt",
+          queueOwner: queued.queueOwner,
+        },
+        {
+          updateId: 502,
+          state: "queued",
+          queueReceiptId: "foreign-process-receipt",
+          queueOwner: queued.queueOwner,
+        },
+      ],
+    );
+    await handlers.get("session_shutdown")?.({}, ctx);
+  } finally {
+    restoreFetch();
+    await rm(journalPath, { force: true });
+    await writeRuntimeTelegramLocks({});
+    await telegramConfig.restore();
+  }
+});
+
 test("Extension runtime coalesces a cross-batch forward comment into one Pi turn", async () => {
   const telegramConfig = await createRuntimeTelegramConfigFixture();
   const sentMessages: RuntimeHarnessMessage[] = [];
@@ -1491,6 +3013,25 @@ test("Extension runtime keeps local queue progress but fences delivery after own
     assert.match(
       getRuntimeHarnessMessageText(sentMessages[0] as RuntimeHarnessMessage),
       /^\[telegram\] first accepted$/,
+    );
+    const journalPath = join(
+      await ensureRuntimeAgentDir(),
+      "tmp",
+      "telegram",
+      "inbox.json",
+    );
+    const runtimeJournal = Journal.createTelegramUpdateJournalStore({
+      path: journalPath,
+      botIdentity: Journal.createTelegramUpdateJournalBotIdentity({
+        botToken: "123:abc",
+      }),
+    });
+    await waitForAsyncCondition(async () =>
+      runtimeJournal
+        .read()
+        .entries.some(
+          (entry) => entry.updateId === 2 && entry.state === "queued",
+        ),
     );
     await handlers.get("agent_start")?.({}, ctx);
     await writeRuntimeTelegramLocks({

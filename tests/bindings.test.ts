@@ -7,10 +7,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  createTelegramActivityBindingRuntime,
+  createTelegramAgentMessageToolRoutingRuntime,
   createTelegramAssistantOutputBindingRuntime,
+  createTelegramQueueBindingRuntime,
   registerTelegramCommandsAndTools,
   registerTelegramLifecycleRuntimeHooks,
 } from "../lib/bindings.ts";
+import * as Queue from "../lib/queue.ts";
 import * as Runtime from "../lib/runtime.ts";
 import type { ExtensionAPI, ExtensionContext } from "../lib/pi.ts";
 
@@ -44,6 +48,215 @@ function createBindingApiHarness() {
   } as unknown as ExtensionAPI;
   return { api, handlers, tools, commands };
 }
+
+test("Agent message tool routing selects leader or follower composition", async () => {
+  let leader = true;
+  let followerRegistered = false;
+  const calls: string[] = [];
+  const runtime = createTelegramAgentMessageToolRoutingRuntime({
+    ownsLeader: () => leader,
+    ownsDirectDelivery: () => leader,
+    isFollowerRegistered: () => followerRegistered,
+    getSourceTarget: () => ({ chatId: 7, threadId: 10 }),
+    getSourceThreadName: () => "Source",
+    local: {
+      resolveTarget: (_selector, sourceTarget) => {
+        calls.push(`local-resolve:${sourceTarget?.threadId}`);
+        return { chatId: 7, threadId: 20 };
+      },
+      async route(input) {
+        calls.push(`local-route:${input.sourceThreadName}`);
+      },
+    },
+    follower: {
+      async resolveTarget() {
+        calls.push("follower-resolve");
+        return { chatId: 7, threadId: 30 };
+      },
+      async routeMessage() {
+        calls.push("follower-route");
+      },
+    },
+  });
+  assert.deepEqual(await runtime.resolveAgentTarget({ threadId: 20 }), {
+    chatId: 7,
+    threadId: 20,
+  });
+  await runtime.routeAgentMessage({
+    target: { chatId: 7, threadId: 20 },
+    text: "hello",
+    messageId: 1,
+  });
+  assert.equal(runtime.canSendDirect(), true);
+  leader = false;
+  followerRegistered = true;
+  assert.deepEqual(await runtime.resolveAgentTarget({ threadId: 30 }), {
+    chatId: 7,
+    threadId: 30,
+  });
+  await runtime.routeAgentMessage({
+    target: { chatId: 7, threadId: 30 },
+    text: "hello",
+    messageId: 2,
+  });
+  assert.equal(runtime.canSendDirect(), true);
+  assert.deepEqual(calls, [
+    "local-resolve:10",
+    "local-route:Source",
+    "follower-resolve",
+    "follower-route",
+  ]);
+});
+
+test("Queue binding composes mutation, admission, dispatch, and watchdog ports", () => {
+  const events: string[] = [];
+  const store = Queue.createTelegramQueueStore<string>();
+  const deferredDispatch =
+    Queue.createTelegramDeferredQueueDispatchRuntime<string>();
+  deferredDispatch.bind("ctx");
+  let nextPriorityOrder = 0;
+  const runtime = createTelegramQueueBindingRuntime({
+    store,
+    queue: {
+      getNextPriorityReactionOrder: () => nextPriorityOrder,
+      incrementNextPriorityReactionOrder: () => {
+        nextPriorityOrder += 1;
+      },
+    },
+    lifecycle: {
+      isCompactionInProgress: () => false,
+      hasDispatchPending: () => false,
+    },
+    activeTurn: { has: () => false },
+    admission: {
+      getSettlement: () => ({
+        onItemsDiscarded: (items) => {
+          events.push(`discard:${items.length}`);
+        },
+        isItemReady: () => true,
+        onControlSettled: () => {
+          events.push("control-settled");
+        },
+      }),
+      hasPendingQueueMutationForItem: () => false,
+    },
+    transportStamp: { isActive: () => true },
+    deferredDispatch,
+    promptDispatch: {
+      startTypingLoop: () => {},
+      onPromptDispatchStart: () => {
+        events.push("dispatch-start");
+      },
+      onPromptDispatchFailure: () => {
+        events.push("dispatch-failure");
+      },
+    },
+    isIdle: () => true,
+    hasPendingMessages: () => false,
+    updateStatus: () => {
+      events.push("status");
+    },
+    sendTextReply: async () => undefined,
+    sendUserMessage: () => {
+      events.push("send");
+    },
+  });
+  runtime.mutation.append(
+    {
+      kind: "prompt",
+      chatId: 7,
+      replyToMessageId: 10,
+      sourceMessageIds: [10],
+      queueOrder: 1,
+      queueLane: "default",
+      laneOrder: 1,
+      queuedAttachments: [],
+      content: [{ type: "text", text: "prompt" }],
+      historyText: "prompt",
+      statusSummary: "prompt",
+    },
+    "ctx",
+  );
+  assert.equal(
+    runtime.mutation.applyReactionByMessageId(
+      10,
+      { kind: "priority", emoji: "👍" },
+      "ctx",
+    ),
+    true,
+  );
+  runtime.dispatchNext("ctx");
+  assert.equal(runtime.mutation.removeByMessageIds([10], "ctx"), 1);
+  assert.equal(nextPriorityOrder, 1);
+  assert.deepEqual(events, [
+    "status",
+    "status",
+    "dispatch-start",
+    "send",
+    "discard:1",
+    "status",
+  ]);
+});
+
+test("Activity binding composes bridge fanout and output ordering", async () => {
+  const sent: string[] = [];
+  const binding = createTelegramActivityBindingRuntime({
+    generation: "generation-1",
+    assistantOutput: {
+      isEnabled: () => true,
+      authority: {
+        getPreferredTarget: () => ({ chatId: 7, threadId: 42 }),
+        getFallbackChatId: () => 7,
+        getTransportStamp: () => "stamp-1",
+        isTransportStampActive: (stamp) => stamp === "stamp-1",
+        ownsDirect: () => true,
+        getDirectEpoch: () => 1,
+        isFollowerRegistered: () => false,
+        getFollowerGeneration: () => undefined,
+      },
+      sender: {
+        sendMessage: async () => ({ message_id: 1 }),
+        sendRichMessage: async (body) => {
+          sent.push(body.rich_message.markdown ?? "");
+          return { message_id: 2 };
+        },
+        editMessage: async () => undefined,
+        getAssistantRenderingMode: () => "rich",
+        execCommand: async (_command, _args, options) => ({
+          stdout: options?.stdin ?? "",
+          stderr: "",
+          code: 0,
+          killed: false,
+        }),
+      },
+      recordRuntimeEvent: () => undefined,
+    },
+    activityVerbosity: {
+      getActivityMode: () => "quiet",
+      resolveTarget: (event) => event.target,
+      sendMessage: async () => ({ message_id: 3 }),
+      sendRichMessage: async () => ({ message_id: 4 }),
+      editMessageText: async () => "edited",
+    },
+  });
+  binding.assistantOutputRuntime.start();
+  binding.activityRuntime.onSessionStart?.();
+  binding.activityRuntime.recordInputSource("extension");
+  binding.activityRuntime.onAgentStart();
+  binding.activityRuntime.onAssistantEvent({
+    type: "text_end",
+    contentIndex: 0,
+    content: "public output",
+  });
+  binding.activityRuntime.onAssistantEvent({ type: "done" });
+  binding.activityRuntime.onAgentEnd();
+  binding.activityRuntime.onAgentSettled();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await binding.assistantOutputRuntime.waitForIdle();
+  assert.deepEqual(sent, ["public output"]);
+  binding.activityVerbosityRuntime.stop();
+  binding.assistantOutputRuntime.stop();
+});
 
 test("Assistant output binding composes admission, delivery, and observation", async () => {
   const sent: string[] = [];

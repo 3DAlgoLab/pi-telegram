@@ -1,6 +1,6 @@
 {
   "name": "@llblab/pi-telegram",
-  "version": "0.27.12",
+  "version": "0.28.0",
   "private": false,
   "publishConfig": {
     "access": "public"
@@ -27,7 +27,7 @@
     "node": ">=22.19.0"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --test --test-reporter=dot tests/*.test.ts",
+    "test": "node --experimental-strip-types --test --test-concurrency=4 --test-reporter=dot tests/*.test.ts",
     "test:verbose": "node --experimental-strip-types --test --test-reporter=spec tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "audit": "npm audit --omit=peer",
@@ -64,7 +64,7 @@
     "extensions": [
       "./index.ts"
     ],
-    "image": "https://github.com/llblab/pi-telegram/raw/main/screenshot.png"
+    "image": "https://raw.githubusercontent.com/llblab/pi-telegram/main/screenshot.png"
   },
   "peerDependencies": {
     "@earendil-works/pi-agent-core": ">=0.80.6",

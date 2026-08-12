@@ -188,6 +188,19 @@ function isAliasModelId(id: string): boolean {
   return !/-\d{8}$/.test(id);
 }
 
+function findUniqueModelMatch<TModel extends MenuModel>(
+  availableModels: TModel[],
+  matches: (model: TModel) => boolean,
+): { model?: TModel; ambiguous: boolean } {
+  let model: TModel | undefined;
+  for (const candidate of availableModels) {
+    if (!matches(candidate)) continue;
+    if (model) return { ambiguous: true };
+    model = candidate;
+  }
+  return { model, ambiguous: false };
+}
+
 function findExactModelReferenceMatch<TModel extends MenuModel = MenuModel>(
   modelReference: string,
   availableModels: TModel[],
@@ -195,29 +208,35 @@ function findExactModelReferenceMatch<TModel extends MenuModel = MenuModel>(
   const trimmedReference = modelReference.trim();
   if (!trimmedReference) return undefined;
   const normalizedReference = trimmedReference.toLowerCase();
-  const canonicalMatches = availableModels.filter(
+  const canonicalMatch = findUniqueModelMatch(
+    availableModels,
     (model) => getCanonicalModelId(model).toLowerCase() === normalizedReference,
   );
-  if (canonicalMatches.length === 1) return canonicalMatches[0];
-  if (canonicalMatches.length > 1) return undefined;
+  if (canonicalMatch.model || canonicalMatch.ambiguous) {
+    return canonicalMatch.model;
+  }
   const slashIndex = trimmedReference.indexOf("/");
   if (slashIndex !== -1) {
     const provider = trimmedReference.substring(0, slashIndex).trim();
     const modelId = trimmedReference.substring(slashIndex + 1).trim();
     if (provider && modelId) {
-      const providerMatches = availableModels.filter(
+      const normalizedProvider = provider.toLowerCase();
+      const normalizedModelId = modelId.toLowerCase();
+      const providerMatch = findUniqueModelMatch(
+        availableModels,
         (model) =>
-          model.provider.toLowerCase() === provider.toLowerCase() &&
-          model.id.toLowerCase() === modelId.toLowerCase(),
+          model.provider.toLowerCase() === normalizedProvider &&
+          model.id.toLowerCase() === normalizedModelId,
       );
-      if (providerMatches.length === 1) return providerMatches[0];
-      if (providerMatches.length > 1) return undefined;
+      if (providerMatch.model || providerMatch.ambiguous) {
+        return providerMatch.model;
+      }
     }
   }
-  const idMatches = availableModels.filter(
+  return findUniqueModelMatch(
+    availableModels,
     (model) => model.id.toLowerCase() === normalizedReference,
-  );
-  return idMatches.length === 1 ? idMatches[0] : undefined;
+  ).model;
 }
 
 function tryMatchScopedModel<TModel extends MenuModel = MenuModel>(
@@ -229,20 +248,28 @@ function tryMatchScopedModel<TModel extends MenuModel = MenuModel>(
     availableModels,
   );
   if (exactMatch) return exactMatch;
-  const matches = availableModels.filter(
-    (model) =>
-      model.id.toLowerCase().includes(modelPattern.toLowerCase()) ||
-      model.name?.toLowerCase().includes(modelPattern.toLowerCase()),
-  );
-  if (matches.length === 0) return undefined;
-  const aliases = matches.filter((model) => isAliasModelId(model.id));
-  const datedVersions = matches.filter((model) => !isAliasModelId(model.id));
-  if (aliases.length > 0) {
-    aliases.sort((a, b) => b.id.localeCompare(a.id));
-    return aliases[0];
+  const normalizedPattern = modelPattern.toLowerCase();
+  let bestAlias: TModel | undefined;
+  let bestDatedVersion: TModel | undefined;
+  for (const model of availableModels) {
+    if (
+      !model.id.toLowerCase().includes(normalizedPattern) &&
+      !model.name?.toLowerCase().includes(normalizedPattern)
+    ) {
+      continue;
+    }
+    if (isAliasModelId(model.id)) {
+      if (!bestAlias || model.id.localeCompare(bestAlias.id) > 0) {
+        bestAlias = model;
+      }
+    } else if (
+      !bestDatedVersion ||
+      model.id.localeCompare(bestDatedVersion.id) > 0
+    ) {
+      bestDatedVersion = model;
+    }
   }
-  datedVersions.sort((a, b) => b.id.localeCompare(a.id));
-  return datedVersions[0];
+  return bestAlias ?? bestDatedVersion;
 }
 
 function parseScopedModelPattern<TModel extends MenuModel = MenuModel>(
