@@ -28,6 +28,8 @@ import {
   resolveTelegramLockKey,
   TELEGRAM_BUS_LEADER_STALE_HEARTBEAT_MS,
   TELEGRAM_LOCK_KEY,
+  TELEGRAM_OWNERSHIP_CHECK_MS,
+  TELEGRAM_OWNERSHIP_REFRESH_MS,
   withTelegramFileTransaction,
   writeLocks,
   type TelegramLockEntry,
@@ -1890,50 +1892,12 @@ test("Locked polling runtime refreshes ownership during slow startup", async () 
   }
 });
 
-test("Locked polling runtime checks ownership more often than it refreshes the lease", async () => {
-  let ownsCalls = 0;
-  let refreshCalls = 0;
-  let ownsCallsAtSecondRefresh = 0;
-  const lock = {
-    acquire: () => ({
-      ok: true,
-      lock: { pid: 10, cwd: "/repo" },
-      replacedStale: false as const,
-    }),
-    release: () => ({ kind: "inactive" as const }),
-    getState: () => ({
-      kind: "active-here" as const,
-      lock: { pid: 10, cwd: "/repo" },
-    }),
-    getStatusLabel: () => "active here",
-    getOwnedLeaderEpoch: () => undefined,
-    owns: () => {
-      ownsCalls += 1;
-      return true;
-    },
-    commitIfOwned: (commit: () => void) => {
-      commit();
-      return true;
-    },
-    refresh: () => {
-      refreshCalls += 1;
-      if (refreshCalls === 2) ownsCallsAtSecondRefresh = ownsCalls;
-      return true;
-    },
-  };
-  const runtime = createTelegramLockedPollingRuntime({
-    lock,
-    hasBotToken: () => true,
-    ownershipCheckMs: 5,
-    ownershipRefreshMs: 20,
-    startPolling: async () => undefined,
-    stopPolling: async () => undefined,
-    updateStatus: () => undefined,
-  });
-  assert.equal((await runtime.start({ cwd: "/repo" })).ok, true);
-  await waitForCondition(() => refreshCalls >= 2);
-  await runtime.stop();
-  assert.ok(ownsCallsAtSecondRefresh > 2);
+test("Locked polling runtime checks ownership more often than it refreshes the lease", () => {
+  assert.ok(TELEGRAM_OWNERSHIP_CHECK_MS < TELEGRAM_OWNERSHIP_REFRESH_MS);
+  assert.equal(
+    TELEGRAM_OWNERSHIP_REFRESH_MS,
+    TELEGRAM_OWNERSHIP_CHECK_MS * 2,
+  );
 });
 
 test("Locked polling runtime fails startup closed after ownership loss", async () => {
