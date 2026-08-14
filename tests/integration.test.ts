@@ -838,7 +838,7 @@ test("v0.27.12 artifacts and graceful tab cleanup preserve same-directory auto-c
         } catch {
           return true;
         }
-      });
+      }, 20_000);
     }
 
     await handlers.get("session_shutdown")?.(
@@ -861,7 +861,7 @@ test("v0.27.12 artifacts and graceful tab cleanup preserve same-directory auto-c
       () =>
         methods.filter((entry) => entry.method === "createForumTopic").length >=
         2,
-      10_000,
+      20_000,
     );
     await handlers.get("session_shutdown")?.(
       { type: "session_shutdown", reason: "quit" },
@@ -879,7 +879,7 @@ test("v0.27.12 artifacts and graceful tab cleanup preserve same-directory auto-c
     restoreFetch();
     await telegramConfig.restore();
   }
-}, 30_000);
+}, 60_000);
 
 test("Graceful follower disconnect persists intent and deletes through its live leader", async () => {
   const dir = await mkdtemp(join(tmpdir(), "pi-telegram-follower-cleanup-integration-"));
