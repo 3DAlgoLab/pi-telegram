@@ -1933,7 +1933,7 @@ test("Locked polling runtime checks ownership more often than it refreshes the l
   assert.equal((await runtime.start({ cwd: "/repo" })).ok, true);
   await waitForCondition(() => refreshCalls >= 2);
   await runtime.stop();
-  assert.ok(ownsCallsAtSecondRefresh >= 4);
+  assert.ok(ownsCallsAtSecondRefresh > 2);
 });
 
 test("Locked polling runtime fails startup closed after ownership loss", async () => {

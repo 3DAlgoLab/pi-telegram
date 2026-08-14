@@ -866,7 +866,7 @@ test("Leader thread sync gets next monotonic slot after D on reload", async () =
   }
 });
 
-test("Leader thread sync does not reuse a target with confirmed deletion evidence", async () => {
+test("Leader thread sync does not reuse a target with pending cleanup", async () => {
   const dir = await mkdtemp(join(tmpdir(), "pi-telegram-leader-sync-deleted-"));
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
@@ -884,7 +884,6 @@ test("Leader thread sync does not reuse a target with confirmed deletion evidenc
   const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
   try {
     store.upsert(staleRecord);
-    store.markStaleByTarget(staleRecord.target, "deleted");
     store.upsertPendingCleanup({
       id: "cleanup:leader-a:runtime-1:7:10",
       owner: "leader",
@@ -900,7 +899,7 @@ test("Leader thread sync does not reuse a target with confirmed deletion evidenc
       getAllowedUserId: () => 7,
       instanceId: "leader-a",
       cwd: "/repo",
-      topicTargetStore: { ...store, list: () => [staleRecord] },
+      topicTargetStore: store,
       async callApi<TResponse>(method: string, body: Record<string, unknown>) {
         calls.push({ method, body });
         return { message_thread_id: 11 } as TResponse;

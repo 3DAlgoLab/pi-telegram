@@ -486,11 +486,27 @@ export async function ensureTelegramLeaderThreadBinding(
       .listPendingCleanups()
       .map((intent) => getTelegramTargetKey(intent.target)),
   ]);
+  let invalidatedUnavailableTarget = false;
+  for (const record of deps.topicTargetStore.list()) {
+    if (
+      record.instanceId !== deps.instanceId ||
+      !unavailableTargetKeys.has(getTelegramTargetKey(record.target))
+    ) {
+      continue;
+    }
+    invalidatedUnavailableTarget =
+      deps.topicTargetStore.markStaleByTarget(record.target) ||
+      invalidatedUnavailableTarget;
+  }
+  if (invalidatedUnavailableTarget) {
+    assertLeaderEpoch("before-unavailable-persist");
+    await deps.topicTargetStore.persist();
+    assertLeaderEpoch("after-unavailable-persist");
+  }
   const priorTargets = deps.topicTargetStore.list().filter((record) => {
     return (
       record.instanceId === deps.instanceId &&
-      (record.status === "active" || record.status === "starting") &&
-      !unavailableTargetKeys.has(getTelegramTargetKey(record.target))
+      (record.status === "active" || record.status === "starting")
     );
   });
   // Short-circuit: when the instance already has an active thread and we are not
