@@ -4,7 +4,7 @@
  * Owns pure contracts for deciding when local Telegram mirror state should be refreshed without querying Telegram on every action
  */
 
-import type { TelegramTarget } from "./target.ts";
+import { getTelegramTargetKey, type TelegramTarget } from "./target.ts";
 import * as ThreadReconciler from "./thread-reconciler.ts";
 import {
   getTelegramTargetFromApiBody,
@@ -70,6 +70,7 @@ export interface TelegramTopicLifecycleSyncDeps {
   recordThreadReconciliationPlan?: (
     plan: ThreadReconciler.ThreadReconciliationPlan,
   ) => void;
+  assertExecutionCurrent?: (message: unknown) => void;
   recordEvent?: (
     category: string,
     message: unknown,
@@ -160,6 +161,52 @@ export function markTelegramConfigSyncChange<
     action,
   }) as TSyncState;
   return nextState;
+}
+
+export interface TelegramSessionRestartThreadCleanupDeps<
+  TSyncState extends TelegramSyncState,
+> extends Omit<TelegramManualThreadDisconnectDeps<TSyncState>, "stopPolling"> {
+  suspendPolling: () => Promise<void>;
+}
+
+export function createTelegramSessionRestartThreadCleanupHandler<
+  TSyncState extends TelegramSyncState,
+>(
+  deps: TelegramSessionRestartThreadCleanupDeps<TSyncState>,
+): () => Promise<string> {
+  return createTelegramManualThreadDisconnectHandler({
+    ...deps,
+    async stopPolling() {
+      await deps.suspendPolling();
+      return "Telegram bridge suspended for session restart.";
+    },
+  });
+}
+
+export interface TelegramThreadDisconnectAssembly {
+  disconnect: () => Promise<string>;
+  cleanupForSessionRestart: () => Promise<string>;
+}
+
+export function createTelegramThreadDisconnectAssembly<
+  TSyncState extends TelegramSyncState,
+>(
+  deps: Omit<TelegramManualThreadDisconnectDeps<TSyncState>, "stopPolling"> & {
+    stopPolling: () => Promise<string>;
+    suspendPolling: () => Promise<void>;
+  },
+): TelegramThreadDisconnectAssembly {
+  return {
+    disconnect: createTelegramManualThreadDisconnectHandler({
+      ...deps,
+      stopPolling: deps.stopPolling,
+    }),
+    cleanupForSessionRestart:
+      createTelegramSessionRestartThreadCleanupHandler({
+        ...deps,
+        suspendPolling: deps.suspendPolling,
+      }),
+  };
 }
 
 export function createTelegramManualThreadDisconnectHandler<
@@ -260,6 +307,8 @@ export function createTelegramLeaderHealthRuntime<
   const intervalMs = deps.intervalMs ?? 60_000;
   const getNowMs = deps.getNowMs ?? Date.now;
   let interval: ReturnType<typeof setInterval> | undefined;
+  let generation = 0;
+  let tickPromise: Promise<void> | undefined;
 
   const markFresh = (): void => {
     let state = markTelegramSyncSliceFresh(
@@ -282,20 +331,67 @@ export function createTelegramLeaderHealthRuntime<
         action: "leader-health-tick",
       }) as TSyncState,
     );
-    deps.recordEvent("telegram", error, { phase: "leader-health-tick" });
+    try {
+      deps.recordEvent("telegram", error, { phase: "leader-health-tick" });
+    } catch {
+      // Health diagnostics cannot create an unhandled timer rejection.
+    }
   };
 
   const stop = (): void => {
-    if (!interval) return;
-    clearInterval(interval);
+    generation += 1;
+    if (interval) clearInterval(interval);
     interval = undefined;
+    tickPromise = undefined;
+  };
+  const requestTick = (): Promise<void> => {
+    if (tickPromise) return tickPromise;
+    const expectedGeneration = generation;
+    let tracked: Promise<void>;
+    tracked = Promise.resolve()
+      .then(deps.callGetMe)
+      .then(
+        () => {
+          if (generation !== expectedGeneration) return;
+          try {
+            markFresh();
+          } catch (stateError) {
+            try {
+              deps.recordEvent("telegram", stateError, {
+                phase: "leader-health-state",
+              });
+            } catch {
+              // State and diagnostic failure remain contained by this owner.
+            }
+          }
+        },
+        (error) => {
+          if (generation !== expectedGeneration) return;
+          try {
+            markSuspect(error);
+          } catch (stateError) {
+            try {
+              deps.recordEvent("telegram", stateError, {
+                phase: "leader-health-state",
+              });
+            } catch {
+              // State and diagnostic failure remain contained by this owner.
+            }
+          }
+        },
+      )
+      .finally(() => {
+        if (tickPromise === tracked) tickPromise = undefined;
+      });
+    tickPromise = tracked;
+    return tracked;
   };
 
   return {
     start() {
       stop();
       interval = setInterval(() => {
-        void deps.callGetMe().then(markFresh).catch(markSuspect);
+        void requestTick();
       }, intervalMs);
       interval.unref?.();
     },
@@ -381,6 +477,32 @@ export async function ensureTelegramLeaderThreadBinding(
   assertLeaderEpoch("start");
   await deps.topicTargetStore.load();
   assertLeaderEpoch("after-load");
+  const unavailableTargetKeys = new Set([
+    ...deps.topicTargetStore
+      .listSyncObservations()
+      .filter((observation) => observation.syncStatus === "deleted")
+      .map((observation) => getTelegramTargetKey(observation.target)),
+    ...deps.topicTargetStore
+      .listPendingCleanups()
+      .map((intent) => getTelegramTargetKey(intent.target)),
+  ]);
+  let invalidatedUnavailableTarget = false;
+  for (const record of deps.topicTargetStore.list()) {
+    if (
+      record.instanceId !== deps.instanceId ||
+      !unavailableTargetKeys.has(getTelegramTargetKey(record.target))
+    ) {
+      continue;
+    }
+    invalidatedUnavailableTarget =
+      deps.topicTargetStore.markStaleByTarget(record.target) ||
+      invalidatedUnavailableTarget;
+  }
+  if (invalidatedUnavailableTarget) {
+    assertLeaderEpoch("before-unavailable-persist");
+    await deps.topicTargetStore.persist();
+    assertLeaderEpoch("after-unavailable-persist");
+  }
   const priorTargets = deps.topicTargetStore.list().filter((record) => {
     return (
       record.instanceId === deps.instanceId &&
@@ -659,6 +781,7 @@ export function createTelegramObservedTopicLifecycleSyncHandler<
     createTelegramTopicLifecycleSyncHandler<TMessage>(deps);
   return async (lifecycle) => {
     const nowMs = deps.getNowMs ?? Date.now;
+    deps.assertExecutionCurrent?.(lifecycle.message);
     deps.setSyncState(
       markTelegramSyncSliceSuspect(deps.getSyncState(), "topic-state", {
         nowMs: nowMs(),
@@ -667,6 +790,7 @@ export function createTelegramObservedTopicLifecycleSyncHandler<
       }) as TSyncState,
     );
     await syncTopicLifecycle(lifecycle);
+    deps.assertExecutionCurrent?.(lifecycle.message);
     deps.setSyncState(
       markTelegramSyncSliceFresh(deps.getSyncState(), "topic-state", {
         nowMs: nowMs(),
@@ -680,7 +804,9 @@ export function createTelegramTopicLifecycleSyncHandler<TMessage = unknown>(
   deps: TelegramTopicLifecycleSyncDeps,
 ): TelegramTopicLifecycleSyncHandler<TMessage> {
   return async (lifecycle) => {
+    deps.assertExecutionCurrent?.(lifecycle.message);
     await deps.topicTargetStore.load();
+    deps.assertExecutionCurrent?.(lifecycle.message);
     const nowMs = Date.now();
     const plan = ThreadReconciler.planThreadReconciliation({
       nowMs,

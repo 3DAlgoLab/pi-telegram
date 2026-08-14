@@ -20,7 +20,6 @@ import {
   createTelegramStatusRuntime,
   getTelegramStatusBarProcessingStatus,
   recordStructuredTelegramRuntimeEvent,
-  recordTelegramRuntimeEvent,
   registerTelegramStatusLineProvider,
   type TelegramRuntimeEvent,
 } from "../lib/status.ts";
@@ -34,6 +33,14 @@ test("Status helpers build runtime log scope and persisted snapshot projections"
     instanceSlot: "A",
     instanceThreadName: "Axial",
     pollingActive: true,
+    polling: {
+      phase: "persisting-journal",
+      phaseStartedAtMs: 8,
+      currentUpdateId: 12,
+      startedAtMs: 7,
+      lastSuccessfulResponseAtMs: 8,
+      lastSuccessfulResponseUpdateCount: 1,
+    },
     lockState: "active-here",
     pendingDispatch: true,
     compactionInProgress: false,
@@ -67,6 +74,14 @@ test("Status helpers build runtime log scope and persisted snapshot projections"
       instanceSlot: "A",
       instanceThreadName: "Axial",
       pollingActive: true,
+      polling: {
+        phase: "persisting-journal",
+        phaseStartedAtMs: 8,
+        currentUpdateId: 12,
+        startedAtMs: 7,
+        lastSuccessfulResponseAtMs: 8,
+        lastSuccessfulResponseUpdateCount: 1,
+      },
       lockState: "active-here",
     },
     liveRoster: {
@@ -112,6 +127,40 @@ test("Status runtime diagnostics scheduler coalesces snapshot persists", async (
   assert.equal(scheduledDelayMs, 100);
   assert.equal(persistCount, 1);
   assert.deepEqual(errors, []);
+});
+
+test("Status snapshot scheduler serializes in-flight publication and retains one rerun", async () => {
+  const callbacks: Array<() => void> = [];
+  const releases: Array<() => void> = [];
+  let persistCount = 0;
+  const schedule = createTelegramRuntimeDiagnosticsSnapshotScheduler({
+    persistSnapshot: () =>
+      new Promise<void>((resolve) => {
+        persistCount += 1;
+        releases.push(resolve);
+      }),
+    recordError: () => undefined,
+    setTimer(callback) {
+      callbacks.push(callback);
+      return { unref() {} } as ReturnType<typeof setTimeout>;
+    },
+  });
+
+  schedule();
+  callbacks.shift()?.();
+  await Promise.resolve();
+  assert.equal(persistCount, 1);
+  schedule();
+  schedule();
+  assert.equal(callbacks.length, 0);
+  releases.shift()?.();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(callbacks.length, 1);
+  callbacks.shift()?.();
+  await Promise.resolve();
+  assert.equal(persistCount, 2);
+  releases.shift()?.();
+  await Promise.resolve();
 });
 
 test("Status bar text renders bridge connection and queue states", () => {
@@ -198,7 +247,7 @@ test("Status bar text renders bridge connection and queue states", () => {
       processingStatus: "queued",
       queuedStatus: " +2",
     }),
-    "<accent>telegram</accent> <muted>disconnected</muted><success> +2</success>",
+    "<accent>telegram</accent> <dim>disconnected</dim><success> +2</success>",
   );
   assert.equal(
     buildTelegramStatusBarText(theme, {
@@ -403,6 +452,111 @@ test("Status runtime updates the status bar and exposes bridge lines", () => {
     "- bot: @demo_bot",
     "- user: 7",
   ]);
+});
+
+test("Status lines expose polling and inbound-worker progress separately", () => {
+  const state = {
+    botUsername: "demo_bot",
+    allowedUserId: 7,
+    pollingActive: true,
+    polling: {
+      phase: "persisting-journal",
+      phaseStartedAtMs: 2_000,
+      currentUpdateId: 11,
+      startedAtMs: 1_000,
+      lastSuccessfulResponseAtMs: 1_500,
+      lastSuccessfulResponseUpdateCount: 2,
+    },
+    inboundWorker: {
+      phase: "blocked",
+      generation: 3,
+      currentUpdateId: 9,
+      blockedReason: "execution",
+      journalEntryCount: 4,
+      journalSerializedBytes: 2048,
+      oldestAdmittedAtMs: 500,
+      deferredClaimCount: 1,
+      queuedClaimCount: 2,
+      foreignQueuedCount: 1,
+      foreignQueuedOwnerLiveness: "unverifiable" as const,
+      foreignQueuedOwner: {
+        instanceId: "foreign-instance",
+        processId: 44,
+        processBirthId: "44:start:foreign",
+        sessionGeneration: 2,
+        acquisitionId: "foreign-acquisition",
+        acquiredAtMs: 1_000,
+      },
+      retryWaitCount: 1,
+      failedCount: 1,
+      nextRetryUpdateId: 10,
+      nextRetryAtMs: 2_500,
+      nextRetryAttemptCount: 2,
+      nextRetryFailureClass: "transport-failed",
+      failedUpdateId: 9,
+      failedFailureId: "failure-deadbeef",
+      failedAttemptCount: 5,
+      failedClass: "invalid-update",
+      failedSummary: "Deterministic poison update.",
+      terminalFailureAtMs: 1_900,
+      unsettledExecutionCount: 1,
+      lastCompletedUpdateId: 8,
+      lastCompletedAtMs: 1_800,
+      lastFailureAtMs: 1_900,
+      lastFailurePhase: "execution",
+    },
+    lastUpdateId: 10,
+    pendingDispatch: false,
+    compactionInProgress: false,
+    activeToolExecutions: 0,
+    pendingModelSwitch: false,
+    queuedItems: [],
+    recentRuntimeEvents: [],
+  };
+
+  const compact = buildTelegramBridgeStatusLines(state);
+  assert.ok(compact.includes("- polling: running (persisting-journal)"));
+  assert.ok(
+    compact.includes(
+      "- inbound worker: blocked (depth=4, queued=2, foreign=1, deferred=1, retry=1, failed=1)",
+    ),
+  );
+
+  const diagnostic = buildTelegramBridgeStatusLines(state, { verbose: true });
+  assert.ok(diagnostic.includes("- phase: persisting-journal"));
+  assert.ok(diagnostic.includes("- current update id: 11"));
+  assert.ok(diagnostic.includes("inbound worker:"));
+  assert.ok(diagnostic.includes("- journal: entries=4, bytes=2048"));
+  assert.ok(
+    diagnostic.includes(
+      "- claims: queued=2, foreign-queued=1, deferred=1, unsettled=1",
+    ),
+  );
+  assert.ok(
+    diagnostic.includes(
+      "- queued semantic owner: instance=foreign-instance, pid=44, birth=44:start:foreign, session=2, acquisition=foreign-acquisition, liveness=unverifiable",
+    ),
+  );
+  assert.ok(
+    diagnostic.includes(
+      "- next retry: update=10, attempt=2, class=transport-failed at 1970-01-01T00:00:02.500Z",
+    ),
+  );
+  assert.ok(
+    diagnostic.includes(
+      "- terminal update: id=9, failure=failure-deadbeef, attempts=5, class=invalid-update at 1970-01-01T00:00:01.900Z",
+    ),
+  );
+  assert.ok(
+    diagnostic.includes("- terminal summary: Deterministic poison update."),
+  );
+  assert.equal(diagnostic.includes("- operator action:"), false);
+  assert.ok(diagnostic.includes("- blocked reason: execution"));
+  assert.ok(
+    diagnostic.includes(
+      "- last successful response: 1970-01-01T00:00:01.500Z (updates=2)",
+    ),
+  );
 });
 
 test("Status lines expose thread reconciliation state", () => {
@@ -661,11 +815,16 @@ test("Bridge status lines distinguish unknown bot identity from missing config",
   );
 });
 
-test("Bridge status lines include role and instance thread name", () => {
-  const lines = buildTelegramBridgeStatusLines({
+test("Bridge status lines include role, instance, and protocol identity", () => {
+  const state = {
     botUsername: "demo_bot",
     allowedUserId: 42,
-    busRole: "leader",
+    busRole: "leader" as const,
+    busProtocol: {
+      protocolVersion: 1,
+      runtimeBuild: "0.28.0",
+      capabilities: [],
+    },
     instanceSlot: "A",
     instanceThreadName: "A-identity",
     pollingActive: true,
@@ -676,7 +835,8 @@ test("Bridge status lines include role and instance thread name", () => {
     pendingModelSwitch: false,
     queuedItems: [],
     recentRuntimeEvents: [],
-  });
+  };
+  const lines = buildTelegramBridgeStatusLines(state);
 
   assert.deepEqual(lines.slice(0, 5), [
     "connection:",
@@ -685,6 +845,11 @@ test("Bridge status lines include role and instance thread name", () => {
     "- role: leader",
     "- instance: A-identity",
   ]);
+  assert.ok(
+    buildTelegramBridgeStatusLines(state, { verbose: true }).includes(
+      "- bus protocol=v1 build=0.28.0 capabilities=none",
+    ),
+  );
 });
 
 test("Bridge status lines include sync slice diagnostics", () => {
@@ -841,6 +1006,11 @@ test("Bridge status lines include bus follower diagnostics when present", () => 
           cwd: "/repo/a",
           lastHeartbeatMs: 18_600,
           target: { chatId: -1007, threadId: 42 },
+          protocol: {
+            protocolVersion: 1,
+            runtimeBuild: "0.28.1",
+            capabilities: [],
+          },
           threadName: "Ember",
         },
         { instanceId: "inst-b", lastHeartbeatMs: 12_000 },
@@ -852,7 +1022,7 @@ test("Bridge status lines include bus follower diagnostics when present", () => 
   assert.deepEqual(lines.slice(19, 24), [
     "bus:",
     "- followers: 2",
-    "- inst-a: Ember heartbeat 1s ago target -1007:42 /repo/a",
+    "- inst-a: Ember heartbeat 1s ago target -1007:42 /repo/a protocol=v1 build=0.28.1 capabilities=none",
     "- inst-b: heartbeat 8s ago",
     "",
   ]);
@@ -877,13 +1047,22 @@ test("Bridge status lines include local bus diagnostics", () => {
         followerRegistered: true,
         followerTarget: { chatId: 42, threadId: 9 },
         followerThreadName: "Boreal",
+        leaderProtocol: {
+          protocolVersion: 1,
+          runtimeBuild: "0.28.0",
+          capabilities: ["durable-follower-admission-v1"],
+        },
       },
       recentRuntimeEvents: [],
     },
     { verbose: true },
   );
   assert.ok(lines.includes("local bus:"));
-  assert.ok(lines.includes("- follower registered: yes Boreal target 42:9"));
+  assert.ok(
+    lines.includes(
+      "- follower registered: yes Boreal target 42:9 protocol=v1 build=0.28.0 capabilities=durable-follower-admission-v1",
+    ),
+  );
   assert.ok(
     lines.includes(
       "- leader endpoint [pipe]: \\\\.\\pipe\\pi-telegram-demo-bus",
@@ -1123,24 +1302,28 @@ test("Runtime event recorder owns redacted bounded event state", () => {
 
 test("Runtime event recording redacts bot tokens and keeps a bounded ring", () => {
   const events: TelegramRuntimeEvent[] = [];
-  recordTelegramRuntimeEvent(events, "one", new Error("token 123:abc failed"), {
-    botToken: "123:abc",
-    maxEvents: 3,
-    now: 1,
-  });
+  recordStructuredTelegramRuntimeEvent(
+    events,
+    { category: "one", error: new Error("token 123:abc failed") },
+    {
+      botToken: "123:abc",
+      maxEvents: 3,
+      now: 1,
+    },
+  );
   assert.deepEqual(events, [
     { at: 1, category: "one", message: "token <redacted-token> failed" },
   ]);
-  recordTelegramRuntimeEvent(events, "two", "plain", {
-    botToken: "123:abc",
-    maxEvents: 3,
-    now: 2,
-  });
-  recordTelegramRuntimeEvent(events, "three", "last", {
-    botToken: "123:abc",
-    maxEvents: 2,
-    now: 3,
-  });
+  recordStructuredTelegramRuntimeEvent(
+    events,
+    { category: "two", error: "plain" },
+    { botToken: "123:abc", maxEvents: 3, now: 2 },
+  );
+  recordStructuredTelegramRuntimeEvent(
+    events,
+    { category: "three", error: "last" },
+    { botToken: "123:abc", maxEvents: 2, now: 3 },
+  );
   assert.deepEqual(events, [
     { at: 2, category: "two", message: "plain" },
     { at: 3, category: "three", message: "last" },

@@ -274,6 +274,7 @@ test("Media helpers replace debounce timers and dispatch grouped messages", asyn
       message_id: number;
       chat: { id: number };
       media_group_id?: string;
+      marker?: string;
     }>
   >();
   const cleared: number[] = [];
@@ -308,7 +309,23 @@ test("Media helpers replace debounce timers and dispatch grouped messages", asyn
     dispatchMessages: (messages) =>
       dispatched.push(messages.map((message) => message.message_id)),
   });
-  assert.deepEqual(cleared, [1]);
+  queueTelegramMediaGroupMessage({
+    message: {
+      message_id: 2,
+      chat: { id: 7 },
+      media_group_id: "album",
+      marker: "rebound",
+    },
+    groups,
+    debounceMs: 100,
+    setTimer,
+    clearTimer,
+    dispatchMessages: (messages) =>
+      dispatched.push(messages.map((message) => message.message_id)),
+  });
+  assert.equal([...groups.values()][0]?.messages.length, 2);
+  assert.equal([...groups.values()][0]?.messages[1]?.marker, "rebound");
+  assert.deepEqual(cleared, [1, 2]);
   callbacks.at(-1)?.();
   await Promise.resolve();
   assert.deepEqual(dispatched, [[1, 2]]);
@@ -397,6 +414,38 @@ test("Media group controller owns timers, removal, and cleanup", () => {
   });
   controller.clear();
   assert.deepEqual(cleared, [1, 2, 3]);
+});
+
+test("Media group controller flushes a reaction target before debounce", async () => {
+  const cleared: number[] = [];
+  const dispatched: number[][] = [];
+  let nextTimer = 1;
+  const controller = createTelegramMediaGroupController<{
+    message_id: number;
+    chat: { id: number };
+    media_group_id?: string;
+  }>({
+    debounceMs: 100,
+    setTimer: () => createTestTimer(nextTimer++),
+    clearTimer: (timer) => cleared.push(getTestTimerId(timer)),
+  });
+  controller.queueMessage({
+    message: { message_id: 1, chat: { id: 7 }, media_group_id: "album" },
+    dispatchMessages: (messages) => {
+      dispatched.push(messages.map((message) => message.message_id));
+    },
+  });
+  controller.queueMessage({
+    message: { message_id: 2, chat: { id: 7 }, media_group_id: "album" },
+    dispatchMessages: (messages) => {
+      dispatched.push(messages.map((message) => message.message_id));
+    },
+  });
+
+  assert.equal(await controller.flushMessage(2), true);
+  assert.deepEqual(cleared, [1, 2]);
+  assert.deepEqual(dispatched, [[1, 2]]);
+  assert.equal(await controller.flushMessage(2), false);
 });
 
 test("Media group suspension preserves admitted messages for replacement context", async () => {

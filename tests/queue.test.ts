@@ -13,6 +13,8 @@ import {
 import {
   appendTelegramPromptTurnOnce,
   appendTelegramQueueItem,
+  applyTelegramQueuePromptReactionDisposition,
+  applyTelegramQueuePromptReactionDispositionRuntime,
   assertTelegramQueueItemAdmissionValid,
   buildPendingTelegramControlItem,
   buildTelegramAgentEndPlan,
@@ -21,8 +23,6 @@ import {
   buildTelegramSessionStartState,
   canDispatchTelegramTurnState,
   clearTelegramQueueItemsRuntime,
-  clearTelegramQueuePromptPriority,
-  clearTelegramQueuePromptPriorityRuntime,
   compareTelegramQueueItems,
   createTelegramActiveTurnStore,
   createTelegramAgentEndHook,
@@ -33,9 +33,13 @@ import {
   createTelegramDeferredQueueDispatchRuntime,
   createTelegramDispatchReadinessChecker,
   createTelegramPromptEnqueueController,
+  createTelegramQueueAdmissionReceipt,
   createTelegramQueueDispatchController,
   createTelegramQueueDispatchRuntime,
   createTelegramQueueDispatchWatchdogRuntime,
+  createTelegramQueueHandoff,
+  createTelegramQueueHandoffPayload,
+  createTelegramQueueHandoffStagingRuntime,
   createTelegramQueueMutationController,
   createTelegramQueueStore,
   createTelegramSessionLifecycleHooks,
@@ -56,20 +60,23 @@ import {
   handleTelegramToolExecutionEndRuntime,
   handleTelegramToolExecutionStartRuntime,
   isTelegramQueueItemAdmissionValid,
+  isTelegramQueueItemDurablyAdmitted,
   partitionTelegramQueueItemsForHistory,
   planNextTelegramQueueAction,
   planTelegramPromptEnqueue,
-  prioritizeTelegramQueuePrompt,
-  prioritizeTelegramQueuePromptRuntime,
+  removeTelegramQueueItemByReceipt,
   removeTelegramQueueItemsByMessageIds,
   removeTelegramQueueItemsByMessageIdsRuntime,
+  restoreTelegramQueueHandoffPayload,
   shouldDispatchAfterTelegramAgentEnd,
   shutdownTelegramSessionRuntime,
+  stageTelegramQueueHandoffPayload,
   startTelegramSessionRuntime,
   TELEGRAM_QUEUE_LANE_CONTRACTS,
   type PendingTelegramControlItem,
   type PendingTelegramTurn,
   type TelegramDispatchRuntimeDeps,
+  TELEGRAM_QUEUE_HANDOFF_PAYLOAD_MAX_BYTES,
   type TelegramQueueItem,
 } from "../lib/queue.ts";
 
@@ -374,6 +381,370 @@ test("Queue prompt append-once deduplicates repeated callback prompts", () => {
   assert.equal(distinct.items.length, 2);
 });
 
+test("Queue receipts are deterministic, canonical, and scope-bound", () => {
+  const first = createTelegramQueueAdmissionReceipt({
+    queueKind: "prompt",
+    scope: "profile-a:bot-a",
+    sourceUpdateIds: [9, 7, 9],
+  });
+  const reordered = createTelegramQueueAdmissionReceipt({
+    queueKind: "prompt",
+    scope: "profile-a:bot-a",
+    sourceUpdateIds: [7, 9],
+  });
+  assert.deepEqual(first, reordered);
+  assert.deepEqual(first?.sourceUpdateIds, [7, 9]);
+  assert.equal(first?.journalBindingKey, "profile-a:bot-a");
+  assert.match(first?.receiptId ?? "", /^telegram-prompt-v1-[a-f0-9]{64}$/u);
+  assert.notEqual(
+    first?.receiptId,
+    createTelegramQueueAdmissionReceipt({
+      queueKind: "control",
+      scope: "profile-a:bot-a",
+      sourceUpdateIds: [7, 9],
+    })?.receiptId,
+  );
+  assert.notEqual(
+    first?.receiptId,
+    createTelegramQueueAdmissionReceipt({
+      queueKind: "prompt",
+      scope: "profile-b:bot-a",
+      sourceUpdateIds: [7, 9],
+    })?.receiptId,
+  );
+  assert.equal(
+    createTelegramQueueAdmissionReceipt({
+      queueKind: "prompt",
+      scope: "profile-a:bot-a",
+      sourceUpdateIds: [],
+    }),
+    undefined,
+  );
+  assert.throws(
+    () =>
+      createTelegramQueueAdmissionReceipt({
+        queueKind: "prompt",
+        scope: "",
+        sourceUpdateIds: [7],
+      }),
+    /scope is required/u,
+  );
+});
+
+test("Queue receipts retain structured journal bindings", () => {
+  const binding = JSON.stringify({ version: 1, path: "/journal-a" });
+  assert.equal(
+    createTelegramQueueAdmissionReceipt({
+      queueKind: "prompt",
+      scope: binding,
+      sourceUpdateIds: [7],
+    })?.journalBindingKey,
+    binding,
+  );
+});
+
+test("Queue admission keeps identical receipt ids isolated by journal binding", () => {
+  const first = {
+    queueKind: "prompt" as const,
+    receiptId: "shared-receipt",
+    sourceUpdateIds: [7],
+    journalBindingKey: "journal-a",
+  };
+  const second = { ...first, journalBindingKey: "journal-b" };
+  const items = appendTelegramQueueItem([], createQueueTestPromptTurn({
+    admissionReceipts: [first],
+  }));
+  const combined = appendTelegramQueueItem(items, createQueueTestPromptTurn({
+    admissionReceipts: [second],
+    queueOrder: 2,
+    laneOrder: 2,
+  }));
+  assert.equal(combined.length, 2);
+  const store = createTelegramQueueStore(combined);
+  assert.equal(removeTelegramQueueItemByReceipt({ receipt: second, store }), true);
+  assert.equal(
+    store.getQueuedItems()[0]?.admissionReceipts?.[0]?.journalBindingKey,
+    "journal-a",
+  );
+});
+
+test("Queue admission deduplicates exact receipts and rejects conflicts", () => {
+  const receipt = createTelegramQueueAdmissionReceipt({
+    queueKind: "prompt",
+    scope: "profile-a:bot-a",
+    sourceUpdateIds: [7],
+  })!;
+  const firstTurn = createQueueTestPromptTurn({
+    admissionReceipts: [receipt],
+    content: [{ type: "text", text: "first delivery" }],
+  });
+  const firstItems = appendTelegramQueueItem([], firstTurn);
+  assert.equal(firstItems.length, 1);
+  assert.equal(
+    appendTelegramQueueItem(firstItems, {
+      ...firstTurn,
+      content: [{ type: "text", text: "redelivered text" }],
+    }),
+    firstItems,
+  );
+
+  const distinctReceipt = createTelegramQueueAdmissionReceipt({
+    queueKind: "prompt",
+    scope: "profile-a:bot-a",
+    sourceUpdateIds: [8],
+  })!;
+  const sameTextDifferentSource = appendTelegramPromptTurnOnce(firstItems, {
+    ...firstTurn,
+    admissionReceipts: [distinctReceipt],
+  });
+  assert.equal(sameTextDifferentSource.appended, true);
+  assert.equal(sameTextDifferentSource.items.length, 2);
+
+  assert.throws(
+    () =>
+      appendTelegramQueueItem(firstItems, {
+        ...firstTurn,
+        admissionReceipts: [
+          {
+            ...receipt,
+            sourceUpdateIds: [99],
+          },
+        ],
+      }),
+    /Conflicting Telegram queue receipt/u,
+  );
+  assert.throws(
+    () =>
+      appendTelegramQueueItem(firstItems, {
+        ...firstTurn,
+        admissionReceipts: [receipt, distinctReceipt],
+      }),
+    /overlaps an existing receipt/u,
+  );
+});
+
+test("Queue handoff payload preserves prompts and reconstructs controls without serializing closures", async () => {
+  const receipt = createTelegramQueueAdmissionReceipt({
+    queueKind: "prompt",
+    scope: "handoff",
+    sourceUpdateIds: [1],
+  })!;
+  const prompt = createQueueTestPromptTurn({
+    admissionReceipts: [receipt],
+    target: { chatId: 1, threadId: 9 },
+    reactionSuppressionEmoji: "👎",
+    content: [
+      { type: "text", text: "handoff prompt" },
+      { type: "image", data: "image-data", mimeType: "image/png" },
+    ],
+  });
+  const promptPayload = createTelegramQueueHandoffPayload(prompt);
+  assert.deepEqual(
+    restoreTelegramQueueHandoffPayload(promptPayload, () =>
+      assert.fail("prompt restore must not request a control execution"),
+    ),
+    prompt,
+  );
+
+  const controlReceipt = {
+    ...receipt,
+    queueKind: "control" as const,
+    receiptId: "control-receipt",
+  };
+  const control = createQueueTestControlItem<string>({
+    admissionReceipts: [controlReceipt],
+    execute: async () => assert.fail("donor closure must not transfer"),
+  });
+  const controlPayload = createTelegramQueueHandoffPayload(control);
+  assert.equal("execute" in controlPayload, false);
+  assert.doesNotMatch(JSON.stringify(controlPayload), /donor closure/u);
+  const calls: string[] = [];
+  const restored = restoreTelegramQueueHandoffPayload<string>(
+    controlPayload,
+    (payload) => async (ctx) => {
+      calls.push(`${payload.controlType}:${ctx}`);
+    },
+  );
+  assert.equal(restored.kind, "control");
+  if (restored.kind !== "control") assert.fail("expected restored control");
+  await restored.execute("recipient");
+  assert.deepEqual(calls, ["status:recipient"]);
+});
+
+test("Queue handoff staging is idempotent and requires one complete receipt", () => {
+  const receipt = createTelegramQueueAdmissionReceipt({
+    queueKind: "prompt",
+    scope: "handoff",
+    sourceUpdateIds: [1],
+  })!;
+  const payload = createTelegramQueueHandoffPayload(
+    createQueueTestPromptTurn({ admissionReceipts: [receipt] }),
+  );
+  const store = createTelegramQueueStore();
+  const stage = () =>
+    stageTelegramQueueHandoffPayload({
+      payload,
+      store,
+      createControlExecution: () => async () => undefined,
+    });
+  assert.deepEqual(stage(), {
+    status: "staged",
+    receiptId: receipt.receiptId,
+    sourceUpdateIds: [1],
+  });
+  assert.deepEqual(stage(), {
+    status: "staged",
+    receiptId: receipt.receiptId,
+    sourceUpdateIds: [1],
+  });
+  assert.equal(store.getQueuedItems().length, 1);
+  assert.throws(
+    () =>
+      stageTelegramQueueHandoffPayload({
+        payload: {
+          ...payload,
+          admissionReceipts: [
+            ...payload.admissionReceipts,
+            { ...receipt, receiptId: "second" },
+          ],
+        },
+        store,
+        createControlExecution: () => async () => undefined,
+      }),
+    /requires exactly one complete receipt/u,
+  );
+});
+
+test("Queue handoff staging keeps work non-dispatchable until journal acceptance", async () => {
+  const receipt = createTelegramQueueAdmissionReceipt({
+    queueKind: "control",
+    scope: "handoff",
+    sourceUpdateIds: [1],
+  })!;
+  const payload = createTelegramQueueHandoffPayload(
+    createQueueTestControlItem<string>({
+      admissionReceipts: [receipt],
+      execute: async () => assert.fail("donor closure must not transfer"),
+    }),
+  );
+  const liveStore = createTelegramQueueStore<string>();
+  const calls: string[] = [];
+  const staging = createTelegramQueueHandoffStagingRuntime({
+    liveStore,
+    createControlExecution: (control) => async (ctx) => {
+      calls.push(`${control.controlType}:${ctx}`);
+    },
+  });
+
+  assert.deepEqual(staging.stage(payload), {
+    status: "staged",
+    receiptId: receipt.receiptId,
+    sourceUpdateIds: [1],
+  });
+  assert.equal(staging.hasStaged(receipt), true);
+  assert.deepEqual(liveStore.getQueuedItems(), []);
+  assert.equal(staging.accept(receipt), true);
+  assert.equal(staging.hasStaged(receipt), false);
+  assert.equal(liveStore.getQueuedItems().length, 1);
+  assert.equal(staging.accept(receipt), true);
+  const [accepted] = liveStore.getQueuedItems();
+  assert.equal(accepted?.kind, "control");
+  if (accepted?.kind !== "control") assert.fail("expected accepted control");
+  await accepted.execute("recipient");
+  assert.deepEqual(calls, ["status:recipient"]);
+});
+
+test("Queue receipt removal deletes only one exact donor item", () => {
+  const receipt = createTelegramQueueAdmissionReceipt({
+    queueKind: "prompt",
+    scope: "handoff",
+    sourceUpdateIds: [1],
+  })!;
+  const otherReceipt = createTelegramQueueAdmissionReceipt({
+    queueKind: "prompt",
+    scope: "handoff",
+    sourceUpdateIds: [2],
+  })!;
+  const store = createTelegramQueueStore([
+    createQueueTestPromptTurn({ admissionReceipts: [receipt] }),
+    createQueueTestPromptTurn({ admissionReceipts: [otherReceipt] }),
+  ]);
+  assert.equal(removeTelegramQueueItemByReceipt({ receipt, store }), true);
+  assert.equal(removeTelegramQueueItemByReceipt({ receipt, store }), false);
+  assert.equal(
+    store.getQueuedItems()[0]?.admissionReceipts?.[0]?.receiptId,
+    otherReceipt.receiptId,
+  );
+});
+
+test("Queue handoff staging rejects replay after recipient work is live", () => {
+  const receipt = createTelegramQueueAdmissionReceipt({
+    queueKind: "prompt",
+    scope: "handoff",
+    sourceUpdateIds: [1],
+  })!;
+  const payload = createTelegramQueueHandoffPayload(
+    createQueueTestPromptTurn({ admissionReceipts: [receipt] }),
+  );
+  const liveStore = createTelegramQueueStore();
+  const staging = createTelegramQueueHandoffStagingRuntime({
+    liveStore,
+    createControlExecution: () => async () => undefined,
+  });
+  staging.stage(payload);
+  assert.equal(staging.accept(receipt), true);
+  assert.throws(() => staging.stage(payload), /is already live/u);
+});
+
+test("Queue handoff staging cancellation retains no dispatchable work", () => {
+  const receipt = createTelegramQueueAdmissionReceipt({
+    queueKind: "prompt",
+    scope: "handoff",
+    sourceUpdateIds: [1],
+  })!;
+  const payload = createTelegramQueueHandoffPayload(
+    createQueueTestPromptTurn({ admissionReceipts: [receipt] }),
+  );
+  const liveStore = createTelegramQueueStore();
+  const staging = createTelegramQueueHandoffStagingRuntime({
+    liveStore,
+    createControlExecution: () => async () => undefined,
+  });
+  staging.stage(payload);
+  assert.equal(staging.cancel(receipt), true);
+  assert.equal(staging.cancel(receipt), false);
+  assert.equal(staging.accept(receipt), false);
+  assert.deepEqual(liveStore.getQueuedItems(), []);
+});
+
+test("Queue handoff rejects authority-free and oversized payloads", () => {
+  assert.throws(
+    () => createTelegramQueueHandoffPayload(createQueueTestPromptTurn()),
+    /requires durable admission receipts/u,
+  );
+  const receipt = createTelegramQueueAdmissionReceipt({
+    queueKind: "prompt",
+    scope: "handoff",
+    sourceUpdateIds: [1],
+  })!;
+  assert.throws(
+    () =>
+      createTelegramQueueHandoff({
+        handoffToken: "token",
+        item: createQueueTestPromptTurn({
+          admissionReceipts: [receipt],
+          content: [
+            {
+              type: "text",
+              text: "x".repeat(TELEGRAM_QUEUE_HANDOFF_PAYLOAD_MAX_BYTES),
+            },
+          ],
+        }),
+      }),
+    /exceeds its byte limit/u,
+  );
+});
+
 test("Control-lane items sort before priority and default prompt items", () => {
   const defaultPrompt: TelegramQueueItem = createQueueTestPromptTurn({
     replyToMessageId: 1,
@@ -452,6 +823,11 @@ test("Queue mutation controller binds queue accessors to runtime mutations", () 
     incrementNextPriorityReactionOrder: () => {
       nextPriorityOrder += 1;
     },
+    onItemsDiscarded: (items, ctx) => {
+      events.push(
+        `discard:${ctx}:${items.map((item) => item.statusSummary).join(",")}`,
+      );
+    },
     updateStatus: (ctx) => {
       events.push(ctx);
     },
@@ -476,18 +852,61 @@ test("Queue mutation controller binds queue accessors to runtime mutations", () 
     queuedItems.map((item) => item.statusSummary),
     ["control", "prompt", "appended"],
   );
-  assert.equal(controller.prioritizeByMessageId(11, "b", "❤"), true);
+  assert.equal(
+    controller.applyReactionByMessageId(
+      11,
+      { kind: "priority", emoji: "❤" },
+      "b",
+    ),
+    true,
+  );
   assert.equal(nextPriorityOrder, 8);
   const reprioritized = queuedItems.find((item) => item.replyToMessageId === 1);
   assert.equal(
     reprioritized?.kind === "prompt" ? reprioritized.priorityEmoji : undefined,
     "❤",
   );
-  assert.equal(controller.clearPriorityByMessageId(11, "c"), true);
+  assert.equal(
+    controller.applyReactionByMessageId(11, { kind: "default" }, "c"),
+    true,
+  );
   assert.equal(controller.removeByMessageIds([11], "d"), 1);
   assert.equal(controller.clear("e"), 2);
   assert.deepEqual(queuedItems, []);
-  assert.deepEqual(events, ["a", "append", "b", "c", "d", "e"]);
+  assert.deepEqual(events, [
+    "a",
+    "append",
+    "b",
+    "c",
+    "discard:d:prompt",
+    "d",
+    "discard:e:control,appended",
+    "e",
+  ]);
+});
+
+test("Queue mutation controller does not publish exact receipt replays", () => {
+  const receipt = createTelegramQueueAdmissionReceipt({
+    queueKind: "prompt",
+    scope: "profile-a:bot-a",
+    sourceUpdateIds: [7],
+  })!;
+  const item = createQueueTestPromptTurn({ admissionReceipts: [receipt] });
+  let queuedItems: TelegramQueueItem<string>[] = [item];
+  const events: string[] = [];
+  const controller = createTelegramQueueMutationController<string>({
+    getQueuedItems: () => queuedItems,
+    setQueuedItems: (items) => {
+      queuedItems = items;
+      events.push("set");
+    },
+    updateStatus: () => events.push("status"),
+  });
+
+  controller.append({ ...item }, "ctx");
+
+  assert.deepEqual(queuedItems, [item]);
+  assert.deepEqual(events, []);
 });
 
 test("Queue mutation runtime removes, sorts, and reprioritizes prompts", () => {
@@ -536,12 +955,26 @@ test("Queue mutation runtime removes, sorts, and reprioritizes prompts", () => {
       events.push(`status:${ctx}`);
     },
   };
-  assert.equal(clearTelegramQueuePromptPriorityRuntime<string>(22, deps), true);
+  assert.equal(
+    applyTelegramQueuePromptReactionDispositionRuntime<string>(
+      22,
+      { kind: "default" },
+      deps,
+    ),
+    true,
+  );
   assert.deepEqual(
     queuedItems.map((item) => item.statusSummary),
     ["control", "prompt", "priority"],
   );
-  assert.equal(prioritizeTelegramQueuePromptRuntime<string>(11, deps), true);
+  assert.equal(
+    applyTelegramQueuePromptReactionDispositionRuntime<string>(
+      11,
+      { kind: "priority", emoji: "⚡" },
+      deps,
+    ),
+    true,
+  );
   assert.equal(nextPriorityOrder, 6);
   assert.deepEqual(
     queuedItems.map((item) => item.statusSummary),
@@ -559,10 +992,8 @@ test("Queue mutation runtime removes, sorts, and reprioritizes prompts", () => {
   assert.deepEqual(queuedItems, []);
   assert.equal(clearTelegramQueueItemsRuntime<string>(deps), 0);
   assert.deepEqual(events, [
-    "items:prompt,control,priority",
     "items:control,prompt,priority",
     "status:ctx",
-    "items:control,prompt,priority",
     "order:6",
     "items:control,prompt,priority",
     "status:ctx",
@@ -630,11 +1061,11 @@ test("Queue mutation helpers scope message-id mutations by chat and thread", () 
     ["private", "other"],
   );
 
-  const prioritized = prioritizeTelegramQueuePrompt(
+  const prioritized = applyTelegramQueuePromptReactionDisposition(
     [privateTurn, otherChatTurn],
     10,
+    { kind: "priority", emoji: "⚡" },
     5,
-    "⚡",
     { chatId: 2 },
   ).items;
   assert.equal(
@@ -646,50 +1077,80 @@ test("Queue mutation helpers scope message-id mutations by chat and thread", () 
     "priority",
   );
 
-  const cleared = clearTelegramQueuePromptPriority(prioritized, 10, {
-    chatId: 2,
-  }).items;
+  const cleared = applyTelegramQueuePromptReactionDisposition(
+    prioritized,
+    10,
+    { kind: "default" },
+    undefined,
+    { chatId: 2 },
+  ).items;
   assert.equal(
     cleared[1]?.kind === "prompt" ? cleared[1].queueLane : undefined,
     "default",
   );
 });
 
-test("Queue mutation helpers apply and clear prompt priority without touching control items", () => {
-  const promptItem: TelegramQueueItem = createQueueTestPromptTurn({
-    replyToMessageId: 1,
+test("Queue reaction disposition reversibly suppresses and restores prompts", () => {
+  const prompt = createQueueTestPromptTurn({
     sourceMessageIds: [11],
     queueOrder: 4,
     laneOrder: 4,
-    historyText: "prompt history",
   });
-  const controlItem: TelegramQueueItem = createQueueTestControlItem({
-    queueOrder: 5,
-  });
-  const prioritized = prioritizeTelegramQueuePrompt(
-    [promptItem, controlItem],
+  const control = createQueueTestControlItem({ queueOrder: 5 });
+  const suppressed = applyTelegramQueuePromptReactionDisposition(
+    [prompt, control],
     11,
-    0,
-    "🕊",
+    { kind: "suppressed", emoji: "👎" },
   );
-  assert.equal(prioritized.changed, true);
+  assert.equal(suppressed.changed, true);
+  assert.equal(suppressed.items[0]?.queueLane, "default");
+  assert.equal(suppressed.items[1]?.queueLane, "control");
+  assert.equal(
+    suppressed.items[0]?.kind === "prompt"
+      ? suppressed.items[0].reactionSuppressionEmoji
+      : undefined,
+    "👎",
+  );
+  const unchanged = applyTelegramQueuePromptReactionDisposition(
+    suppressed.items,
+    11,
+    { kind: "suppressed", emoji: "👎" },
+  );
+  assert.equal(unchanged.changed, false);
+  assert.equal(unchanged.items, suppressed.items);
+
+  const prioritized = applyTelegramQueuePromptReactionDisposition(
+    suppressed.items,
+    11,
+    { kind: "priority", emoji: "👍" },
+    1,
+  );
   assert.equal(prioritized.items[0]?.queueLane, "priority");
+  assert.equal(
+    prioritized.items[0]?.kind === "prompt"
+      ? prioritized.items[0].reactionSuppressionEmoji
+      : "unexpected",
+    undefined,
+  );
   assert.equal(
     prioritized.items[0]?.kind === "prompt"
       ? prioritized.items[0].priorityEmoji
       : undefined,
-    "🕊",
+    "👍",
   );
-  const cleared = clearTelegramQueuePromptPriority(prioritized.items, 11);
-  assert.equal(cleared.changed, true);
-  assert.equal(cleared.items[0]?.queueLane, "default");
+
+  const restored = applyTelegramQueuePromptReactionDisposition(
+    prioritized.items,
+    11,
+    { kind: "default" },
+  );
+  assert.equal(restored.items[0]?.queueLane, "default");
   assert.equal(
-    cleared.items[0]?.kind === "prompt"
-      ? cleared.items[0].priorityEmoji
+    restored.items[0]?.kind === "prompt"
+      ? restored.items[0].priorityEmoji
       : "unexpected",
     undefined,
   );
-  assert.equal(cleared.items[1]?.queueLane, "control");
 });
 
 test("Queue priority reactions apply to attachment-only prompt turns", () => {
@@ -700,7 +1161,12 @@ test("Queue priority reactions apply to attachment-only prompt turns", () => {
     historyText: "voice transcript",
     statusSummary: "📎 voice.ogg",
   });
-  const prioritized = prioritizeTelegramQueuePrompt([attachmentPrompt], 21, 0);
+  const prioritized = applyTelegramQueuePromptReactionDisposition(
+    [attachmentPrompt],
+    21,
+    { kind: "priority", emoji: "⚡" },
+    0,
+  );
   assert.equal(prioritized.changed, true);
   assert.equal(prioritized.items[0]?.queueLane, "priority");
   assert.equal(prioritized.items[0]?.statusSummary, "📎 voice.ogg");
@@ -2466,6 +2932,13 @@ test("Agent start runtime consumes dispatched prompts and initializes active pre
       activeTurn = turn;
       events.push(`turn:${turn.replyToMessageId}`);
     },
+    onPromptHandedOff: (turn) => {
+      events.push(`handoff:${turn.replyToMessageId}`);
+      throw new Error("journal unavailable");
+    },
+    recordRuntimeEvent: (category, _error, details) => {
+      events.push(`${category}:${details?.phase}`);
+    },
     createPreviewState: () => {
       events.push("preview");
     },
@@ -2485,6 +2958,8 @@ test("Agent start runtime consumes dispatched prompts and initializes active pre
     "items:0",
     "dispatch:false",
     "turn:2",
+    "handoff:2",
+    "queue:prompt-handoff-receipt-settlement",
     "preview",
     "typing",
     "status",
@@ -2750,6 +3225,9 @@ test("Agent start hook binds abort handler and runtime ports", async () => {
     setActiveTurn: (turn) => {
       events.push(`turn:${turn.replyToMessageId}`);
     },
+    onPromptHandedOff: (turn) => {
+      events.push(`handoff:${turn.replyToMessageId}`);
+    },
     createPreviewState: () => {
       events.push("preview");
     },
@@ -2769,6 +3247,7 @@ test("Agent start hook binds abort handler and runtime ports", async () => {
     "items:0",
     "dispatch:false",
     "turn:2",
+    "handoff:2",
     "preview",
     "typing",
     "status",
@@ -3145,8 +3624,10 @@ test("Control queue controller appends and dispatches control items", () => {
       events.push(`dispatch:${ctx}`);
     },
   });
-  controller.enqueue(item, "ctx");
-  assert.deepEqual(events, ["append:status:ctx", "dispatch:ctx"]);
+  controller.enqueue(item, "ctx", () => {
+    events.push("queued");
+  });
+  assert.deepEqual(events, ["append:status:ctx", "queued", "dispatch:ctx"]);
 });
 
 test("Prompt enqueue controller binds runtime ports to context", async () => {
@@ -3182,10 +3663,13 @@ test("Prompt enqueue controller binds runtime ports to context", async () => {
       events.push(`dispatch:${ctx}`);
     },
   });
-  await controller.enqueue([7], "ctx");
+  await controller.enqueue([7], "ctx", () => {
+    events.push("queued:ctx");
+  });
   assert.deepEqual(events, [
     "fold:false",
     "items:1",
+    "queued:ctx",
     "status:ctx",
     "dispatch:ctx",
   ]);
@@ -3244,6 +3728,9 @@ test("Prompt enqueue runtime folds queued prompts into history", async () => {
     dispatchNextQueuedTelegramTurn: () => {
       events.push("dispatch");
     },
+    onQueued: () => {
+      events.push("queued");
+    },
   });
   assert.equal(foldHistory, false);
   assert.deepEqual(
@@ -3254,9 +3741,44 @@ test("Prompt enqueue runtime folds queued prompts into history", async () => {
     "fold:false",
     "history:history",
     "items:control,new",
+    "queued",
     "status",
     "dispatch",
   ]);
+});
+
+test("Prompt enqueue rechecks execution authority after asynchronous turn building", async () => {
+  const queuedItems: TelegramQueueItem[] = [];
+  let committedItems = 0;
+  let current = true;
+  await assert.rejects(
+    enqueueTelegramPromptTurnRuntime(["message"], {
+      getQueuedItems: () => queuedItems,
+      setQueuedItems: () => {
+        committedItems += 1;
+      },
+      getFoldQueuedPromptsIntoHistory: () => false,
+      setFoldQueuedPromptsIntoHistory: () => {},
+      createTurn: async () => {
+        current = false;
+        return createQueueTestPromptTurn({
+          replyToMessageId: 1,
+          sourceMessageIds: [1],
+          content: [{ type: "text", text: "stale" }],
+          historyText: "stale",
+          statusSummary: "stale",
+        });
+      },
+      assertExecutionCurrent() {
+        if (!current) throw new DOMException("Aborted", "AbortError");
+      },
+      updateStatus: () => {},
+      dispatchNextQueuedTelegramTurn: () => {},
+    }),
+    /Abort/u,
+  );
+  assert.equal(committedItems, 0);
+  assert.deepEqual(queuedItems, []);
 });
 
 test("Local agent start prevents stale abort-history mode from absorbing old queue", async () => {
@@ -3353,12 +3875,12 @@ test("Control runtime runs the control item and always settles", async () => {
         events.push("reply");
         return undefined;
       },
-      onSettled: () => {
-        events.push("settled");
+      onSettled: (item) => {
+        events.push(`settled:${item.controlType}`);
       },
     },
   );
-  assert.deepEqual(events, ["execute", "settled"]);
+  assert.deepEqual(events, ["execute", "settled:status"]);
 });
 
 test("Control runtime reports failures before settling", async () => {
@@ -3387,15 +3909,15 @@ test("Control runtime reports failures before settling", async () => {
         const message = error instanceof Error ? error.message : String(error);
         events.push(`${category}:${message}:${details?.controlType}`);
       },
-      onSettled: () => {
-        events.push("settled");
+      onSettled: (item) => {
+        events.push(`settled:${item.controlType}`);
       },
     },
   );
   assert.deepEqual(events, [
     "control:boom:model",
     "Telegram control action failed: boom",
-    "settled",
+    "settled:model",
   ]);
 });
 
@@ -3429,6 +3951,36 @@ test("Deferred queue dispatch uses only the bound session context", () => {
   callbacks[1]?.();
   assert.deepEqual(clearedTimers, [1]);
   assert.deepEqual(events, ["dispatch:new"]);
+});
+
+test("Deferred dispatch and watchdog contain callback and diagnostic failure", () => {
+  let deferredCallback: (() => void) | undefined;
+  const deferred = createTelegramDeferredQueueDispatchRuntime<string>({
+    setTimer(callback) {
+      deferredCallback = callback;
+      return 1 as unknown as ReturnType<typeof setTimeout>;
+    },
+    recordRuntimeEvent() {
+      throw new Error("diagnostic failed");
+    },
+  });
+  deferred.bind("ctx");
+  deferred.request(() => {
+    throw new Error("dispatch failed");
+  });
+  assert.doesNotThrow(() => deferredCallback?.());
+
+  const watchdog = createTelegramQueueDispatchWatchdogRuntime<string>({
+    hasQueuedItems: () => true,
+    dispatchNextQueuedTelegramTurn() {
+      throw new Error("watchdog dispatch failed");
+    },
+    recordRuntimeEvent() {
+      throw new Error("watchdog diagnostic failed");
+    },
+  });
+  assert.doesNotThrow(() => watchdog.poke());
+  watchdog.stop();
 });
 
 test("Queue dispatch watchdog retries dispatch for queued work", () => {
@@ -3515,6 +4067,49 @@ test("Dispatch controller drops stale transport work before sending the next pro
 
   assert.deepEqual(sent, [2]);
   assert.deepEqual(items, [current]);
+});
+
+test("Dispatch preserves inactive durable work while sending current transport work", () => {
+  const stale = createQueueTestPromptTurn({
+    chatId: 1,
+    replyToMessageId: 11,
+    admissionReceipts: [
+      {
+        queueKind: "prompt",
+        receiptId: "stale-receipt",
+        sourceUpdateIds: [101],
+      },
+    ],
+  });
+  stale.transportStamp = { profile: "a", generation: "epoch-a" };
+  const current = createQueueTestPromptTurn({
+    chatId: 2,
+    replyToMessageId: 22,
+  });
+  current.transportStamp = { profile: "b", generation: "epoch-b" };
+  let items: TelegramQueueItem<string>[] = [stale, current];
+  const sent: number[] = [];
+  const controller = createTelegramQueueDispatchController<string>({
+    getQueuedItems: () => items,
+    setQueuedItems: (next) => {
+      items = next;
+    },
+    canDispatch: () => true,
+    isQueueItemTransportActive: (item) =>
+      item.transportStamp?.profile === "b" &&
+      item.transportStamp.generation === "epoch-b",
+    isQueueItemAdmissionReady: () => true,
+    updateStatus: () => {},
+    sendTextReply: async () => undefined,
+    onPromptDispatchStart: (_ctx, chatId) => sent.push(chatId),
+    sendUserMessage: () => {},
+    onPromptDispatchFailure: () => {},
+  });
+
+  controller.dispatchNext("ctx");
+
+  assert.deepEqual(sent, [2]);
+  assert.deepEqual(items, [current, stale]);
 });
 
 test("Dispatch runtime idles on none and executes control items directly", () => {
@@ -3701,6 +4296,170 @@ test("Queue dispatch controller plans prompts and reports dispatch failures", ()
   assert.equal(queuedItems.length, 1);
 });
 
+test("Queue dispatch waits for durable admission without dropping the head item", () => {
+  const events: string[] = [];
+  let ready = false;
+  let queuedItems: TelegramQueueItem<string>[] = [
+    createQueueTestPromptTurn({
+      admissionReceipts: [
+        {
+          queueKind: "prompt",
+          receiptId: "receipt-1",
+          sourceUpdateIds: [1],
+        },
+      ],
+    }),
+  ];
+  const controller = createTelegramQueueDispatchController<string>({
+    getQueuedItems: () => queuedItems,
+    setQueuedItems: (items) => {
+      queuedItems = items;
+      events.push(`items:${items.length}`);
+    },
+    canDispatch: () => true,
+    isQueueItemAdmissionReady: (item) =>
+      isTelegramQueueItemDurablyAdmitted(item, () => ready),
+    updateStatus: () => events.push("status"),
+    sendTextReply: async () => undefined,
+    onPromptDispatchStart: () => events.push("start"),
+    sendUserMessage: () => events.push("send"),
+    onPromptDispatchFailure: () => events.push("failure"),
+  });
+
+  controller.dispatchNext("ctx");
+  assert.equal(queuedItems.length, 1);
+  assert.deepEqual(events, ["status"]);
+  ready = true;
+  controller.dispatchNext("ctx");
+  assert.deepEqual(events, ["status", "items:1", "start", "send"]);
+});
+
+test("Queue dispatch skips reaction-suppressed prompts without dropping them", () => {
+  const events: string[] = [];
+  let canDispatch = true;
+  let queuedItems: TelegramQueueItem<string>[] = [
+    createQueueTestPromptTurn({
+      sourceMessageIds: [10],
+      queueOrder: 1,
+      laneOrder: 1,
+      statusSummary: "suppressed",
+      reactionSuppressionEmoji: "👎",
+    }),
+    createQueueTestPromptTurn({
+      sourceMessageIds: [20],
+      queueOrder: 2,
+      laneOrder: 2,
+      statusSummary: "ready",
+    }),
+  ];
+  const controller = createTelegramQueueDispatchController<string>({
+    getQueuedItems: () => queuedItems,
+    setQueuedItems: (items) => {
+      queuedItems = items;
+    },
+    canDispatch: () => canDispatch,
+    updateStatus: () => events.push("status"),
+    sendTextReply: async () => undefined,
+    onPromptDispatchStart: () => events.push("start"),
+    sendUserMessage: (content) => {
+      canDispatch = false;
+      events.push(`send:${content[0]?.type}`);
+    },
+    onPromptDispatchFailure: () => events.push("failure"),
+  });
+
+  controller.dispatchNext("ctx");
+  assert.deepEqual(events, ["start", "send:text"]);
+  assert.deepEqual(
+    queuedItems.map((item) => item.statusSummary),
+    ["ready", "suppressed"],
+  );
+  controller.dispatchNext("ctx");
+  assert.deepEqual(events, ["start", "send:text", "status"]);
+});
+
+test("Queue dispatch waits for earlier pending inbound queue mutations", () => {
+  const events: string[] = [];
+  let pending = true;
+  let queuedItems: TelegramQueueItem<string>[] = [createQueueTestPromptTurn()];
+  const controller = createTelegramQueueDispatchController<string>({
+    getQueuedItems: () => queuedItems,
+    setQueuedItems: (items) => {
+      queuedItems = items;
+      events.push(`items:${items.length}`);
+    },
+    canDispatch: () => true,
+    hasPendingInboundQueueMutationForItem: () => pending,
+    updateStatus: () => events.push("status"),
+    sendTextReply: async () => undefined,
+    onPromptDispatchStart: () => events.push("start"),
+    sendUserMessage: () => events.push("send"),
+    onPromptDispatchFailure: () => events.push("failure"),
+  });
+
+  controller.dispatchNext("ctx");
+  assert.deepEqual(events, ["status"]);
+  pending = false;
+  controller.dispatchNext("ctx");
+  assert.deepEqual(events, ["status", "items:1", "start", "send"]);
+});
+
+test("Queue dispatch scopes unresolved reaction dependencies to the governed item", () => {
+  const events: string[] = [];
+  let dependencyPending = true;
+  let queuedItems: TelegramQueueItem<string>[] = [
+    createQueueTestPromptTurn({
+      replyToMessageId: 20,
+      sourceMessageIds: [20],
+      queueOrder: 1,
+      laneOrder: 1,
+      statusSummary: "independent",
+    }),
+    createQueueTestPromptTurn({
+      replyToMessageId: 10,
+      sourceMessageIds: [10],
+      queueOrder: 2,
+      laneOrder: 2,
+      statusSummary: "governed",
+    }),
+  ];
+  const controller = createTelegramQueueDispatchController<string>({
+    getQueuedItems: () => queuedItems,
+    setQueuedItems: (items) => {
+      queuedItems = items;
+      events.push(`items:${items.length}`);
+    },
+    canDispatch: () => true,
+    hasPendingInboundQueueMutationForItem: (item) =>
+      dependencyPending &&
+      item.kind === "prompt" &&
+      item.sourceMessageIds.includes(10),
+    updateStatus: () => events.push("status"),
+    sendTextReply: async () => undefined,
+    onPromptDispatchStart: (_ctx, chatId) =>
+      events.push(`start:${chatId}`),
+    sendUserMessage: () => events.push("send"),
+    onPromptDispatchFailure: () => events.push("failure"),
+  });
+
+  controller.dispatchNext("ctx");
+  assert.deepEqual(events, ["items:2", "start:1", "send"]);
+  queuedItems = queuedItems.slice(1);
+  controller.dispatchNext("ctx");
+  assert.deepEqual(events, ["items:2", "start:1", "send", "status"]);
+  dependencyPending = false;
+  controller.dispatchNext("ctx");
+  assert.deepEqual(events, [
+    "items:2",
+    "start:1",
+    "send",
+    "status",
+    "items:1",
+    "start:1",
+    "send",
+  ]);
+});
+
 test("Queue dispatch runtime binds readiness guards to dispatch controller", () => {
   const events: string[] = [];
   let active = true;
@@ -3794,6 +4553,9 @@ test("Queue dispatch controller executes control items and continues", async () 
     onPromptDispatchStart: (_ctx, chatId) => {
       events.push(`start:${chatId}`);
     },
+    onControlSettled: (item, ctx) => {
+      events.push(`settled:${item.controlType}:${ctx}`);
+    },
     sendUserMessage: () => {
       events.push("send");
     },
@@ -3807,6 +4569,7 @@ test("Queue dispatch controller executes control items and continues", async () 
     "items:1",
     "status:ok",
     "control:ctx",
+    "settled:status:ctx",
     "status:ok",
     "items:1",
     "start:3",

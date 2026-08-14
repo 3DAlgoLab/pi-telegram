@@ -65,7 +65,7 @@ Open the bot DM and send:
 /start
 ```
 
-The first Telegram user to message the bot becomes the allowed owner. Other users are ignored.
+The first Telegram user to message the bot becomes the allowed owner. Other users are ignored. After required pairing state is persisted, `/start` is admitted independently from best-effort menu rendering and BotFather command-list synchronization, so either Telegram side effect can fail or remain in flight without stopping later inbound updates.
 
 ### 5. Enable optional bot capabilities in BotFather
 
@@ -73,7 +73,7 @@ Enable the optional capabilities the bridge needs in [@BotFather](https://t.me/B
 
 1. Enable guest mode so the bot can answer mentions and replies in chats where it is not a member.
 2. Enable private-chat Threaded Mode; when it is available, one live instance becomes the profile's leader and later visible Pi instances register as followers. Without it, the bridge stays in classic single-owner DM mode.
-3. Make the bot an administrator in any chat where the queue reaction shortcuts (👍 promote, 👎 remove) should work. Reaction updates require admin rights, so the shortcuts silently do nothing in non-admin chats; private chats deliver reactions without admin rights.
+3. Make the bot an administrator in any chat where the queue reaction shortcuts (👍 prioritize, 👎 suppress) should work. Reaction updates require admin rights, so the shortcuts silently do nothing in non-admin chats; private chats deliver reactions without admin rights.
 
 ## What It Feels Like
 
@@ -121,7 +121,7 @@ Enable the optional capabilities the bridge needs in [@BotFather](https://t.me/B
 | Threaded Mode | Run one leader plus visible follower Pi instances through named private-chat threads. | One bot can host a local multi-instance Pi organism without hidden process spawning. |
 | Reroute and restore | Give unknown and command-created temporary threads explicit forward and replace/restore choices. | Forward removes the temporary tab; restore rebinds it and removes only the replaced old tab, so Telegram client state repairs without orphan controls. |
 | Extension sections | Add menu sections, commands, status rows, settings, callbacks, and delivery helpers from companion extensions. | `pi-telegram` becomes a platform surface for other Pi extensions. |
-| Runtime diagnostics | Use `/telegram-status` and recent runtime events for connection, role, queue, transport, and failure evidence. | Debugging lives in the operator surface instead of hidden logs only. |
+| Runtime diagnostics | Use `/telegram-status` and recent runtime events for connection, role, negotiated bus protocol/build/capabilities, separate polling and inbound-worker progress, journal depth, local/foreign queue ownership, automatic retry waits, transport, and failures. | Compatible build skew, foreign semantic authority, a healthy poller, durable backoff and an infrastructure-blocked worker remain distinguishable without hidden logs. |
 | Safety and ownership | Pair one owner, lock transport, scope targets, and reject fake terminal behavior. | Remote access remains explicit, bounded, and understandable. |
 
 ## Core Loop
@@ -163,8 +163,8 @@ Run these inside Pi.
 | `/telegram-setup <profile>` | Save or update a named-profile bot token |
 | `/telegram-connect` / `/telegram-connect default` | Activate `profiles.default` and acquire its transport ownership |
 | `/telegram-connect <profile>` | Activate a named profile and acquire its transport ownership |
-| `/telegram-disconnect` | Confirm, then stop polling, release ownership, and delete this instance's Threaded Mode tab; graceful Pi quit does the same without prompting when automatic cleanup is enabled |
-| `/telegram-status` | Inspect connection, mode, queue, transport, and recent diagnostics |
+| `/telegram-disconnect` | Confirm, then stop polling, release ownership, and delete this instance's Threaded Mode tab; graceful Pi quit always preserves restart ownership and independently deletes the tab only when automatic cleanup is enabled |
+| `/telegram-status` | Inspect connection, mode, separate polling/worker progress, journal depth, queue, transport, automatic retry state, and recent diagnostics |
 
 Named profile identifiers contain only lowercase ASCII letters and digits (maximum 32 characters); `default`, `main`, and `active` remain reserved. If graceful thread deletion was interrupted, a same-profile replacement reuses its still-active thread and cancels the superseded cleanup instead of deleting and recreating the tab during startup.
 
@@ -176,7 +176,7 @@ Named profile identifiers contain only lowercase ASCII letters and digits (maxim
 
 ### Queue Runtime
 
-Messages sent while Pi is busy become queued turns. Priority lanes support control actions and model-switch continuations. Queue controls let you inspect, delete, promote, and dispatch work from Telegram without touching the terminal. If Pi automatically retries a transient provider failure, the active Telegram turn stays bound until the successful reply arrives or Pi confirms that the run has settled.
+Messages sent while Pi is busy become queued turns. Priority lanes support control actions and model-switch continuations. Queue controls let you inspect, delete, promote, and dispatch work from Telegram without touching the terminal. Reaction shortcuts are reversible while a turn is waiting: priority reactions move it ahead, removal reactions suppress it, and changing or removing those reactions restores the corresponding priority or default state. If Pi automatically retries a transient provider failure, the active Telegram turn stays bound until the successful reply arrives or Pi confirms that the run has settled.
 
 ### Native Rich Markdown
 
@@ -201,6 +201,7 @@ Classic private DM mode is the base product mode. When Telegram private-chat Thr
 - One live leader owns `getUpdates`.
 - Followers are visible Pi processes started by the operator.
 - Each connected instance gets a Telegram thread target.
+- Queued work for a live follower transfers through authenticated exact-journal handoff rather than replaying under the transport owner.
 - Follower session replacement automatically reconnects the new session context to the same thread instead of requiring another manual connect.
 - Unknown threads are preserved and offered explicit reroute/restore choices.
 - Telegram never launches hidden Pi processes.
@@ -242,6 +243,8 @@ Companion extensions can integrate with Telegram without owning polling or trans
 Stable public entrypoints are documented in [Public API](./docs/public-api.md), [Telegram Delivery API](./docs/delivery.md), [Telegram Activity API](./docs/activity.md), [Extension Sections](./docs/sections.md), [Inbound Handlers](./docs/inbound.md), [Outbound Handlers](./docs/outbound.md), [Updates](./docs/updates.md), and [Voice Integration](./docs/voice.md).
 
 ## Safety Boundaries
+
+Durable inbound admission is a **process-crash recovery** guarantee. Atomic private-file replacement preserves acknowledged journal authority across ordinary process exit, crash, kill, and replacement, but the extension does not flush files or parent directories for host/kernel/filesystem/device/power-loss durability. Keep `~/.pi/agent` on appropriately managed storage and backups if that stronger operational guarantee is required. Before downgrading below `0.28.0`, run `node scripts/check-downgrade.mjs`; a blocked result means `0.28.x` must drain the retained journal first. See [Durable Admission And Recovery](./docs/architecture.md#durable-admission-and-recovery).
 
 `pi-telegram` intentionally does not:
 

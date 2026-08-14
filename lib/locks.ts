@@ -23,7 +23,8 @@ import { resolveTelegramOwnersPath } from "./paths.ts";
 
 export const TELEGRAM_LOCK_KEY = "default";
 export const TELEGRAM_BUS_LEADER_STALE_HEARTBEAT_MS = 8_000;
-const TELEGRAM_OWNERSHIP_REFRESH_MS = 2_000;
+export const TELEGRAM_OWNERSHIP_CHECK_MS = 1_000;
+export const TELEGRAM_OWNERSHIP_REFRESH_MS = 2_000;
 const TELEGRAM_LOCK_WRITE_RETRY_ATTEMPTS = 5;
 const TELEGRAM_LOCK_WRITE_RETRY_DELAY_MS = 25;
 const TELEGRAM_LOCK_TRANSACTION_ATTEMPTS = 80;
@@ -1161,7 +1162,8 @@ export function createTelegramLockedPollingRuntime<
   let takeoverCandidate: TelegramLockEntry | undefined;
   let sessionAutoStartRun: Promise<void> | undefined;
   let sessionAutoStartGeneration = 0;
-  const ownershipCheckMs = deps.ownershipCheckMs ?? 1000;
+  const ownershipCheckMs =
+    deps.ownershipCheckMs ?? TELEGRAM_OWNERSHIP_CHECK_MS;
   const ownershipRefreshMs =
     deps.ownershipRefreshMs ?? TELEGRAM_OWNERSHIP_REFRESH_MS;
   const stopOwnershipWatcher = () => {

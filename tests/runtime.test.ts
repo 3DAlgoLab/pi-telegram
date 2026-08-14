@@ -517,6 +517,38 @@ test("Typing loop starter binds default chat and reports failures", async () => 
   assert.equal(runtime.typing.stop(), true);
 });
 
+test("Typing loop ignores late failures from a replaced session context", async () => {
+  const runtime = Runtime.createTelegramBridgeRuntime();
+  let active = true;
+  let rejectAction: ((error: Error) => void) | undefined;
+  const statusErrors: string[] = [];
+  const runtimeEvents: string[] = [];
+  const startTypingLoop = Runtime.createTelegramTypingLoopStarter({
+    typing: runtime.typing,
+    getDefaultChatId: () => 7,
+    sendTypingAction: () =>
+      new Promise((_resolve, reject) => {
+        rejectAction = reject;
+      }),
+    updateStatus: (_ctx, error) => {
+      if (error) statusErrors.push(error);
+    },
+    isContextActive: () => active,
+    recordRuntimeEvent: (_category, error) => {
+      runtimeEvents.push(String(error));
+    },
+  });
+
+  startTypingLoop({ id: "old" });
+  await flushMicrotasks();
+  active = false;
+  runtime.typing.stop();
+  rejectAction?.(new Error("late typing failure"));
+  await flushMicrotasks();
+  assert.deepEqual(statusErrors, []);
+  assert.deepEqual(runtimeEvents, []);
+});
+
 test("Typing loop starter records stale status failures", async () => {
   const state = Runtime.createTelegramBridgeRuntimeState();
   const runtime = Runtime.createTelegramBridgeRuntime(state);

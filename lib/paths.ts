@@ -7,6 +7,7 @@
  * from environment and runtime identity. It does not read config, manage
  * state, or import broader Telegram domains.
  */
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -84,6 +85,40 @@ export function getTelegramDiagnosticsDisplayPaths(profileName?: string): {
     state: `~/.pi/agent/tmp/telegram/state${suffix}.json`,
     logs: `~/.pi/agent/tmp/telegram/logs${profileSlug ? `.${profileSlug}` : ""}.jsonl`,
   };
+}
+
+/** Durable inbound update journal (<agentDir>/tmp/telegram/inbox[.<profile>].json). */
+export function resolveTelegramUpdateJournalPath(
+  agentDir = resolveAgentDir(),
+  profileName?: string,
+): string {
+  return resolveTelegramProfileTempFilePath(
+    "inbox",
+    "json",
+    agentDir,
+    profileName,
+  );
+}
+
+/** Durable follower delivery journal, isolated by stable recipient binding. */
+export function resolveTelegramFollowerJournalPath(
+  recipientBindingKey: string,
+  agentDir = resolveAgentDir(),
+  profileName?: string,
+): string {
+  if (!recipientBindingKey) {
+    throw new Error("Telegram follower journal binding key is required.");
+  }
+  const bindingHash = createHash("sha256")
+    .update(recipientBindingKey)
+    .digest("hex")
+    .slice(0, 16);
+  return resolveTelegramProfileTempFilePath(
+    `follower-inbox-${bindingHash}`,
+    "json",
+    agentDir,
+    profileName,
+  );
 }
 
 /** Runtime event log (<agentDir>/tmp/telegram/logs.jsonl). */

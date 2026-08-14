@@ -54,7 +54,7 @@ Use emoji as stable semantic markers, not decoration. Emoji carry transportable 
 | `➡️` | Choose replacement target | Thread replace/restore target buttons that select which Pi instance should move to the current thread | Use inside the second replace/restore chooser, not for ordinary reroutes. |
 | `☑️` | Activate / choose this item | Model detail activation action, generated button-only choice heading | Positive selection cue; use `🟢 Active` for already-current state. |
 | `❌` | No / cancel | Confirmation cancel buttons | Use for safe cancellation, not destructive removal. |
-| `🗑` | Delete / remove | Queue delete actions, destructive confirmations, remove reaction | Use only when something is removed/closed/deleted. |
+| `🗑` | Delete / suppress | Queue delete actions, destructive confirmations, suppression reaction | The explicit queue button deletes; the reaction reversibly suppresses a waiting turn. |
 
 ### State Indicators And Button Grammars
 
@@ -77,11 +77,11 @@ Queue reactions are shortcut controls for waiting turns. Preserve their semantic
 | `❤` / `❤️` | Promote to priority | Queue reaction shortcut | Normalize display consistently where code normalizes reactions. |
 | `🕊` / `🕊️` | Promote to priority | Queue reaction shortcut | Soft/peaceful promotion gesture. |
 | `🔥` | Promote to priority | Queue reaction shortcut | Urgent/hot promotion gesture. |
-| `👎` | Remove waiting turn | Queue reaction shortcut | Removal, not negative feedback to the agent. |
-| `👻` | Remove waiting turn | Queue reaction shortcut | Disappear/remove metaphor. |
-| `💔` | Remove waiting turn | Queue reaction shortcut | Removal/cancel metaphor. |
-| `💩` | Remove waiting turn | Queue reaction shortcut | Removal/reject metaphor. |
-| `🗑` | Remove/delete waiting turn | Queue reaction shortcut and queue delete UI | Same destructive semantics as delete buttons. |
+| `👎` | Suppress waiting turn | Queue reaction shortcut and suppressed queue badge | Suppression is reversible and is not negative feedback to the agent. |
+| `👻` | Suppress waiting turn | Queue reaction shortcut and suppressed queue badge | Disappear/suppress metaphor. |
+| `💔` | Suppress waiting turn | Queue reaction shortcut and suppressed queue badge | Reversible cancel metaphor. |
+| `💩` | Suppress waiting turn | Queue reaction shortcut and suppressed queue badge | Reversible reject metaphor. |
+| `🗑` | Suppress or explicitly delete | Queue reaction shortcut, suppressed queue badge, and queue delete UI | The reaction is reversible suppression; only the explicit queue button is destructive. |
 
 ### Decorative Or Local-Example Emoji
 

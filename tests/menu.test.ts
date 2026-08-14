@@ -1693,20 +1693,13 @@ test("Queue menu keeps main-menu navigation on top", async () => {
       reorder: () => {},
       clear: () => 0,
       removeByMessageIds: () => 0,
-      clearPriorityByMessageId: (messageId) => {
+      applyReactionByMessageId: (messageId, disposition) => {
         const item = queuedItems.find(
           (entry) => entry.replyToMessageId === messageId,
         );
         if (!item) return false;
-        item.queueLane = "default";
-        return true;
-      },
-      prioritizeByMessageId: (messageId) => {
-        const item = queuedItems.find(
-          (entry) => entry.replyToMessageId === messageId,
-        );
-        if (!item) return false;
-        item.queueLane = "priority";
+        item.queueLane =
+          disposition.kind === "priority" ? "priority" : "default";
         return true;
       },
     },
@@ -1759,6 +1752,11 @@ test("Queue menu keeps main-menu navigation on top", async () => {
     },
     "ctx",
   );
+  const [suppressedItem] = queuedItems;
+  if (suppressedItem?.kind === "prompt") {
+    suppressedItem.reactionSuppressionEmoji = "👎";
+  }
+  await runtime.openQueueMenu(1, 2, "ctx");
   queuedItems.length = 0;
   await runtime.openQueueMenu(1, 2, "ctx");
   assert.equal(markups[0]?.inline_keyboard[0]?.[0]?.callback_data, "menu:back");
@@ -1781,7 +1779,11 @@ test("Queue menu keeps main-menu navigation on top", async () => {
     { text: "⚫️ Priority", callback_data: "queue:prio-set:1:10:priority" },
     { text: "🟣 Normal", callback_data: "queue:prio-set:1:10:normal" },
   ]);
-  assert.deepEqual(markups[4]?.inline_keyboard, [
+  assert.equal(
+    markups[4]?.inline_keyboard[2]?.[0]?.text,
+    "1. 👎 suppressed · queued <prompt>",
+  );
+  assert.deepEqual(markups[5]?.inline_keyboard, [
     [{ text: "⬆️ Main menu", callback_data: "menu:back" }],
     [{ text: "🌀 Refresh", callback_data: "queue:refresh:1" }],
   ]);
@@ -1794,8 +1796,9 @@ test("Queue menu keeps main-menu navigation on top", async () => {
     texts[3],
     "<b>1.</b>\n<pre>[telegram] queued &lt;prompt&gt;\n\nfull body</pre>",
   );
-  assert.equal(texts[4], "<b>⌛ Queue is empty.</b>");
-  assert.deepEqual(modes, ["html", "html", "html", "html", "html"]);
+  assert.equal(texts[4], "<b>⏳ Queue:</b>");
+  assert.equal(texts[5], "<b>⌛ Queue is empty.</b>");
+  assert.deepEqual(modes, ["html", "html", "html", "html", "html", "html"]);
 });
 
 test("Queue item detail renders prompt as raw preformatted HTML", async () => {
@@ -1829,8 +1832,7 @@ test("Queue item detail renders prompt as raw preformatted HTML", async () => {
       reorder: () => {},
       clear: () => 0,
       removeByMessageIds: () => 0,
-      clearPriorityByMessageId: () => false,
-      prioritizeByMessageId: () => false,
+      applyReactionByMessageId: () => false,
     },
     sendInteractiveMessage: async () => 99,
     editInteractiveMessage: async (_chatId, _messageId, text) => {
@@ -1898,8 +1900,7 @@ test("Queue item delete requires confirmation", async () => {
         queuedItems.splice(index, 1);
         return 1;
       },
-      clearPriorityByMessageId: () => false,
-      prioritizeByMessageId: () => false,
+      applyReactionByMessageId: () => false,
     },
     sendInteractiveMessage: async () => 99,
     editInteractiveMessage: async (
@@ -1988,8 +1989,7 @@ test("Queue refresh rotates empty queue title", async () => {
       reorder: () => {},
       clear: () => 0,
       removeByMessageIds: () => 0,
-      clearPriorityByMessageId: () => false,
-      prioritizeByMessageId: () => false,
+      applyReactionByMessageId: () => false,
     },
     sendInteractiveMessage: async (_chatId, text, _mode, replyMarkup) => {
       texts.push(text);

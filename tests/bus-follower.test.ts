@@ -13,35 +13,120 @@ import {
   createTelegramBusFollowerApiCaller,
   createTelegramBusFollowerClientRuntime,
   createTelegramBusFollowerControlState,
+  createTelegramBusFollowerDurableAdmissionRuntime,
   createTelegramBusFollowerHeartbeatRecoveryHandler,
-  createTelegramBusFollowerRegistrationRuntime,
+  createTelegramBusFollowerRegistrationRuntime as createRawTelegramBusFollowerRegistrationRuntime,
   createTelegramBusFollowerPromotionHandler,
+  createTelegramBusFollowerQueueHandoffClient,
   createTelegramBusFollowerRegistrationState,
   createTelegramBusFollowerRuntimeAssembly,
   createTelegramBusFollowerSessionRefreshHook,
   createTelegramBusFollowerSessionReplacementSuspender,
   createTelegramBusFollowerTargetReplacementHandler,
-  createTelegramBusForwardedRouteHandlers,
   createTelegramBusForwardedUpdateReceiverRuntime,
   createTelegramManualFollowerProfileKeyResolver,
   getTelegramFollowerSessionHandoff,
+  prepareTelegramBusFollowerJournaledUpdateForExecution,
   setTelegramFollowerSessionHandoff,
 } from "../lib/bus-follower.ts";
 import {
+  createTelegramBusFollowerDeliveryIdentity,
   createTelegramBusFollowerRegistry,
   createTelegramBusFollowerTargetController,
-  createTelegramBusLocalServer,
+  createTelegramBusProtocolIdentity,
+  createTelegramBusLocalServer as createRawTelegramBusLocalServer,
   resolveTelegramBusSocketPath,
   sendTelegramBusLocalEnvelope,
+  TELEGRAM_BUS_CAPABILITY_DURABLE_FOLLOWER_ADMISSION,
+  TELEGRAM_BUS_CAPABILITY_QUEUE_HANDOFF,
 } from "../lib/bus.ts";
 import { getTelegramBusTransportKind } from "../lib/bus-transport.ts";
-import { createTelegramBusLeaderEnvelopeHandler } from "../lib/bus-leader.ts";
+import {
+  createTelegramBusLeaderEnvelopeHandler as createRawTelegramBusLeaderEnvelopeHandler,
+} from "../lib/bus-leader.ts";
 import {
   createTelegramTopicTargetStore,
   getTelegramLeaderSessionHandoff,
   setTelegramLeaderSessionHandoff,
 } from "../lib/threads.ts";
 import { isTelegramApiCommitUnknownError } from "../lib/telegram-api.ts";
+
+const TEST_BUS_PROTOCOL_IDENTITY = createTelegramBusProtocolIdentity({
+  runtimeBuild: "test",
+  capabilities: [
+    TELEGRAM_BUS_CAPABILITY_DURABLE_FOLLOWER_ADMISSION,
+    TELEGRAM_BUS_CAPABILITY_QUEUE_HANDOFF,
+  ],
+});
+
+function createTelegramBusFollowerRegistrationRuntime<TContext extends {
+  cwd?: string;
+}>(
+  deps: Omit<
+    Parameters<typeof createRawTelegramBusFollowerRegistrationRuntime<TContext>>[0],
+    "protocolIdentity"
+  > & {
+    protocolIdentity?: Parameters<
+      typeof createRawTelegramBusFollowerRegistrationRuntime<TContext>
+    >[0]["protocolIdentity"];
+  },
+) {
+  const { protocolIdentity = TEST_BUS_PROTOCOL_IDENTITY, ...ports } = deps;
+  return createRawTelegramBusFollowerRegistrationRuntime({
+    ...ports,
+    protocolIdentity,
+  });
+}
+
+function createTelegramBusLocalServer(
+  deps: Parameters<typeof createRawTelegramBusLocalServer>[0],
+) {
+  const handleEnvelope = deps.handleEnvelope;
+  return createRawTelegramBusLocalServer({
+    ...deps,
+    async handleEnvelope(envelope) {
+      const response = await handleEnvelope(envelope);
+      if (
+        envelope.kind === "follower.register" &&
+        response?.kind === "bus.ack" &&
+        !response.protocol
+      ) {
+        return { ...response, protocol: TEST_BUS_PROTOCOL_IDENTITY };
+      }
+      return response;
+    },
+  });
+}
+
+function createTelegramBusLeaderEnvelopeHandler(
+  deps: Omit<
+    Parameters<typeof createRawTelegramBusLeaderEnvelopeHandler>[0],
+    "protocolIdentity"
+  > & {
+    protocolIdentity?: Parameters<
+      typeof createRawTelegramBusLeaderEnvelopeHandler
+    >[0]["protocolIdentity"];
+  },
+) {
+  const { protocolIdentity = TEST_BUS_PROTOCOL_IDENTITY, ...ports } = deps;
+  const handle = createRawTelegramBusLeaderEnvelopeHandler({
+    ...ports,
+    protocolIdentity,
+  });
+  return (envelope: Parameters<typeof handle>[0]) =>
+    handle(
+      envelope.kind === "follower.register" &&
+        !envelope.registration.protocol
+        ? {
+            ...envelope,
+            registration: {
+              ...envelope.registration,
+              protocol: protocolIdentity,
+            },
+          }
+        : envelope,
+    );
+}
 
 async function waitForCondition(
   predicate: () => boolean,
@@ -69,37 +154,6 @@ test("Follower control state owns active auth and transient lifecycle projection
   state.setLifecyclePhase(undefined);
   assert.equal(state.getActiveAuthSecret(), undefined);
   assert.equal(state.getLifecyclePhase(), undefined);
-});
-
-test("Bus follower route handlers adapt forwarded envelopes", async () => {
-  const events: string[] = [];
-  const handlers = createTelegramBusForwardedRouteHandlers<
-    string,
-    { emoji: string },
-    { id: string },
-    { text: string }
-  >({
-    handleUpdate(update, ctx) {
-      events.push(
-        `${ctx}:${update.callback_query?.id ?? update.message?.text ?? update.edited_message?.text}`,
-      );
-    },
-    handleAuthorizedReactionUpdate(reaction, ctx) {
-      events.push(`${ctx}:${reaction.emoji}`);
-    },
-  });
-
-  await handlers.handleForwardedCallback({ id: "callback" }, "ctx");
-  await handlers.handleForwardedReaction({ emoji: "👍" }, "ctx");
-  await handlers.handleForwardedMessage?.({ text: "message" }, "ctx");
-  await handlers.handleForwardedEditedMessage?.({ text: "edited" }, "ctx");
-
-  assert.deepEqual(events, [
-    "ctx:callback",
-    "ctx:👍",
-    "ctx:message",
-    "ctx:edited",
-  ]);
 });
 
 test("Bus follower profile key resolver follows the active profile", () => {
@@ -211,6 +265,133 @@ test("Bus follower promotion leaves binding unchanged when election is lost", as
   }
 });
 
+test("Bus follower receiver stages authenticated queue handoff payloads", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-queue-handoff-receiver-"));
+  const socketPath = join(dir, "follower.sock");
+  const staged: unknown[] = [];
+  const receiver = createTelegramBusForwardedUpdateReceiverRuntime({
+    socketPath,
+    instanceId: "inst-b",
+    getAuthSecret: () => "secret",
+    getRegistrationGeneration: () => "generation-b",
+    getRecipientBindingKey: () => "manual:owner-b",
+    getContext: () => "ctx",
+    durableAdmission: {
+      admit: async () => assert.fail("queue handoff must not enter update admission"),
+    },
+    handleQueueHandoff(envelope, ctx) {
+      staged.push({ envelope, ctx });
+      return {
+      status: "staged",
+      receiptId: "receipt-1",
+      sourceUpdateIds: [1],
+      queueOwner: {
+        instanceId: "inst-b",
+        processId: 20,
+        processBirthId: "20:start:inst-b",
+        sessionGeneration: 1,
+        acquisitionId: "recipient-acquisition",
+        acquiredAtMs: 1,
+      },
+    };
+    },
+  });
+  const payload = {
+    kind: "prompt" as const,
+    chatId: 7,
+    replyToMessageId: 10,
+    queueOrder: 1,
+    queueLane: "default" as const,
+    laneOrder: 1,
+    statusSummary: "handoff",
+    admissionReceipts: [
+      {
+        queueKind: "prompt" as const,
+        receiptId: "receipt-1",
+        sourceUpdateIds: [1],
+      },
+    ],
+    sourceMessageIds: [10],
+    queuedAttachments: [],
+    content: [{ type: "text" as const, text: "handoff prompt" }],
+    historyText: "handoff",
+  };
+  const envelope = {
+    kind: "leader.offerQueueHandoff" as const,
+    requestId: "handoff:1",
+    auth: "secret",
+    recipientInstanceId: "inst-b",
+    recipientRegistrationGeneration: "generation-b",
+    donorInstanceId: "inst-a",
+    donorProcessId: 101,
+    donorProcessBirthId: "101:start:a",
+    donorSessionGeneration: 1,
+    donorAcquisitionId: "acquisition-a",
+    donorAcquiredAtMs: 1000,
+    handoffToken: "x".repeat(32),
+    payload,
+    sentAtMs: 2000,
+  };
+  try {
+    await receiver.start();
+    assert.deepEqual(
+      await sendTelegramBusLocalEnvelope({ socketPath, envelope }),
+      {
+        kind: "bus.ack",
+        requestId: "handoff:1",
+        ok: true,
+        message: undefined,
+        result: {
+          status: "staged",
+          receiptId: "receipt-1",
+          sourceUpdateIds: [1],
+          queueOwner: {
+            instanceId: "inst-b",
+            processId: 20,
+            processBirthId: "20:start:inst-b",
+            sessionGeneration: 1,
+            acquisitionId: "recipient-acquisition",
+            acquiredAtMs: 1,
+          },
+        },
+      },
+    );
+    assert.deepEqual(staged, [{ envelope, ctx: "ctx" }]);
+    assert.deepEqual(
+      await sendTelegramBusLocalEnvelope({
+        socketPath,
+        envelope: { ...envelope, requestId: "handoff:2", auth: "tamper" },
+      }),
+      {
+        kind: "bus.ack",
+        requestId: "handoff:2",
+        ok: false,
+        message: "Unauthorized Telegram bus envelope.",
+      },
+    );
+    assert.deepEqual(
+      await sendTelegramBusLocalEnvelope({
+        socketPath,
+        envelope: {
+          ...envelope,
+          requestId: "handoff:3",
+          recipientRegistrationGeneration: "stale",
+        },
+      }),
+      {
+        kind: "bus.ack",
+        requestId: "handoff:3",
+        ok: false,
+        message: "Stale Telegram bus follower registration generation.",
+      },
+    );
+    assert.equal(staged.length, 1);
+  } finally {
+    await receiver.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("Bus follower receiver handles leader-forwarded updates and target replacement", async () => {
   const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-forward-"));
   const leaderSocketPath = join(dir, "leader.sock");
@@ -218,23 +399,51 @@ test("Bus follower receiver handles leader-forwarded updates and target replacem
   const registry = createTelegramBusFollowerRegistry();
   const received: unknown[] = [];
   let nowMs = 2000;
+  const delivery = (
+    kind:
+      | "leader.forwardCallback"
+      | "leader.forwardReaction"
+      | "leader.forwardMessage"
+      | "leader.forwardEditedMessage",
+    sourceUpdateId: number,
+  ) =>
+    createTelegramBusFollowerDeliveryIdentity({
+      kind,
+      recipientBindingKey: "manual:owner-b",
+      sourceUpdateId,
+    });
   const receiver = createTelegramBusForwardedUpdateReceiverRuntime({
     socketPath: followerSocketPath,
     instanceId: "inst-b",
+    getRegistrationGeneration: () => "generation-b",
+    getRecipientBindingKey: () => "manual:owner-b",
     getContext() {
       return "ctx";
     },
-    handleForwardedCallback(query, ctx) {
-      received.push({ kind: "callback", query, ctx });
-    },
-    handleForwardedReaction(reactionUpdate, ctx) {
-      received.push({ kind: "reaction", reactionUpdate, ctx });
-    },
-    handleForwardedMessage(message, ctx) {
-      received.push({ kind: "message", message, ctx });
-    },
-    handleForwardedEditedMessage(message, ctx) {
-      received.push({ kind: "edited-message", message, ctx });
+    durableAdmission: {
+      async admit(envelope, ctx) {
+        if (envelope.kind === "leader.forwardCallback") {
+          received.push({ kind: "callback", query: envelope.query, ctx });
+        } else if (envelope.kind === "leader.forwardReaction") {
+          received.push({
+            kind: "reaction",
+            reactionUpdate: envelope.reactionUpdate,
+            ctx,
+          });
+        } else if (envelope.kind === "leader.forwardMessage") {
+          received.push({ kind: "message", message: envelope.message, ctx });
+        } else {
+          received.push({
+            kind: "edited-message",
+            message: envelope.message,
+            ctx,
+          });
+        }
+        return {
+          deliveryId: envelope.delivery!.deliveryId,
+          sourceUpdateId: envelope.delivery!.sourceUpdateId,
+        };
+      },
     },
     handleReplaceTarget(input, ctx) {
       received.push({ kind: "replace-target", input, ctx });
@@ -253,6 +462,7 @@ test("Bus follower receiver handles leader-forwarded updates and target replacem
     registry.register({
       instanceId: "inst-b",
       busSocketPath: followerSocketPath,
+      registrationGeneration: "generation-b",
       connectedAtMs: 1000,
     });
     const callbackResponse = await sendTelegramBusLocalEnvelope({
@@ -261,6 +471,8 @@ test("Bus follower receiver handles leader-forwarded updates and target replacem
         kind: "leader.forwardCallback",
         requestId: "leader:1",
         recipientInstanceId: "inst-b",
+        recipientRegistrationGeneration: "generation-b",
+        delivery: delivery("leader.forwardCallback", 1),
         query: { id: "cb-1", data: "queue:pause" },
         sentAtMs: 2000,
       },
@@ -273,6 +485,8 @@ test("Bus follower receiver handles leader-forwarded updates and target replacem
         kind: "leader.forwardReaction",
         requestId: "leader:2",
         recipientInstanceId: "inst-b",
+        recipientRegistrationGeneration: "generation-b",
+        delivery: delivery("leader.forwardReaction", 2),
         reactionUpdate: { message_id: 9, new_reaction: [] },
         sentAtMs: 3000,
       },
@@ -285,6 +499,8 @@ test("Bus follower receiver handles leader-forwarded updates and target replacem
         kind: "leader.forwardMessage",
         requestId: "leader:3",
         recipientInstanceId: "inst-b",
+        recipientRegistrationGeneration: "generation-b",
+        delivery: delivery("leader.forwardMessage", 3),
         message: { message_id: 10, text: "hi" },
         sentAtMs: 4000,
       },
@@ -297,6 +513,8 @@ test("Bus follower receiver handles leader-forwarded updates and target replacem
         kind: "leader.forwardEditedMessage",
         requestId: "leader:4",
         recipientInstanceId: "inst-b",
+        recipientRegistrationGeneration: "generation-b",
+        delivery: delivery("leader.forwardEditedMessage", 4),
         message: { message_id: 10, text: "edited" },
         sentAtMs: 5000,
       },
@@ -317,24 +535,40 @@ test("Bus follower receiver handles leader-forwarded updates and target replacem
       requestId: "leader:1",
       ok: true,
       message: undefined,
+      result: {
+        deliveryId: delivery("leader.forwardCallback", 1).deliveryId,
+        sourceUpdateId: 1,
+      },
     });
     assert.deepEqual(reactionResponse, {
       kind: "bus.ack",
       requestId: "leader:2",
       ok: true,
       message: undefined,
+      result: {
+        deliveryId: delivery("leader.forwardReaction", 2).deliveryId,
+        sourceUpdateId: 2,
+      },
     });
     assert.deepEqual(messageResponse, {
       kind: "bus.ack",
       requestId: "leader:3",
       ok: true,
       message: undefined,
+      result: {
+        deliveryId: delivery("leader.forwardMessage", 3).deliveryId,
+        sourceUpdateId: 3,
+      },
     });
     assert.deepEqual(editedMessageResponse, {
       kind: "bus.ack",
       requestId: "leader:4",
       ok: true,
       message: undefined,
+      result: {
+        deliveryId: delivery("leader.forwardEditedMessage", 4).deliveryId,
+        sourceUpdateId: 4,
+      },
     });
     assert.equal(replaceTargetResponse, true);
     assert.equal(registry.get("inst-b")?.lastHeartbeatMs, 5000);
@@ -380,11 +614,17 @@ test("Bus follower receiver rejects delayed work from a replaced registration ge
     socketPath,
     instanceId: "inst-b",
     getRegistrationGeneration: () => "generation-new",
+    getRecipientBindingKey: () => "manual:owner-b",
     getContext: () => "ctx",
-    handleForwardedCallback() {
-      handled += 1;
+    durableAdmission: {
+      async admit(envelope) {
+        handled += 1;
+        return {
+          deliveryId: envelope.delivery!.deliveryId,
+          sourceUpdateId: envelope.delivery!.sourceUpdateId,
+        };
+      },
     },
-    handleForwardedReaction() {},
   });
   try {
     await receiver.start();
@@ -395,7 +635,12 @@ test("Bus follower receiver rejects delayed work from a replaced registration ge
         requestId: "leader:old:1",
         recipientInstanceId: "inst-b",
         recipientRegistrationGeneration: "generation-old",
-        query: { id: "old" },
+        delivery: createTelegramBusFollowerDeliveryIdentity({
+          kind: "leader.forwardCallback",
+          recipientBindingKey: "manual:owner-b",
+          sourceUpdateId: 1,
+        }),
+        query: { id: "old", pi_telegram_source_update_id: 1 },
         sentAtMs: 2000,
       },
     });
@@ -405,6 +650,211 @@ test("Bus follower receiver rejects delayed work from a replaced registration ge
       requestId: "leader:old:1",
       ok: false,
       message: "Stale Telegram bus follower registration generation.",
+    });
+  } finally {
+    await receiver.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Bus follower receiver ACKs durable append before downstream execution and deduplicates replay", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-durable-admission-"));
+  const socketPath = join(dir, "follower.sock");
+  const admitted = new Set<number>();
+  const journaled: unknown[] = [];
+  let signals = 0;
+  const durableAdmission = createTelegramBusFollowerDurableAdmissionRuntime({
+    journal: {
+      appendBatch(updates) {
+        const updateId = updates[0]!.update_id;
+        if (!admitted.has(updateId)) journaled.push(...updates);
+        admitted.add(updateId);
+      },
+    },
+    signalWorker() {
+      signals += 1;
+    },
+  });
+  const receiver = createTelegramBusForwardedUpdateReceiverRuntime({
+    socketPath,
+    instanceId: "inst-b",
+    getRegistrationGeneration: () => "generation-b",
+    getRecipientBindingKey: () => "manual:owner-b",
+    durableAdmission,
+    getContext: () => "ctx",
+  });
+  const delivery = createTelegramBusFollowerDeliveryIdentity({
+    kind: "leader.forwardCallback",
+    recipientBindingKey: "manual:owner-b",
+    sourceUpdateId: 44,
+  });
+  const send = (requestId: string) =>
+    sendTelegramBusLocalEnvelope({
+      socketPath,
+      envelope: {
+        kind: "leader.forwardCallback",
+        requestId,
+        recipientInstanceId: "inst-b",
+        recipientRegistrationGeneration: "generation-b",
+        delivery,
+        query: { id: "callback", pi_telegram_source_update_id: 44 },
+        sentAtMs: 2000,
+      },
+    });
+  try {
+    await receiver.start();
+    assert.deepEqual(await send("leader:1"), {
+      kind: "bus.ack",
+      requestId: "leader:1",
+      ok: true,
+      message: undefined,
+      result: {
+        deliveryId: delivery.deliveryId,
+        sourceUpdateId: 44,
+      },
+    });
+    assert.deepEqual(await send("leader:2"), {
+      kind: "bus.ack",
+      requestId: "leader:2",
+      ok: true,
+      message: undefined,
+      result: {
+        deliveryId: delivery.deliveryId,
+        sourceUpdateId: 44,
+      },
+    });
+    assert.deepEqual(journaled, [
+      {
+        update_id: 44,
+        callback_query: {
+          id: "callback",
+          pi_telegram_source_update_id: 44,
+        },
+      },
+    ]);
+    assert.equal(signals, 2);
+  } finally {
+    await receiver.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Follower replay restores persisted forward grouping metadata without exposing it", () => {
+  const prepared: unknown[] = [];
+  const journaled = {
+    update_id: 45,
+    pi_telegram_forward_comment_batch_position: "forward",
+    message: { message_id: 9 },
+  };
+  const update = prepareTelegramBusFollowerJournaledUpdateForExecution(
+    journaled,
+    (message, position) => prepared.push({ message, position }),
+  );
+  assert.deepEqual(prepared, [
+    { message: { message_id: 9 }, position: "forward" },
+  ]);
+  assert.deepEqual(update, {
+    update_id: 45,
+    message: { message_id: 9 },
+  });
+  assert.equal(
+    "pi_telegram_forward_comment_batch_position" in journaled,
+    true,
+  );
+});
+
+test("Bus follower receiver rejects a mismatched durable delivery binding", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-delivery-binding-"));
+  const socketPath = join(dir, "follower.sock");
+  let handled = 0;
+  const receiver = createTelegramBusForwardedUpdateReceiverRuntime({
+    socketPath,
+    instanceId: "inst-b",
+    getRegistrationGeneration: () => "generation-b",
+    getRecipientBindingKey: () => "manual:owner-b",
+    getContext: () => "ctx",
+    durableAdmission: {
+      async admit(envelope) {
+        handled += 1;
+        return {
+          deliveryId: envelope.delivery!.deliveryId,
+          sourceUpdateId: envelope.delivery!.sourceUpdateId,
+        };
+      },
+    },
+  });
+  try {
+    await receiver.start();
+    const response = await sendTelegramBusLocalEnvelope({
+      socketPath,
+      envelope: {
+        kind: "leader.forwardCallback",
+        requestId: "leader:1",
+        recipientInstanceId: "inst-b",
+        recipientRegistrationGeneration: "generation-b",
+        delivery: createTelegramBusFollowerDeliveryIdentity({
+          kind: "leader.forwardCallback",
+          recipientBindingKey: "manual:other-owner",
+          sourceUpdateId: 44,
+        }),
+        query: { id: "callback" },
+        sentAtMs: 2000,
+      },
+    });
+    assert.equal(handled, 0);
+    assert.deepEqual(response, {
+      kind: "bus.ack",
+      requestId: "leader:1",
+      ok: false,
+      message: "Mismatched Telegram follower delivery identity.",
+    });
+  } finally {
+    await receiver.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Bus follower receiver rejects journal admission failure without a receipt", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-admission-failure-"));
+  const socketPath = join(dir, "follower.sock");
+  const receiver = createTelegramBusForwardedUpdateReceiverRuntime({
+    socketPath,
+    instanceId: "inst-b",
+    getRegistrationGeneration: () => "generation-b",
+    getRecipientBindingKey: () => "manual:owner-b",
+    getContext: () => "ctx",
+    durableAdmission: {
+      async admit() {
+        throw new Error("Telegram inbound journal capacity exceeded.");
+      },
+    },
+  });
+  try {
+    await receiver.start();
+    const response = await sendTelegramBusLocalEnvelope({
+      socketPath,
+      envelope: {
+        kind: "leader.forwardCallback",
+        requestId: "leader:1",
+        recipientInstanceId: "inst-b",
+        recipientRegistrationGeneration: "generation-b",
+        delivery: createTelegramBusFollowerDeliveryIdentity({
+          kind: "leader.forwardCallback",
+          recipientBindingKey: "manual:owner-b",
+          sourceUpdateId: 44,
+        }),
+        query: {
+          id: "callback",
+          pi_telegram_source_update_id: 44,
+        },
+        sentAtMs: 2000,
+      },
+    });
+    assert.deepEqual(response, {
+      kind: "bus.ack",
+      requestId: "leader:1",
+      ok: false,
+      message: "Telegram inbound journal capacity exceeded.",
     });
   } finally {
     await receiver.stop();
@@ -921,20 +1371,28 @@ test("Bus follower assembly wires receiver, recovery, and registration", async (
     socketPath: leaderSocketPath,
     handleEnvelope: createTelegramBusLeaderEnvelopeHandler({
       followerRegistry: createTelegramBusFollowerRegistry(),
+      protocolIdentity: TEST_BUS_PROTOCOL_IDENTITY,
       provisionFollowerTarget: () => ({ chatId: 7, threadId: 42 }),
     }),
   });
-  const assembly = createTelegramBusFollowerRuntimeAssembly<
-    { cwd: string },
-    unknown,
-    unknown
-  >({
+  const assembly = createTelegramBusFollowerRuntimeAssembly<{
+    cwd: string;
+  }>({
+    instanceId: "inst-a",
+    registrationState,
+    recordRuntimeEvent: () => undefined,
     receiver: {
       socketPath: followerSocketPath,
-      instanceId: "inst-a",
       getContext: () => ({ cwd: "/repo" }),
-      handleForwardedCallback: () => undefined,
-      handleForwardedReaction: () => undefined,
+      getRecipientBindingKey: () => "manual:inst-a",
+      durableAdmission: {
+        async admit(envelope) {
+          return {
+            deliveryId: envelope.delivery!.deliveryId,
+            sourceUpdateId: envelope.delivery!.sourceUpdateId,
+          };
+        },
+      },
     },
     targetReplacement: {
       topicTargetStore: {
@@ -944,8 +1402,6 @@ test("Bus follower assembly wires receiver, recovery, and registration", async (
         upsert: (record) => record,
         persist: async () => undefined,
       },
-      registrationState,
-      instanceId: "inst-a",
       getManualFollowerProfileKey: () => "manual:a",
       manualFollowerOwnerId: "a",
       getSyncState: () => ({}),
@@ -953,20 +1409,17 @@ test("Bus follower assembly wires receiver, recovery, and registration", async (
       updateStatus: () => undefined,
     },
     recovery: {
-      registrationState,
       getLeaderState: () => ({ kind: "inactive" }),
       setLifecyclePhase: () => undefined,
       updateStatus: () => undefined,
       promoteToLeader: async () => true,
       sleep: async () => undefined,
       promotionGraceMs: 1,
-      recordRuntimeEvent: () => undefined,
     },
     registration: {
-      instanceId: "inst-a",
+      protocolIdentity: TEST_BUS_PROTOCOL_IDENTITY,
       getFollowerBusSocketPath: () => followerSocketPath,
       getLeaderSocketPath: () => leaderSocketPath,
-      registrationState,
       createRequestId: () => `inst-a:${++requestSequence}`,
     },
   });
@@ -1231,11 +1684,19 @@ test("Bus follower registration runtime registers and explicitly disconnects", a
   const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-follower-"));
   const socketPath = join(dir, "bus.sock");
   const registry = createTelegramBusFollowerRegistry();
+  const leaderProtocol = createTelegramBusProtocolIdentity({
+    runtimeBuild: "0.28.0",
+  });
+  const followerProtocol = createTelegramBusProtocolIdentity({
+    runtimeBuild: "0.28.1",
+  });
+  const registrationState = createTelegramBusFollowerRegistrationState();
   let disconnects = 0;
   const server = createTelegramBusLocalServer({
     socketPath,
     handleEnvelope: createTelegramBusLeaderEnvelopeHandler({
       followerRegistry: registry,
+      protocolIdentity: leaderProtocol,
       getNowMs: () => 1000,
       onFollowerDisconnected() {
         disconnects += 1;
@@ -1246,8 +1707,12 @@ test("Bus follower registration runtime registers and explicitly disconnects", a
   const follower = createTelegramBusFollowerRegistrationRuntime({
     instanceId: "inst-a",
     createRequestId: () => `inst-a:${++sequence}`,
+    protocolIdentity: followerProtocol,
+    registrationState,
     getNowMs: () => 1000,
     getPid: () => 123,
+    getProcessBirthId: () => "123:start:abc",
+    getSessionGeneration: () => 4,
   });
   try {
     await server.start();
@@ -1264,14 +1729,95 @@ test("Bus follower registration runtime registers and explicitly disconnects", a
       threadName: "repo",
       cwd: "/repo",
       pid: 123,
+      processBirthId: "123:start:abc",
+      sessionGeneration: 4,
       registrationGeneration: "inst-a:1",
+      protocol: followerProtocol,
       connectedAtMs: 1000,
       lastHeartbeatMs: 1000,
       target: undefined,
     });
+    assert.deepEqual(registrationState.getLeaderProtocol(), leaderProtocol);
     assert.equal(await follower.disconnectFromLeader?.(), true);
     assert.equal(disconnects, 1);
     assert.equal(registry.get("inst-a"), undefined);
+  } finally {
+    follower.stop();
+    await server.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Bus follower rejects an acknowledgement without protocol identity", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-follower-protocol-"));
+  const socketPath = join(dir, "bus.sock");
+  const server = createRawTelegramBusLocalServer({
+    socketPath,
+    handleEnvelope: (envelope) => ({
+      kind: "bus.ack",
+      requestId: envelope.requestId,
+      ok: true,
+    }),
+  });
+  const state = createTelegramBusFollowerRegistrationState();
+  const follower = createTelegramBusFollowerRegistrationRuntime({
+    instanceId: "inst-a",
+    createRequestId: () => "inst-a:1",
+    protocolIdentity: createTelegramBusProtocolIdentity({
+      runtimeBuild: "0.28.0",
+    }),
+    registrationState: state,
+    getNowMs: () => 1000,
+  });
+  try {
+    await server.start();
+    await assert.rejects(
+      follower.registerWithLeader(
+        { cwd: "/repo" },
+        { busSocketPath: socketPath },
+      ),
+      /missing-identity/u,
+    );
+    assert.equal(state.isRegistered(), false);
+  } finally {
+    follower.stop();
+    await server.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Bus follower rejects a leader without its required durable capability", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-follower-capability-"));
+  const socketPath = join(dir, "bus.sock");
+  const server = createTelegramBusLocalServer({
+    socketPath,
+    handleEnvelope: (envelope) => ({
+      kind: "bus.ack",
+      requestId: envelope.requestId,
+      ok: true,
+      protocol: createTelegramBusProtocolIdentity({ runtimeBuild: "0.28.0" }),
+    }),
+  });
+  const state = createTelegramBusFollowerRegistrationState();
+  const follower = createTelegramBusFollowerRegistrationRuntime({
+    instanceId: "inst-a",
+    createRequestId: () => "inst-a:1",
+    protocolIdentity: createTelegramBusProtocolIdentity({
+      runtimeBuild: "0.28.0",
+      capabilities: [TELEGRAM_BUS_CAPABILITY_DURABLE_FOLLOWER_ADMISSION],
+    }),
+    registrationState: state,
+  });
+  try {
+    await server.start();
+    await assert.rejects(
+      follower.registerWithLeader(
+        { cwd: "/repo" },
+        { busSocketPath: socketPath },
+      ),
+      /missing-capability/u,
+    );
+    assert.equal(state.isRegistered(), false);
   } finally {
     follower.stop();
     await server.stop();
@@ -1398,6 +1944,51 @@ test("Bus follower registration runtime reports rejected heartbeat with active c
   }
 });
 
+test("Bus follower registration runtime owns one in-flight heartbeat", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-heartbeat-gate-"));
+  const socketPath = join(dir, "bus.sock");
+  let heartbeatCalls = 0;
+  let releaseBlockedHeartbeat: (() => void) | undefined;
+  const blockedHeartbeat = new Promise<void>((resolve) => {
+    releaseBlockedHeartbeat = resolve;
+  });
+  const server = createTelegramBusLocalServer({
+    socketPath,
+    async handleEnvelope(envelope) {
+      if (envelope.kind === "follower.register") {
+        return { kind: "bus.ack", requestId: envelope.requestId, ok: true };
+      }
+      heartbeatCalls += 1;
+      if (heartbeatCalls > 1) await blockedHeartbeat;
+      return { kind: "bus.ack", requestId: envelope.requestId, ok: true };
+    },
+  });
+  let requestSequence = 0;
+  const follower = createTelegramBusFollowerRegistrationRuntime({
+    instanceId: "inst-a",
+    createRequestId: () => `inst-a:${++requestSequence}`,
+    registrationState: createTelegramBusFollowerRegistrationState(),
+    heartbeatMs: 5,
+  });
+  try {
+    await server.start();
+    await follower.registerWithLeader(
+      { cwd: "/repo" },
+      { busSocketPath: socketPath },
+    );
+    await waitForCondition(() => heartbeatCalls === 2, 100);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.equal(heartbeatCalls, 2);
+    follower.stop();
+    releaseBlockedHeartbeat?.();
+  } finally {
+    follower.stop();
+    releaseBlockedHeartbeat?.();
+    await server.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("Bus follower registration runtime heartbeats until stopped", async () => {
   const dir = mkdtempSync(
     join(tmpdir(), "pi-telegram-bus-follower-heartbeat-"),
@@ -1510,6 +2101,166 @@ test("Bus follower registration runtime derives leader socket when lock omits it
   }
 });
 
+test("Bus follower queue handoff client rejects a mismatched staged receipt", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-queue-handoff-mismatch-"));
+  const socketPath = join(dir, "leader.sock");
+  const server = createTelegramBusLocalServer({
+    socketPath,
+    handleEnvelope: (envelope) => ({
+      kind: "bus.ack",
+      requestId: envelope.requestId,
+      ok: true,
+      result: { status: "staged", receiptId: "wrong", sourceUpdateIds: [1] },
+    }),
+  });
+  const client = createTelegramBusFollowerQueueHandoffClient({
+    socketPath,
+    instanceId: "donor",
+    createRequestId: () => "handoff:mismatch",
+    getRegistrationGeneration: () => "donor-generation",
+  });
+  try {
+    await server.start();
+    await assert.rejects(
+      client({
+        recipientInstanceId: "recipient",
+        recipientRegistrationGeneration: "recipient-generation",
+        donorProcessId: 101,
+        donorProcessBirthId: "101:start:donor",
+        donorSessionGeneration: 1,
+        donorAcquisitionId: "donor-acquisition",
+        donorAcquiredAtMs: 1000,
+        handoffToken: "x".repeat(32),
+        payload: {
+          kind: "prompt",
+          chatId: 7,
+          replyToMessageId: 10,
+          queueOrder: 1,
+          queueLane: "default",
+          laneOrder: 1,
+          statusSummary: "handoff",
+          admissionReceipts: [
+            { queueKind: "prompt", receiptId: "receipt-1", sourceUpdateIds: [1] },
+          ],
+          sourceMessageIds: [10],
+          queuedAttachments: [],
+          content: [{ type: "text", text: "handoff prompt" }],
+          historyText: "handoff",
+        },
+      }),
+      /queue handoff was rejected/u,
+    );
+  } finally {
+    await server.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Bus follower queue handoff client requires an exact staged acknowledgement", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-queue-handoff-client-"));
+  const socketPath = join(dir, "leader.sock");
+  const received: unknown[] = [];
+  const server = createTelegramBusLocalServer({
+    socketPath,
+    handleEnvelope(envelope) {
+      received.push(envelope);
+      return {
+        kind: "bus.ack",
+        requestId: envelope.requestId,
+        ok: true,
+        result: {
+          status: "staged",
+          receiptId: "receipt-1",
+          sourceUpdateIds: [1],
+          queueOwner: {
+            instanceId: "recipient",
+            processId: 202,
+            processBirthId: "202:start:recipient",
+            sessionGeneration: 2,
+            acquisitionId: "recipient-acquisition",
+            acquiredAtMs: 2_000,
+          },
+        },
+      };
+    },
+  });
+  const client = createTelegramBusFollowerQueueHandoffClient({
+    socketPath,
+    instanceId: "donor",
+    createRequestId: () => "handoff:1",
+    getAuthSecret: () => "secret",
+    getRegistrationGeneration: () => "donor-generation",
+    getNowMs: () => 2000,
+  });
+  const payload = {
+    kind: "prompt" as const,
+    chatId: 7,
+    replyToMessageId: 10,
+    queueOrder: 1,
+    queueLane: "default" as const,
+    laneOrder: 1,
+    statusSummary: "handoff",
+    admissionReceipts: [
+      { queueKind: "prompt" as const, receiptId: "receipt-1", sourceUpdateIds: [1] },
+    ],
+    sourceMessageIds: [10],
+    queuedAttachments: [],
+    content: [{ type: "text" as const, text: "handoff prompt" }],
+    historyText: "handoff",
+  };
+  try {
+    await server.start();
+    assert.deepEqual(
+      await client({
+        recipientInstanceId: "recipient",
+        recipientRegistrationGeneration: "recipient-generation",
+        donorProcessId: 101,
+        donorProcessBirthId: "101:start:donor",
+        donorSessionGeneration: 1,
+        donorAcquisitionId: "donor-acquisition",
+        donorAcquiredAtMs: 1000,
+        handoffToken: "x".repeat(32),
+        payload,
+      }),
+      {
+        status: "staged",
+        receiptId: "receipt-1",
+        sourceUpdateIds: [1],
+        queueOwner: {
+          instanceId: "recipient",
+          processId: 202,
+          processBirthId: "202:start:recipient",
+          sessionGeneration: 2,
+          acquisitionId: "recipient-acquisition",
+          acquiredAtMs: 2_000,
+        },
+      },
+    );
+    assert.deepEqual(received, [
+      {
+        kind: "follower.offerQueueHandoff",
+        requestId: "handoff:1",
+        auth: "secret",
+        instanceId: "donor",
+        registrationGeneration: "donor-generation",
+        recipientInstanceId: "recipient",
+        recipientRegistrationGeneration: "recipient-generation",
+        donorProcessId: 101,
+        donorProcessBirthId: "101:start:donor",
+        donorSessionGeneration: 1,
+        donorAcquisitionId: "donor-acquisition",
+        donorAcquiredAtMs: 1000,
+        handoffToken: "x".repeat(32),
+        payload,
+        sentAtMs: 2000,
+      },
+    ]);
+  } finally {
+    await server.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("Bus follower API caller sends method calls and returns leader results", async () => {
   const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-api-caller-"));
   const socketPath = join(dir, "bus.sock");
@@ -1530,6 +2281,7 @@ test("Bus follower API caller sends method calls and returns leader results", as
     socketPath,
     instanceId: "inst-a",
     createRequestId: () => "inst-a:1",
+    getRegistrationGeneration: () => "generation-a",
     getNowMs: () => 7000,
   });
   try {
@@ -1542,6 +2294,7 @@ test("Bus follower API caller sends method calls and returns leader results", as
         kind: "follower.callApi",
         requestId: "inst-a:1",
         instanceId: "inst-a",
+        registrationGeneration: "generation-a",
         method: "sendRichMessage",
         args: [{ chat_id: 1 }],
         sentAtMs: 7000,
@@ -1570,6 +2323,7 @@ test("Bus follower API caller preserves structured commit-unknown errors", async
     socketPath,
     instanceId: "inst-a",
     createRequestId: () => "inst-a:ambiguous:1",
+    getRegistrationGeneration: () => "generation-a",
   });
   try {
     await server.start();
@@ -1604,7 +2358,8 @@ test("Bus follower API caller classifies non-idempotent acknowledgement loss as 
     socketPath,
     instanceId: "inst-a",
     createRequestId: () => "inst-a:ack-loss:1",
-    timeoutMs: 10,
+    getRegistrationGeneration: () => "generation-a",
+    timeoutMs: 100,
   });
   try {
     await server.start();
@@ -1856,6 +2611,95 @@ test("Bus follower session refresh re-registers with the handed-off target", asy
   ]);
 });
 
+test("follower client runtime exposes authenticated queue handoff transport", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-follower-client-handoff-"));
+  const socketPath = join(dir, "bus.sock");
+  const received: unknown[] = [];
+  const server = createTelegramBusLocalServer({
+    socketPath,
+    handleEnvelope: (envelope) => {
+      received.push(envelope);
+      return {
+        kind: "bus.ack",
+        requestId: envelope.requestId,
+        ok: true,
+        result: {
+          status: "staged",
+          receiptId: "receipt-1",
+          sourceUpdateIds: [1],
+          queueOwner: {
+            instanceId: "recipient",
+            processId: 202,
+            processBirthId: "202:start:recipient",
+            sessionGeneration: 2,
+            acquisitionId: "recipient-acquisition",
+            acquiredAtMs: 2_000,
+          },
+        },
+      };
+    },
+  });
+  const client = createTelegramBusFollowerClientRuntime<
+    { cwd: string },
+    unknown,
+    unknown,
+    unknown
+  >({
+    socketPath,
+    instanceId: "donor",
+    getApiAuthSecret: () => "secret",
+    getRegistrationGeneration: () => "donor-generation",
+  });
+  try {
+    await server.start();
+    assert.deepEqual(
+      await client.queueHandoff({
+        recipientInstanceId: "recipient",
+        recipientRegistrationGeneration: "recipient-generation",
+        donorProcessId: 101,
+        donorProcessBirthId: "101:start:donor",
+        donorSessionGeneration: 1,
+        donorAcquisitionId: "donor-acquisition",
+        donorAcquiredAtMs: 1000,
+        handoffToken: "x".repeat(32),
+        payload: {
+          kind: "prompt",
+          chatId: 7,
+          replyToMessageId: 10,
+          queueOrder: 1,
+          queueLane: "default",
+          laneOrder: 1,
+          statusSummary: "handoff",
+          admissionReceipts: [
+            { queueKind: "prompt", receiptId: "receipt-1", sourceUpdateIds: [1] },
+          ],
+          sourceMessageIds: [10],
+          queuedAttachments: [],
+          content: [{ type: "text", text: "handoff prompt" }],
+          historyText: "handoff",
+        },
+      }),
+      {
+        status: "staged",
+        receiptId: "receipt-1",
+        sourceUpdateIds: [1],
+        queueOwner: {
+          instanceId: "recipient",
+          processId: 202,
+          processBirthId: "202:start:recipient",
+          sessionGeneration: 2,
+          acquisitionId: "recipient-acquisition",
+          acquiredAtMs: 2_000,
+        },
+      },
+    );
+    assert.equal((received[0] as { auth?: string }).auth, "secret");
+  } finally {
+    await server.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("follower client defaults the forwarding timeout to the 30s bus window", async () => {
   const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-follower-timeout-"));
   const socketPath = join(dir, "bus.sock");
@@ -1863,7 +2707,18 @@ test("follower client defaults the forwarding timeout to the 30s bus window", as
     socketPath,
     handleEnvelope: async (envelope) => {
       await new Promise((resolve) => setTimeout(resolve, 1_500));
-      return { kind: "bus.ack", requestId: envelope.requestId, ok: true };
+      return {
+        kind: "bus.ack",
+        requestId: envelope.requestId,
+        ok: true,
+        result:
+          "delivery" in envelope && envelope.delivery
+            ? {
+                deliveryId: envelope.delivery.deliveryId,
+                sourceUpdateId: envelope.delivery.sourceUpdateId,
+              }
+            : undefined,
+      };
     },
   });
   const client = createTelegramBusFollowerClientRuntime<
@@ -1874,15 +2729,31 @@ test("follower client defaults the forwarding timeout to the 30s bus window", as
   >({
     socketPath,
     instanceId: "inst-a",
+    getRegistrationGeneration: () => "generation-a",
   });
   try {
     await server.start();
-    const accepted = await client.foreignOwnedUpdateForwarder.forwardMessage({
-      message: { message_id: 1, chat: { id: 7, type: "supergroup" } },
-      ownership: { instanceId: "inst-a" },
+    const settlement = await client.foreignOwnedUpdateForwarder.forwardMessage({
+      message: {
+        message_id: 1,
+        chat: { id: 7, type: "supergroup" },
+        pi_telegram_source_update_id: 44,
+      },
+      ownership: {
+        instanceId: "inst-a",
+        ownerGeneration: "generation-a",
+        recipientBindingKey: "manual:owner-a",
+      },
       ctx: { cwd: "/repo" },
     });
-    assert.equal(accepted, true);
+    assert.deepEqual(settlement, {
+      status: "accepted",
+      delivery: createTelegramBusFollowerDeliveryIdentity({
+        kind: "leader.forwardMessage",
+        recipientBindingKey: "manual:owner-a",
+        sourceUpdateId: 44,
+      }),
+    });
   } finally {
     await server.stop();
     rmSync(dir, { recursive: true, force: true });

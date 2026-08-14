@@ -16,6 +16,9 @@ import * as Threads from "./threads.ts";
 import {
   createTelegramBusLocalServer,
   createUnauthorizedBusAck,
+  getTelegramBusEnvelopeTrafficClass,
+  getTelegramBusProtocolCompatibility,
+  hasTelegramBusCapability,
   isTelegramBusEnvelopeAuthorized,
   getTelegramBusFollowerSocketPath,
   sendTelegramBusLocalEnvelope,
@@ -24,13 +27,32 @@ import {
   type TelegramBusFollowerRegistry,
   type TelegramBusFollowerView,
   type TelegramBusInstanceRegistration,
+  type TelegramBusProtocolIdentity,
   type TelegramBusSocketPathSource,
+  TELEGRAM_BUS_CAPABILITY_DURABLE_FOLLOWER_ADMISSION,
+  TELEGRAM_BUS_CAPABILITY_QUEUE_HANDOFF,
 } from "./bus.ts";
 import { getTelegramBusTransportRetryPolicy } from "./bus-transport.ts";
+import type { TelegramQueueHandoffPayload } from "./queue.ts";
 
 export interface TelegramBusLeaderRuntime<TContext> {
   startPolling: (ctx: TContext) => Promise<void>;
   stopPolling: () => Promise<void>;
+  routeQueueHandoff: (input: {
+    requestId: string;
+    auth?: string;
+    recipientInstanceId: string;
+    recipientRegistrationGeneration: string;
+    donorInstanceId: string;
+    donorProcessId: number;
+    donorProcessBirthId: string;
+    donorSessionGeneration: number;
+    donorAcquisitionId: string;
+    donorAcquiredAtMs: number;
+    handoffToken: string;
+    payload: TelegramQueueHandoffPayload;
+    sentAtMs: number;
+  }) => Promise<TelegramBusEnvelope>;
 }
 
 export interface TelegramBusFollowerLifecycleAnnouncement {
@@ -249,6 +271,7 @@ export interface TelegramBusLeaderRuntimeDeps<TContext> {
   commitEndpointPublication?: (commit: () => void) => boolean;
   followerRegistry: TelegramBusFollowerRegistry;
   authSecret?: string;
+  protocolIdentity: TelegramBusProtocolIdentity;
   startPolling: (ctx: TContext) => void | Promise<void>;
   stopPolling: () => void | Promise<void>;
   callApi?: (method: string, args: unknown[]) => Promise<unknown> | unknown;
@@ -272,12 +295,20 @@ export interface TelegramBusLeaderRuntimeDeps<TContext> {
       { kind: "follower.routeAgentMessage" }
     >["message"],
   ) => Promise<void> | void;
+  routeQueueHandoff?: (
+    follower: TelegramBusFollowerView,
+    envelope: Extract<
+      TelegramBusEnvelope,
+      { kind: "follower.offerQueueHandoff" }
+    >,
+  ) => Promise<unknown> | unknown;
   provisionFollowerTarget?: (
     registration: TelegramBusInstanceRegistration,
   ) => Promise<TelegramTarget | undefined> | TelegramTarget | undefined;
   getCurrentLeaderEpoch?: () => number | string | undefined;
   provisionLeaderTarget?: (ctx: TContext) => Promise<void> | void;
   getNowMs?: () => number;
+  timeoutMs?: number;
   followerPruneIntervalMs?: number;
   followerStaleAfterMs?: number;
   isFollowerProcessAlive?: (pid: number) => boolean;
@@ -312,9 +343,16 @@ const TELEGRAM_BUS_SLOW_FOLLOWER_REGISTRATION_MS = 1000;
 
 function scheduleTelegramBusLeaderBackgroundTask(
   task: () => Promise<void>,
+  onError: (error: unknown) => void,
 ): void {
   const timer = setTimeout(() => {
-    void task();
+    void task().catch((error) => {
+      try {
+        onError(error);
+      } catch {
+        // Background diagnostics cannot create an unhandled timer rejection.
+      }
+    });
   }, 0);
   timer.unref?.();
 }
@@ -721,6 +759,11 @@ export function createTelegramBusFollowerTargetProvisioner(
           target: result.target,
           reused: result.reused,
         });
+      }, (error) => {
+        deps.recordRuntimeEvent("bus", error, {
+          phase: "follower-register-background-owner",
+          instanceId: registration.instanceId,
+        });
       });
       return {
         ...result.target,
@@ -1044,6 +1087,7 @@ function createTelegramBusFollowerMutationRunner(): TelegramBusFollowerMutationR
 export function createTelegramBusLeaderEnvelopeHandler(deps: {
   followerRegistry: TelegramBusFollowerRegistry;
   authSecret?: string;
+  protocolIdentity: TelegramBusProtocolIdentity;
   getNowMs?: () => number;
   timeoutMs?: number;
   callApi?: (method: string, args: unknown[]) => Promise<unknown> | unknown;
@@ -1067,6 +1111,13 @@ export function createTelegramBusLeaderEnvelopeHandler(deps: {
       { kind: "follower.routeAgentMessage" }
     >["message"],
   ) => Promise<void> | void;
+  routeQueueHandoff?: (
+    follower: TelegramBusFollowerView,
+    envelope: Extract<
+      TelegramBusEnvelope,
+      { kind: "follower.offerQueueHandoff" }
+    >,
+  ) => Promise<unknown> | unknown;
   provisionFollowerTarget?: (
     registration: TelegramBusInstanceRegistration,
   ) =>
@@ -1107,7 +1158,7 @@ export function createTelegramBusLeaderEnvelopeHandler(deps: {
       };
     }
     if (
-      follower.registrationGeneration &&
+      !follower.registrationGeneration ||
       envelope.registrationGeneration !== follower.registrationGeneration
     ) {
       return {
@@ -1148,6 +1199,130 @@ export function createTelegramBusLeaderEnvelopeHandler(deps: {
     await deps.routeAgentMessage(follower, envelope.message);
     return { kind: "bus.ack", requestId: envelope.requestId, ok: true };
   };
+  const routeQueueHandoff = async (
+    envelope: Extract<
+      TelegramBusEnvelope,
+      { kind: "follower.offerQueueHandoff" }
+    >,
+  ): Promise<TelegramBusEnvelope> => {
+    const donor = deps.followerRegistry.get(envelope.instanceId);
+    if (!donor) {
+      return {
+        kind: "bus.ack",
+        requestId: envelope.requestId,
+        ok: false,
+        message: "Unknown Telegram bus follower instance.",
+      };
+    }
+    if (
+      !donor.registrationGeneration ||
+      envelope.registrationGeneration !== donor.registrationGeneration
+    ) {
+      return {
+        kind: "bus.ack",
+        requestId: envelope.requestId,
+        ok: false,
+        message: "Stale Telegram bus follower registration generation.",
+      };
+    }
+    const recipient = deps.followerRegistry.get(envelope.recipientInstanceId);
+    if (
+      !hasTelegramBusCapability(
+        deps.protocolIdentity,
+        TELEGRAM_BUS_CAPABILITY_QUEUE_HANDOFF,
+      ) ||
+      !hasTelegramBusCapability(
+        donor.protocol,
+        TELEGRAM_BUS_CAPABILITY_QUEUE_HANDOFF,
+      ) ||
+      !hasTelegramBusCapability(
+        recipient?.protocol,
+        TELEGRAM_BUS_CAPABILITY_QUEUE_HANDOFF,
+      )
+    ) {
+      return {
+        kind: "bus.ack",
+        requestId: envelope.requestId,
+        ok: false,
+        message: "Telegram queue handoff capability was not negotiated.",
+      };
+    }
+    if (
+      !recipient?.registrationGeneration ||
+      envelope.recipientRegistrationGeneration !==
+        recipient.registrationGeneration
+    ) {
+      return {
+        kind: "bus.ack",
+        requestId: envelope.requestId,
+        ok: false,
+        message: "Stale Telegram queue handoff recipient registration generation.",
+      };
+    }
+    if (donor.instanceId === recipient.instanceId) {
+      return {
+        kind: "bus.ack",
+        requestId: envelope.requestId,
+        ok: false,
+        message: "Telegram queue handoff recipient must be another runtime.",
+      };
+    }
+    if (deps.routeQueueHandoff) {
+      const result = await deps.routeQueueHandoff(donor, envelope);
+      return {
+        kind: "bus.ack",
+        requestId: envelope.requestId,
+        ok: true,
+        ...(result !== undefined ? { result } : {}),
+      };
+    }
+    const recipientSocketPath =
+      recipient.busSocketPath ??
+      getTelegramBusFollowerSocketPath(recipient.instanceId);
+    const response = await sendTelegramBusLocalEnvelope({
+      socketPath: recipientSocketPath,
+      timeoutMs: deps.timeoutMs,
+      retry: getTelegramBusTransportRetryPolicy({
+        endpoint: recipientSocketPath,
+        operation: "operation",
+      }),
+      envelope: {
+        kind: "leader.offerQueueHandoff",
+        requestId: envelope.requestId,
+        auth: envelope.auth,
+        recipientInstanceId: recipient.instanceId,
+        recipientRegistrationGeneration: recipient.registrationGeneration,
+        donorInstanceId: donor.instanceId,
+        donorProcessId: envelope.donorProcessId,
+        donorProcessBirthId: envelope.donorProcessBirthId,
+        donorSessionGeneration: envelope.donorSessionGeneration,
+        donorAcquisitionId: envelope.donorAcquisitionId,
+        donorAcquiredAtMs: envelope.donorAcquiredAtMs,
+        handoffToken: envelope.handoffToken,
+        payload: envelope.payload,
+        sentAtMs: envelope.sentAtMs,
+      },
+    });
+    if (response?.kind === "bus.ack" && response.ok) {
+      deps.followerRegistry.heartbeat(donor.instanceId, getNowMs());
+      deps.followerRegistry.heartbeat(recipient.instanceId, getNowMs());
+      return {
+        kind: "bus.ack",
+        requestId: envelope.requestId,
+        ok: true,
+        ...(response.result !== undefined ? { result: response.result } : {}),
+      };
+    }
+    return {
+      kind: "bus.ack",
+      requestId: envelope.requestId,
+      ok: false,
+      message:
+        response?.kind === "bus.ack"
+          ? response.message
+          : "Telegram queue handoff recipient did not acknowledge staging.",
+    };
+  };
   const forwardToFollower = async (
     envelope: Extract<
       TelegramBusEnvelope,
@@ -1161,11 +1336,30 @@ export function createTelegramBusLeaderEnvelopeHandler(deps: {
     >,
   ): Promise<TelegramBusEnvelope> => {
     const follower = deps.followerRegistry.get(envelope.recipientInstanceId);
+    if (!follower) {
+      return {
+        kind: "bus.ack",
+        requestId: envelope.requestId,
+        ok: false,
+        message: "Unknown Telegram bus follower instance.",
+      };
+    }
+    if (
+      !follower.registrationGeneration ||
+      envelope.recipientRegistrationGeneration !==
+        follower.registrationGeneration
+    ) {
+      return {
+        kind: "bus.ack",
+        requestId: envelope.requestId,
+        ok: false,
+        message: "Stale Telegram bus follower registration generation.",
+      };
+    }
     const followerSocketPath =
-      follower?.busSocketPath ??
+      follower.busSocketPath ??
       getTelegramBusFollowerSocketPath(envelope.recipientInstanceId);
-    if (follower)
-      deps.followerRegistry.heartbeat(follower.instanceId, getNowMs());
+    deps.followerRegistry.heartbeat(follower.instanceId, getNowMs());
     try {
       const response = await sendTelegramBusLocalEnvelope({
         socketPath: followerSocketPath,
@@ -1177,9 +1371,13 @@ export function createTelegramBusLeaderEnvelopeHandler(deps: {
         }),
       });
       if (response?.kind === "bus.ack" && response.ok) {
-        if (follower)
-          deps.followerRegistry.heartbeat(follower.instanceId, getNowMs());
-        return { kind: "bus.ack", requestId: envelope.requestId, ok: true };
+        deps.followerRegistry.heartbeat(follower.instanceId, getNowMs());
+        return {
+          kind: "bus.ack",
+          requestId: envelope.requestId,
+          ok: true,
+          ...(response.result !== undefined ? { result: response.result } : {}),
+        };
       }
       const message =
         response?.kind === "bus.ack" ? response.message : undefined;
@@ -1202,14 +1400,34 @@ export function createTelegramBusLeaderEnvelopeHandler(deps: {
     }
   };
   return async (envelope) => {
-    if (
-      envelope.kind !== "bus.ack" &&
-      !isTelegramBusEnvelopeAuthorized(envelope, deps.authSecret)
-    ) {
+    const trafficClass = getTelegramBusEnvelopeTrafficClass(envelope);
+    if (trafficClass === "response") {
+      return {
+        kind: "bus.ack",
+        requestId: envelope.requestId,
+        ok: false,
+        message: "Telegram bus response envelope cannot be used as a request.",
+      };
+    }
+    if (!isTelegramBusEnvelopeAuthorized(envelope, deps.authSecret)) {
       return createUnauthorizedBusAck(envelope.requestId);
     }
     switch (envelope.kind) {
       case "follower.register": {
+        const compatibility = getTelegramBusProtocolCompatibility({
+          local: deps.protocolIdentity,
+          remote: envelope.registration.protocol,
+        });
+        if (!compatibility.compatible) {
+          return {
+            kind: "bus.ack" as const,
+            requestId: envelope.requestId,
+            ok: false,
+            protocol: deps.protocolIdentity,
+            error: { code: "incompatible-protocol" as const },
+            message: `Incompatible Telegram bus protocol: ${compatibility.reason}.`,
+          };
+        }
         return runFollowerMutation(envelope.registration, async () => {
           try {
             if (!envelope.registration.registrationGeneration) {
@@ -1253,6 +1471,7 @@ export function createTelegramBusLeaderEnvelopeHandler(deps: {
               kind: "bus.ack" as const,
               requestId: envelope.requestId,
               ok: true,
+              protocol: deps.protocolIdentity,
               ...(registeredTarget ? { result: registeredTarget } : {}),
             };
           } catch (error) {
@@ -1260,6 +1479,7 @@ export function createTelegramBusLeaderEnvelopeHandler(deps: {
               kind: "bus.ack" as const,
               requestId: envelope.requestId,
               ok: false,
+              protocol: deps.protocolIdentity,
               message:
                 error instanceof Error
                   ? error.message
@@ -1269,6 +1489,8 @@ export function createTelegramBusLeaderEnvelopeHandler(deps: {
           },
         );
       }
+      case "follower.offerQueueHandoff":
+        return routeQueueHandoff(envelope);
       case "follower.disconnect": {
         const registeredFollower = deps.followerRegistry.get(envelope.instanceId);
         return runFollowerMutation(
@@ -1318,8 +1540,16 @@ export function createTelegramBusLeaderEnvelopeHandler(deps: {
       }
       case "follower.heartbeat": {
         const current = deps.followerRegistry.get(envelope.instanceId);
+        if (!current) {
+          return {
+            kind: "bus.ack",
+            requestId: envelope.requestId,
+            ok: false,
+            message: "Unknown Telegram bus follower instance.",
+          };
+        }
         if (
-          current?.registrationGeneration &&
+          !current.registrationGeneration ||
           envelope.registrationGeneration !== current.registrationGeneration
         ) {
           return {
@@ -1341,6 +1571,15 @@ export function createTelegramBusLeaderEnvelopeHandler(deps: {
               result: {
                 eligibleElectionSlots: deps.followerRegistry
                   .list()
+                  .filter(
+                    (candidate) =>
+                      !deps.protocolIdentity.capabilities.includes(
+                        TELEGRAM_BUS_CAPABILITY_DURABLE_FOLLOWER_ADMISSION,
+                      ) ||
+                      candidate.protocol?.capabilities.includes(
+                        TELEGRAM_BUS_CAPABILITY_DURABLE_FOLLOWER_ADMISSION,
+                      ),
+                  )
                   .map((candidate) => candidate.slot)
                   .filter((slot): slot is string =>
                     typeof slot === "string" && /^[A-Z]$/.test(slot),
@@ -1468,7 +1707,7 @@ async function handleFollowerApiCall(
     };
   }
   if (
-    follower.registrationGeneration &&
+    !follower.registrationGeneration ||
     envelope.registrationGeneration !== follower.registrationGeneration
   ) {
     return {
@@ -1602,19 +1841,34 @@ export function createTelegramBusLeaderRuntime<TContext>(
   const followerStaleAfterMs = deps.followerStaleAfterMs ?? 5000;
   const runFollowerMutation = createTelegramBusFollowerMutationRunner();
   let pruneInterval: ReturnType<typeof setInterval> | undefined;
+  let pruneGeneration = 0;
+  let prunePromise: Promise<void> | undefined;
   const stopPruning = () => {
-    if (!pruneInterval) return;
-    clearInterval(pruneInterval);
+    pruneGeneration += 1;
+    if (pruneInterval) clearInterval(pruneInterval);
     pruneInterval = undefined;
+    prunePromise = undefined;
   };
-  const pruneFollowers = async () => {
+  const recordPruneEvent = (
+    error: unknown,
+    details: Record<string, unknown>,
+  ): void => {
+    try {
+      deps.recordRuntimeEvent?.("bus", error, details);
+    } catch {
+      // Prune diagnostics cannot replace lifecycle-owned reconciliation.
+    }
+  };
+  const pruneFollowers = async (expectedGeneration: number) => {
+    const isCurrent = (): boolean => pruneGeneration === expectedGeneration;
     try {
       await localServer.ensureEndpoint();
     } catch (error) {
-      deps.recordRuntimeEvent?.("bus", error, {
+      recordPruneEvent(error, {
         phase: "leader-endpoint-recovery",
       });
     }
+    if (!isCurrent()) return;
     const removed = deps.followerRegistry.pruneStale(
       getNowMs(),
       followerStaleAfterMs,
@@ -1625,7 +1879,7 @@ export function createTelegramBusLeaderRuntime<TContext>(
         try {
           processConfirmedDead = !deps.isFollowerProcessAlive(follower.pid);
         } catch (error) {
-          deps.recordRuntimeEvent?.("bus", error, {
+          recordPruneEvent(error, {
             phase: "follower-process-liveness",
             instanceId: follower.instanceId,
             pid: follower.pid,
@@ -1633,8 +1887,7 @@ export function createTelegramBusLeaderRuntime<TContext>(
         }
       }
       if (!processConfirmedDead) {
-        deps.recordRuntimeEvent?.(
-          "bus",
+        recordPruneEvent(
           "Telegram bus follower heartbeat stale; preserving thread binding",
           {
             phase: "follower-pruned",
@@ -1652,15 +1905,15 @@ export function createTelegramBusLeaderRuntime<TContext>(
         cleanupEnabled =
           (await deps.shouldCleanupConfirmedDeadFollower?.()) ?? false;
       } catch (error) {
-        deps.recordRuntimeEvent?.("bus", error, {
+        recordPruneEvent(error, {
           phase: "follower-confirmed-dead-cleanup-policy",
           instanceId: follower.instanceId,
           pid: follower.pid,
         });
       }
+      if (!isCurrent()) return;
       if (!cleanupEnabled || !deps.onFollowerConfirmedDead) {
-        deps.recordRuntimeEvent?.(
-          "bus",
+        recordPruneEvent(
           "Telegram bus follower process confirmed dead; preserving thread binding",
           {
             phase: "follower-confirmed-dead-preserved",
@@ -1673,14 +1926,14 @@ export function createTelegramBusLeaderRuntime<TContext>(
       }
       try {
         await runFollowerMutation(follower, async () => {
+          if (!isCurrent()) return;
           const replacement = deps.followerRegistry.list().find((candidate) =>
             follower.profileKey
               ? candidate.profileKey === follower.profileKey
               : candidate.instanceId === follower.instanceId,
           );
           if (replacement) {
-            deps.recordRuntimeEvent?.(
-              "bus",
+            recordPruneEvent(
               "Telegram bus follower replaced before confirmed-dead cleanup; preserving thread binding",
               {
                 phase: "follower-confirmed-dead-replaced",
@@ -1693,7 +1946,7 @@ export function createTelegramBusLeaderRuntime<TContext>(
           await deps.onFollowerConfirmedDead!(follower);
         });
       } catch (error) {
-        deps.recordRuntimeEvent?.("bus", error, {
+        recordPruneEvent(error, {
           phase: "follower-confirmed-dead-cleanup",
           instanceId: follower.instanceId,
           pid: follower.pid,
@@ -1703,12 +1956,123 @@ export function createTelegramBusLeaderRuntime<TContext>(
       }
     }
   };
+  const requestPrune = (): Promise<void> => {
+    if (prunePromise) return prunePromise;
+    const expectedGeneration = pruneGeneration;
+    let tracked: Promise<void>;
+    tracked = pruneFollowers(expectedGeneration)
+      .catch((error) => {
+        if (pruneGeneration === expectedGeneration) {
+          recordPruneEvent(error, { phase: "follower-prune-owner" });
+        }
+      })
+      .finally(() => {
+        if (prunePromise === tracked) prunePromise = undefined;
+      });
+    prunePromise = tracked;
+    return tracked;
+  };
   const startPruning = () => {
     stopPruning();
     pruneInterval = setInterval(() => {
-      void pruneFollowers();
+      void requestPrune();
     }, followerPruneIntervalMs);
     pruneInterval.unref?.();
+  };
+  const handleEnvelope = createTelegramBusLeaderEnvelopeHandler({
+    followerRegistry: deps.followerRegistry,
+    authSecret: deps.authSecret,
+    protocolIdentity: deps.protocolIdentity,
+    getNowMs,
+    callApi: deps.callApi,
+    authorizeFollowerApiCall: deps.authorizeFollowerApiCall,
+    recordFollowerMessageOwnership: deps.recordFollowerMessageOwnership,
+    resolveAgentTarget: deps.resolveAgentTarget,
+    routeAgentMessage: deps.routeAgentMessage,
+    routeQueueHandoff: deps.routeQueueHandoff,
+    provisionFollowerTarget: deps.provisionFollowerTarget,
+    onFollowerDisconnected: deps.onFollowerDisconnected,
+    getCurrentLeaderEpoch: deps.getCurrentLeaderEpoch,
+    runFollowerMutation,
+  });
+  const routeQueueHandoffEnvelope = async (
+    input: Parameters<TelegramBusLeaderRuntime<TContext>["routeQueueHandoff"]>[0],
+  ): Promise<TelegramBusEnvelope> => {
+    const recipient = deps.followerRegistry.get(input.recipientInstanceId);
+    if (
+      !hasTelegramBusCapability(
+        deps.protocolIdentity,
+        TELEGRAM_BUS_CAPABILITY_QUEUE_HANDOFF,
+      ) ||
+      !hasTelegramBusCapability(
+        recipient?.protocol,
+        TELEGRAM_BUS_CAPABILITY_QUEUE_HANDOFF,
+      )
+    ) {
+      return {
+        kind: "bus.ack",
+        requestId: input.requestId,
+        ok: false,
+        message: "Telegram queue handoff capability was not negotiated.",
+      };
+    }
+    if (
+      !recipient?.registrationGeneration ||
+      input.recipientRegistrationGeneration !==
+        recipient.registrationGeneration
+    ) {
+      return {
+        kind: "bus.ack",
+        requestId: input.requestId,
+        ok: false,
+        message: "Stale Telegram queue handoff recipient registration generation.",
+      };
+    }
+    const recipientSocketPath =
+      recipient.busSocketPath ??
+      getTelegramBusFollowerSocketPath(recipient.instanceId);
+    const response = await sendTelegramBusLocalEnvelope({
+      socketPath: recipientSocketPath,
+      timeoutMs: deps.timeoutMs,
+      retry: getTelegramBusTransportRetryPolicy({
+        endpoint: recipientSocketPath,
+        operation: "operation",
+      }),
+      envelope: {
+        kind: "leader.offerQueueHandoff",
+        requestId: input.requestId,
+        auth: input.auth,
+        recipientInstanceId: recipient.instanceId,
+        recipientRegistrationGeneration: recipient.registrationGeneration,
+        donorInstanceId: input.donorInstanceId,
+        donorProcessId: input.donorProcessId,
+        donorProcessBirthId: input.donorProcessBirthId,
+        donorSessionGeneration: input.donorSessionGeneration,
+        donorAcquisitionId: input.donorAcquisitionId,
+        donorAcquiredAtMs: input.donorAcquiredAtMs,
+        handoffToken: input.handoffToken,
+        payload: input.payload,
+        sentAtMs: input.sentAtMs,
+      },
+    });
+    if (response?.kind === "bus.ack" && response.ok) {
+      deps.followerRegistry.heartbeat(recipient.instanceId, getNowMs());
+      return {
+        kind: "bus.ack",
+        requestId: input.requestId,
+        ok: true,
+        ...(response.result !== undefined ? { result: response.result } : {}),
+      };
+    }
+    return {
+      kind: "bus.ack",
+      requestId: input.requestId,
+      ok: false,
+      message:
+        response?.kind === "bus.ack"
+          ? response.message
+          : "Telegram queue handoff recipient did not acknowledge staging.",
+    };
   };
   const localServer = createTelegramBusLocalServer({
     socketPath: deps.socketPath,
@@ -1719,22 +2083,11 @@ export function createTelegramBusLeaderRuntime<TContext>(
         ...details,
       });
     },
-    handleEnvelope: createTelegramBusLeaderEnvelopeHandler({
-      followerRegistry: deps.followerRegistry,
-      authSecret: deps.authSecret,
-      getNowMs,
-      callApi: deps.callApi,
-      authorizeFollowerApiCall: deps.authorizeFollowerApiCall,
-      recordFollowerMessageOwnership: deps.recordFollowerMessageOwnership,
-      resolveAgentTarget: deps.resolveAgentTarget,
-      routeAgentMessage: deps.routeAgentMessage,
-      provisionFollowerTarget: deps.provisionFollowerTarget,
-      onFollowerDisconnected: deps.onFollowerDisconnected,
-      getCurrentLeaderEpoch: deps.getCurrentLeaderEpoch,
-      runFollowerMutation,
-    }),
+    handleEnvelope,
   });
   return {
+    routeQueueHandoff: (envelope) =>
+      routeQueueHandoffEnvelope(envelope),
     startPolling: async (ctx) => {
       // Replay durable cleanup before publishing the follower endpoint so a
       // replacement registration cannot reclaim a target while it is deleted.

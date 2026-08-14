@@ -42,7 +42,7 @@ Stable commands inside Pi:
 - `/telegram-setup` — configure/update the bot token.
 - `/telegram-connect` — start polling here and acquire external Telegram control ownership. Accepted queue/reply state stays local if ownership later moves elsewhere.
 - `/telegram-disconnect` — after destructive confirmation, stop polling and release ownership without deleting or silencing accepted local queue state. In Threaded Mode it deletes this instance's current Telegram thread; a follower waits for its active leader to confirm generation-fenced cleanup before stopping. Graceful Pi `quit` performs the same teardown without prompting, while `reload`, `new`, `resume`, and `fork` preserve same-process handoff.
-- `/telegram-status` — show connection, polling, execution, queue, and recent event diagnostics.
+- `/telegram-status` — show connection, polling, execution, queue, and recent event diagnostics; debug output separates poller and worker progress, durable automatic-retry state, exact foreign queued-owner identity, and negotiated protocol/build/capabilities.
 
 ### Telegram commands
 
@@ -117,7 +117,7 @@ The file is global across Pi instances. Cooperating instances serialize recursiv
 
 Hidden/default semantics are represented by absence:
 
-- `threads.automaticCleanup` defaults to `true`; graceful Pi quit deletes the instance's bound Threaded Mode tab without prompting. Set it to `false`, or use `🧹 Thread cleanup` in Telegram Settings, to preserve the tab as a restart hint. Settings views and cleanup reload shared config before evaluating this switch, so another live Pi instance's update takes effect without restarting. Confirmed leader/follower teardown persists an exact target/runtime-generation cleanup intent before Telegram deletion; an interrupted attempt remains retryable by the current or successor leader under current authority and clears only after confirmed deletion. A same-profile replacement leader first adopts any still-active binding and cancels its superseded cleanup, so startup never deletes and recreates a reusable thread. If a follower's graceful envelope is missed, the leader may create the same fenced cleanup only after its heartbeat is stale, the OS confirms the exact registered PID no longer exists, cleanup remains enabled, and no replacement registration can overtake deletion. Heartbeat loss alone, live/unknown process liveness, IPC failure, and auth failure remain non-destructive. Invalid-config recovery makes the setting unresolved and therefore skips destructive cleanup. Manual `/telegram-disconnect` keeps its confirmation and teardown behavior regardless of this setting.
+- `threads.automaticCleanup` defaults to `true`; graceful Pi quit deletes the instance's bound Threaded Mode tab without prompting but preserves the owner slot as independent restart intent. Set it to `false`, or use `🧹 Thread cleanup` in Telegram Settings, to preserve the tab too. A confirmed `/telegram-disconnect`, unlike quit, clears restart ownership. Settings views and cleanup reload shared config before evaluating this switch, so another live Pi instance's update takes effect without restarting. Confirmed leader/follower teardown persists an exact target/runtime-generation cleanup intent before Telegram deletion; an interrupted attempt remains retryable by the current or successor leader under current authority and clears only after confirmed deletion. A same-profile replacement leader first adopts any still-active binding and cancels its superseded cleanup, so startup never deletes and recreates a reusable thread. If a follower's graceful envelope is missed, the leader may create the same fenced cleanup only after its heartbeat is stale, the OS confirms the exact registered PID no longer exists, cleanup remains enabled, and no replacement registration can overtake deletion. Heartbeat loss alone, live/unknown process liveness, IPC failure, and auth failure remain non-destructive. Invalid-config recovery makes the setting unresolved and therefore skips destructive cleanup. Manual `/telegram-disconnect` keeps its confirmation and teardown behavior regardless of this setting.
 - Every complete intermediate assistant text block from a Telegram-originated turn is delivered once to its immutable target before the existing final reply. This active-turn commentary path remains enabled when `assistant.proactivePush` is `false`; final and terminal-partial segments stay with settlement to prevent duplicate replies. `assistant.proactivePush` defaults to `true` only for local/autonomous work: omit it to project every completed public block, including commentary and the final block, or set it explicitly to `false` to disable that projection. Both paths exclude token deltas, hidden reasoning, tool calls/arguments/results, empty blocks, unknown sources, and stale authority. Projection uses the configured Rich or HTML assistant renderer and binds admitted work to the exact target, profile/token transport generation, direct leader epoch or follower registration generation, and session generation. The old top-level `proactivePush` key is ignored; move the setting manually under `assistant`.
 - `assistant.activity` accepts exactly `"quiet"`, `"thinking"`, `"tools"`, or `"verbose"`; omitted values default to `"verbose"`, explicit values remain unchanged, and invalid values fail closed to `"quiet"`. Each Pi process reloads the shared file-backed value at `agent-start`, so multi-instance activity isolation never relies on a stale process-local config snapshot. `thinking` shows only provider-exposed thinking, `tools` shows only completed tool activity, and `verbose` shows both. Thinking uses persistent ordinary HTML `sendMessage`/`editMessageText` disclosure with a standard expandable blockquote, a `🧠` header carrying the current Pi thinking level, and bounded redacted text whose inline Markdown renders as Telegram HTML. Tools use native Rich Messages with one header followed by separate closed details and JSON pre blocks for bounded redacted arguments, retained updates, and results/errors. Thinking disables link previews on every HTML send/edit and neutralizes HTTP(S) auto-link detection; Rich tool output disables automatic entity detection, with the same protections retained by its HTML fallback. Consecutive tools coalesce only inside the same ordered activity segment and bounded message. Legacy `assistant.activityVerbosity` is read only when `assistant.activity` is absent and is removed by the next Activity Settings write.
 - Voice Reply `hidden`: no `voice.replyMode` key is persisted; legacy `manual` resolves to this silent default. `mirror` adds `[voice] delivery: automatic voice` only to voice/audio-input turns, while `always` adds the same effective line to every Telegram turn.
@@ -158,7 +158,7 @@ Low-level stable buses:
 
 - `registerTelegramUpdateHandler()`
   - Identity: no id.
-  - Purpose: observe or consume raw Telegram updates before default routing.
+  - Purpose: observe or consume raw Telegram updates before default routing. Its optional execution fence supplies cancellation and a required pre-effect authority check for long-running handlers.
 - `registerTelegramInboundHandler()`
   - Identity: no id.
   - Purpose: generic Telegram-to-Pi transforms.
@@ -342,14 +342,15 @@ Contract:
 
 ## Updates
 
-Import from `@llblab/pi-telegram/updates`.
+Import `registerTelegramUpdateHandler`, `TelegramUpdateExecutionFence`, and the advanced `getTelegramUpdateExecutionFence`, `createTelegramUpdateExecutionFenceGuard`, `carryTelegramUpdateExecutionFence`, and `assertTelegramUpdateExecutionCurrent` helpers from `@llblab/pi-telegram/updates`.
 
 ```ts
-const off = registerTelegramUpdateHandler(async (update) => {
+const off = registerTelegramUpdateHandler(async (update, execution) => {
   const data = (update as { callback_query?: { data?: string } }).callback_query
     ?.data;
   if (!data?.startsWith("myext:")) return "pass";
-  await handleMyCallback(data);
+  await handleMyCallback(data, execution?.signal);
+execution?.assertCurrent();
   return "consume";
 });
 ```

@@ -13,6 +13,7 @@ import test from "node:test";
 import {
   chooseTelegramThreadName,
   createTelegramCurrentInstanceThreadRuntime,
+  createTelegramCurrentThreadAssembly,
   createTelegramLeaderThreadStateRuntime,
   createTelegramThreadStatusProjectionRuntime,
   createTelegramTopicTargetProvisioner,
@@ -558,6 +559,28 @@ test("Thread store load does not clobber unpersisted thread mutations", async ()
       reloaded.getByProfileKey("manual:follower-b")?.target.threadId,
       43,
     );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Thread store refresh discards stale local projections for owner-published capability", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-state-"));
+  const path = join(dir, "state.json");
+  try {
+    const owner = createTelegramTopicTargetStore({ path });
+    owner.setBotState({ threadMode: "disabled", updatedAtMs: 1000 });
+    await owner.persist();
+    const observer = createTelegramTopicTargetStore({ path });
+    await observer.load();
+    observer.setStatusSnapshot({ diagnostics: { local: "stale" } });
+    owner.setBotState({ threadMode: "enabled", updatedAtMs: 2000 });
+    await owner.persist();
+
+    assert.equal(observer.getBotState().threadMode, "disabled");
+    assert.ok(observer.refresh);
+    await observer.refresh();
+    assert.equal(observer.getBotState().threadMode, "enabled");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -2388,6 +2411,60 @@ test("Leader thread state runtime owns target identity transitions", () => {
   });
   state.clear();
   assert.equal(state.getIdentity(), undefined);
+});
+
+test("Current-thread assembly owns preferred-target order and status identity", () => {
+  let activeTarget: { chatId: number; threadId: number } | undefined = {
+    chatId: 7,
+    threadId: 12,
+  };
+  const records = [
+    {
+      profileKey: "active",
+      target: activeTarget,
+      status: "active" as const,
+      createdAtMs: 1,
+      updatedAtMs: 1,
+      instanceId: "current",
+      slot: "A",
+      threadName: "Aspen",
+    },
+  ];
+  const assembly = createTelegramCurrentThreadAssembly({
+    instanceId: "current",
+    listRecords: () => records,
+    getActiveTurnTarget: () => activeTarget,
+    getFollowerTarget: () => ({ chatId: 7, threadId: 11 }),
+    isFollowerRegistered: () => true,
+    getFollowerSlot: () => "C",
+    getFollowerThreadName: () => "Cedar",
+    getLeaderIdentity: () => ({
+      target: { chatId: 7, threadId: 10 },
+      slot: "L",
+      threadName: "Lumen",
+    }),
+    getLeaderTarget: () => ({ chatId: 7, threadId: 10 }),
+    status: {
+      getThreadMode: () => "enabled",
+      isBusPollingStarted: () => false,
+      listFollowers: () => [],
+      listReservations: () => [],
+      listSyncObservations: () => [],
+      getLeaderSocketPath: () => "/tmp/leader.sock",
+      getFollowerSocketPath: () => "/tmp/follower.sock",
+      getTransportKind: () => "socket",
+    },
+  });
+
+  assert.equal(assembly.current.findRecord()?.threadName, "Aspen");
+  activeTarget = undefined;
+  assert.deepEqual(assembly.current.getIdentity(), {
+    target: { chatId: 7, threadId: 11 },
+    slot: "C",
+    threadName: "Cedar",
+  });
+  assert.equal(assembly.status.getBusRole(), "follower");
+  assert.equal(assembly.status.getInstanceThreadName(), "Cedar");
 });
 
 test("Current-instance thread runtime owns record and live identity selection", () => {

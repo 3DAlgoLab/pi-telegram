@@ -22,6 +22,8 @@ import test from "node:test";
 import { runNodeEval } from "./fixtures/node-eval.ts";
 import type { TelegramConfig } from "../lib/config.ts";
 import {
+  createTelegramActiveProfileKeyGetter,
+  createTelegramConfigBotIdGetter,
   createTelegramConfigControls,
   createTelegramConfigStore,
   createTelegramPollingOffsetPersister,
@@ -48,6 +50,24 @@ import {
   getTelegramBotTokenPromptSpec,
   runTelegramSetup,
 } from "../lib/setup.ts";
+
+test("Config projections own bot and effective profile lookup", () => {
+  const store = createTelegramConfigStore({
+    initialConfig: {
+      profiles: {
+        default: { botToken: "token-a", botId: 7 },
+        work: { botToken: "token-b", botId: 8 },
+      },
+    },
+  });
+  const getBotId = createTelegramConfigBotIdGetter(store);
+  const getProfileKey = createTelegramActiveProfileKeyGetter(store);
+  assert.equal(getBotId(), 7);
+  assert.equal(getProfileKey(), "default");
+  store.activateProfile("work");
+  assert.equal(getBotId(), 8);
+  assert.equal(getProfileKey(), "work");
+});
 
 test("Telegram profile names allow only lowercase letters and digits", () => {
   assert.equal(isValidTelegramProfileName("work2"), true);
@@ -1058,6 +1078,28 @@ test("Telegram config helpers pair only when no user is configured", async () =>
   );
   assert.equal(allowedUserId, 10);
   assert.deepEqual(events, ["set:10", "persist", "status:ctx"]);
+});
+
+test("Telegram config pairing rechecks execution authority around persistence", async () => {
+  let current = true;
+  let persisted = 0;
+  await assert.rejects(
+    pairTelegramUserIfNeeded(10, {
+      ctx: "ctx",
+      setAllowedUserId: () => {
+        current = false;
+      },
+      persistConfig: async () => {
+        persisted += 1;
+      },
+      updateStatus: () => {},
+      assertExecutionCurrent() {
+        if (!current) throw new DOMException("Aborted", "AbortError");
+      },
+    }),
+    /Abort/u,
+  );
+  assert.equal(persisted, 0);
 });
 
 test("Telegram config pairing swallows only stale context status errors", async () => {

@@ -34,6 +34,7 @@ interface TelegramQueueMenuItem {
   queuePosition: number;
   isPriority: boolean;
   priorityEmoji?: string;
+  reactionSuppressionEmoji?: string;
   hasAttachments: boolean;
   statusSummary: string;
   promptText: string;
@@ -62,6 +63,8 @@ function toTelegramQueueMenuItems<Context>(
       queuePosition: index + 1,
       isPriority: item.queueLane === "priority",
       priorityEmoji: item.kind === "prompt" ? item.priorityEmoji : undefined,
+      reactionSuppressionEmoji:
+        item.kind === "prompt" ? item.reactionSuppressionEmoji : undefined,
       hasAttachments:
         item.kind === "prompt" && item.queuedAttachments.length > 0,
       statusSummary: item.statusSummary,
@@ -84,11 +87,13 @@ function buildTelegramQueueMenuReplyMarkup(
   const refreshRow = [{ text: "🌀 Refresh", callback_data: refreshData }];
   if (items.length === 0) return { inline_keyboard: [backRow, refreshRow] };
   const rows = items.map((item, index) => {
-    const prefix = item.isPriority
-      ? `${item.priorityEmoji ?? "⚡"} `
-      : item.hasAttachments
-        ? "📎 "
-        : "";
+    const prefix = item.reactionSuppressionEmoji
+      ? `${item.reactionSuppressionEmoji} suppressed · `
+      : item.isPriority
+        ? `${item.priorityEmoji ?? "⚡"} `
+        : item.hasAttachments
+          ? "📎 "
+          : "";
     const label = `${index + 1}. ${prefix}${item.statusSummary}`;
     return [
       {
@@ -152,10 +157,17 @@ function escapeTelegramQueueMenuHtmlPreview(text: string): string {
 }
 
 function getTelegramQueueMenuItemText(item: TelegramQueueMenuItem): string {
-  const badge = item.isPriority ? ` ${item.priorityEmoji ?? "⚡"}` : "";
+  const badge = item.reactionSuppressionEmoji
+    ? ` ${item.reactionSuppressionEmoji}`
+    : item.isPriority
+      ? ` ${item.priorityEmoji ?? "⚡"}`
+      : "";
   const heading = `<b>${item.queuePosition}.</b>${badge}`;
+  const suppression = item.reactionSuppressionEmoji
+    ? "\n<i>Suppressed by reaction. Remove it to restore this turn.</i>"
+    : "";
   const preview = `<pre>${escapeTelegramQueueMenuHtmlPreview(item.promptText)}</pre>`;
-  return `${heading}\n${preview}`;
+  return `${heading}${suppression}\n${preview}`;
 }
 
 function buildTelegramQueueItemSubmenuReplyMarkup(
@@ -820,11 +832,13 @@ function toggleQueuedTelegramPromptPriority<Context>(
     replyToMessageId,
   );
   if (!item) return false;
-  if (item.queueLane === "priority") {
-    deps.queueMutationRuntime.clearPriorityByMessageId(replyToMessageId, ctx);
-  } else {
-    deps.queueMutationRuntime.prioritizeByMessageId(replyToMessageId, ctx);
-  }
+  deps.queueMutationRuntime.applyReactionByMessageId(
+    replyToMessageId,
+    item.queueLane === "priority"
+      ? { kind: "default" }
+      : { kind: "priority", emoji: "⚡" },
+    ctx,
+  );
   return true;
 }
 
@@ -844,11 +858,11 @@ function setQueuedTelegramPromptPriority<Context>(
     replyToMessageId,
   );
   if (!item) return false;
-  if (enabled) {
-    deps.queueMutationRuntime.prioritizeByMessageId(replyToMessageId, ctx);
-  } else {
-    deps.queueMutationRuntime.clearPriorityByMessageId(replyToMessageId, ctx);
-  }
+  deps.queueMutationRuntime.applyReactionByMessageId(
+    replyToMessageId,
+    enabled ? { kind: "priority", emoji: "⚡" } : { kind: "default" },
+    ctx,
+  );
   return true;
 }
 

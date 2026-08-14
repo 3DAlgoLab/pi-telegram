@@ -6,6 +6,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  createTelegramActivityVerbosityBinding,
   createTelegramActivityVerbosityRuntime,
   renderTelegramThinkingActivityHtml,
   renderTelegramToolActivityHtml,
@@ -23,6 +24,26 @@ import type {
   TelegramSendMessageBody,
   TelegramSendRichMessageBody,
 } from "../lib/telegram-api.ts";
+
+test("Activity verbosity binding safely delegates after late composition", async () => {
+  const calls: string[] = [];
+  const binding = createTelegramActivityVerbosityBinding();
+  binding.reset();
+  await binding.waitForIdle();
+  binding.bind({
+    accept: () => calls.push("accept"),
+    reset: () => calls.push("reset"),
+    stop: () => calls.push("stop"),
+    waitForIdle: async () => {
+      calls.push("idle");
+    },
+  });
+  binding.accept({} as TelegramActivityEvent);
+  binding.reset();
+  binding.stop();
+  await binding.waitForIdle();
+  assert.deepEqual(calls, ["accept", "reset", "stop", "idle"]);
+});
 
 function event(
   sequence: number,

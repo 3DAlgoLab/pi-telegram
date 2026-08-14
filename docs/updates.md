@@ -6,6 +6,8 @@
 
 This document describes the registry that lets layered pi extensions running in the same pi process hook into `pi-telegram`'s polling loop and react to inbound Telegram updates **before** `pi-telegram`'s default routing fires.
 
+The `0.28.0` transport/execution split is specified in [Durable Admission And Recovery](./architecture.md#durable-admission-and-recovery). Polling durably admits and advances batches before the independent worker invokes this registry. The worker binds source ids only after public interception passes, supplies public and built-in handlers with the same optional execution fence, settles late grouping under its exact generation, and publishes durable queue readiness. This document describes the executable public registry contract.
+
 It is the runtime counterpart to [Callback Namespaces](./callback-namespaces.md): callback namespaces define how to share `callback_data` cleanly; update handlers define how to observe and optionally short-circuit the dispatch of those updates.
 
 ## When to use it
@@ -22,9 +24,10 @@ If the extension needs a durable top-level Telegram menu section with managed re
 
 ## Constraints
 
-- One bot, one pi process, one `getUpdates` loop. This registry does **not** enable running multiple pi instances against the same bot.
-- Handlers run in the polling loop. They must return quickly; long awaits delay subsequent updates.
+- One bot profile has one leader-owned `getUpdates` loop. This process-local registry neither creates another transport nor replaces the Threaded Mode leader/follower bus.
+- Handlers run before built-in routing in the independent semantic worker. They must return promptly because a long await delays later handler/routing execution for that source order, but it does not delay `getUpdates` admission or offset persistence. Replacement generations wait for the unsettled handler rather than executing the same update concurrently.
 - Handler errors are caught and logged silently so polling never breaks. If you need durable error reporting, do it inside your handler.
+- Typed handlers receive an optional second `execution` argument with `signal`, `updateId`, `generation`, `isCurrent()`, and `assertCurrent()`. Pass `signal` into cancellable work and call `assertCurrent()` immediately before irreversible effects. The runtime also rejects a verdict returned after cancellation. Legacy one-argument and zero-coupling handlers remain compatible, but any effect they commit while still awaiting is their responsibility; replacement replay still waits for that handler's actual settlement.
 - The registry lives on `globalThis`. Module instance identity is not required, so layered extensions can reach it without importing `@llblab/pi-telegram`.
 
 ## Verdicts
@@ -45,11 +48,12 @@ Two equivalent paths.
 ```ts
 import { registerTelegramUpdateHandler } from "@llblab/pi-telegram/updates";
 
-const off = registerTelegramUpdateHandler(async (update) => {
+const off = registerTelegramUpdateHandler(async (update, execution) => {
   const cb = (update as { callback_query?: { id?: string; data?: string } })
     .callback_query;
   if (!cb?.data?.startsWith("myext:")) return "pass";
-  await resolveMyApproval(cb);
+  await resolveMyApproval(cb, execution?.signal);
+  execution?.assertCurrent();
   return "consume";
 });
 
@@ -69,13 +73,26 @@ type PiTelegramVerdict =
   | "pass"
   | void
   | Promise<"consume" | "pass" | void>;
-type PiTelegramUpdateHandler = (update: unknown) => PiTelegramVerdict;
+type PiTelegramUpdateExecutionFence = {
+  readonly generation: number;
+  readonly updateId: number;
+  readonly signal: AbortSignal;
+  isCurrent: () => boolean;
+  assertCurrent: () => void;
+};
+type PiTelegramUpdateHandler = (
+  update: unknown,
+  execution?: PiTelegramUpdateExecutionFence,
+) => PiTelegramVerdict;
 
 interface PiTelegramUpdateHandlerRegistry {
   readonly version: 1;
   add: (handler: PiTelegramUpdateHandler) => () => void;
   // Required: pi-telegram's polling loop calls this on every update.
-  dispatch: (update: unknown) => Promise<"consume" | "pass">;
+  dispatch: (
+    update: unknown,
+    execution?: PiTelegramUpdateExecutionFence,
+  ) => Promise<"consume" | "pass">;
 }
 
 const REGISTRY_KEY = "__piTelegramUpdateHandlerRegistry__";
@@ -100,10 +117,11 @@ function getOrCreateRegistry(): PiTelegramUpdateHandlerRegistry {
       handlers.add(handler);
       return () => handlers.delete(handler);
     },
-    async dispatch(update) {
+    async dispatch(update, execution) {
       for (const handler of handlers) {
+        execution?.assertCurrent();
         try {
-          const result = await handler(update);
+          const result = await handler(update, execution);
           if (result === "consume") return "consume";
         } catch {
           // Never break polling because of a handler error.
@@ -122,7 +140,7 @@ const off = getOrCreateRegistry().add((update) => {
 });
 ```
 
-The registry object on `globalThis.__piTelegramUpdateHandlerRegistry__` is versioned (`version: 1`) and stable across pi-telegram releases; future breaking changes will use a new schema version and a new key.
+The registry object on `globalThis.__piTelegramUpdateHandlerRegistry__` is versioned (`version: 1`) and stable across pi-telegram releases; the optional second arguments preserve existing v1 callers and implementations. Internal adapters can capture one stable check with `createTelegramUpdateExecutionFenceGuard(update)` or transfer the hidden binding across an unavoidable clone with `carryTelegramUpdateExecutionFence(source, target)`, while `getTelegramUpdateExecutionFence` and `assertTelegramUpdateExecutionCurrent` serve carriers that retain it. Future breaking changes will use a new schema version and a new key.
 
 ## Interaction with built-in routing
 
@@ -140,9 +158,9 @@ The handler registry is ownership-agnostic and does not interact with the extens
 
 If a layered extension needs to react to ownership changes, it should observe `pi-telegram` lifecycle events through the standard pi extension hooks rather than through the handler registry.
 
-## Not a multiplexer
+## Not a transport multiplexer
 
-This registry does not multiplex one bot across multiple pi processes, and it does not bypass Telegram's single-polling-connection-per-bot constraint. To run multiple pi instances on Telegram, give each instance its own bot and its own `~/.pi/agent` directory; the registry is for layered extensions inside **one** pi process.
+This registry does not bypass Telegram's single-polling-connection-per-bot constraint and does not route updates between processes. Threaded Mode provides the separate profile-scoped leader/follower bus: the leader owns `getUpdates`, applies its process-local update registry, and then routes retained built-in traffic to the owning instance. The registry remains an in-process extension interception surface only.
 
 ## Relationship to extension sections
 

@@ -53,9 +53,10 @@ test("Text group helper delays likely split messages and appends quick continuat
   assert.equal(queue(createMessage(1, "short")), false);
   assert.equal(queue(createMessage(2, "long-enough")), true);
   assert.equal(queue(createMessage(3, "tail")), true);
+  assert.equal(queue(createMessage(3, "tail-rebound")), true);
   assert.deepEqual(dispatched, []);
   timers.at(-1)?.();
-  assert.deepEqual(dispatched, ["ctx:long-enough|tail"]);
+  assert.deepEqual(dispatched, ["ctx:long-enough|tail-rebound"]);
 });
 
 test("Text group controller coalesces same-batch forward comments and bounds ordinary text delay", async () => {

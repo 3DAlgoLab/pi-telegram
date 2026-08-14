@@ -7,18 +7,25 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  admitTelegramPollingUpdateBatch,
   applyTelegramThreadCapability,
   buildTelegramInitialSyncRequest,
   buildTelegramLongPollRequest,
+  canProbeTelegramThreadCapability,
+  createTelegramDurablePollingRuntimeAssembly,
   createTelegramPollingActivityReader,
+  createTelegramPollingAdmissionRuntime,
   createTelegramPollingController,
   createTelegramPollingControllerRuntime,
   createTelegramPollingControllerState,
+  createTelegramPollingStateReader,
   createTelegramPollLoopRunner,
   createTelegramThreadAwarePollingPorts,
+  createTelegramThreadCapabilityMonitor,
   createTelegramThreadCapabilityStateRuntime,
   createTelegramThreadTargetObservationBinding,
   getLatestTelegramUpdateId,
+  getTelegramGetUpdatesRequestBudgetMs,
   isTelegramGetUpdatesConflictError,
   isTelegramPollingControllerActive,
   runTelegramPollLoop,
@@ -28,9 +35,28 @@ import {
   startTelegramPollingRuntime,
   stopTelegramPollingRuntime,
   TELEGRAM_ALLOWED_UPDATES,
+  TelegramGetUpdatesTimeoutError,
+  TelegramPollingBatchValidationError,
+  TelegramPollingCursorBootstrapError,
 } from "../lib/polling.ts";
 
 const TEST_CONTEXT = "ctx";
+const NOOP_JOURNAL_ADMISSION = {
+  appendUpdateBatch: (_updates: readonly { update_id: number }[]) => undefined,
+  getJournalEntryCount: () => 0,
+  signalUpdateWorker: () => {},
+};
+
+async function waitForPollingCondition(
+  predicate: () => boolean,
+  message: string,
+): Promise<void> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (predicate()) return;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  assert.fail(message);
+}
 
 test("Polling helpers build the initial sync request", () => {
   assert.deepEqual(buildTelegramInitialSyncRequest(), {
@@ -55,12 +81,323 @@ test("Polling helpers build long-poll requests with and without lastUpdateId", (
   });
 });
 
+test("Polling getUpdates budgets derive from the declared long-poll timeout", () => {
+  assert.equal(
+    getTelegramGetUpdatesRequestBudgetMs(buildTelegramInitialSyncRequest()),
+    10_000,
+  );
+  assert.equal(
+    getTelegramGetUpdatesRequestBudgetMs(buildTelegramLongPollRequest()),
+    40_000,
+  );
+  assert.equal(getTelegramGetUpdatesRequestBudgetMs({ timeout: 2 }, 500), 2_500);
+});
+
 test("Polling helpers extract the latest update id", () => {
   assert.equal(getLatestTelegramUpdateId([]), undefined);
   assert.equal(
     getLatestTelegramUpdateId([{ update_id: 1 }, { update_id: 7 }]),
     7,
   );
+});
+
+test("Polling batch admission journals before one latest-offset persist and worker signal", async () => {
+  const config = { botToken: "123:abc", lastUpdateId: 5 };
+  const events: string[] = [];
+  const result = await admitTelegramPollingUpdateBatch({
+    updates: [{ update_id: 6 }, { update_id: 7 }],
+    config,
+    appendBatch(updates) {
+      events.push(`append:${updates.map((update) => update.update_id).join(",")}`);
+    },
+    async persistConfig(current) {
+      events.push(`persist:${current.lastUpdateId}`);
+    },
+    signalWorker() {
+      events.push("signal");
+    },
+    onPhaseChange(phase, updateId) {
+      events.push(`phase:${phase}:${updateId}`);
+    },
+  });
+  assert.deepEqual(result, { updateCount: 2, latestUpdateId: 7 });
+  assert.equal(config.lastUpdateId, 7);
+  assert.deepEqual(events, [
+    "phase:persisting-journal:6",
+    "append:6,7",
+    "phase:persisting-offset:7",
+    "persist:7",
+    "signal",
+  ]);
+});
+
+test("Polling batch admission leaves offset and worker untouched when journal append fails", async () => {
+  const config = { botToken: "123:abc", lastUpdateId: 5 };
+  let persistCalls = 0;
+  let signalCalls = 0;
+  await assert.rejects(
+    admitTelegramPollingUpdateBatch({
+      updates: [{ update_id: 6 }, { update_id: 7 }],
+      config,
+      appendBatch() {
+        throw new Error("journal unavailable");
+      },
+      async persistConfig() {
+        persistCalls += 1;
+      },
+      signalWorker() {
+        signalCalls += 1;
+      },
+    }),
+    /journal unavailable/u,
+  );
+  assert.equal(config.lastUpdateId, 5);
+  assert.equal(persistCalls, 0);
+  assert.equal(signalCalls, 0);
+});
+
+test("Polling batch admission deduplicates redelivery after offset persistence failure", async () => {
+  const config = { botToken: "123:abc", lastUpdateId: 5 };
+  const journal = new Set<number>();
+  let persistCalls = 0;
+  let signalCalls = 0;
+  const admit = () =>
+    admitTelegramPollingUpdateBatch({
+      updates: [{ update_id: 6 }],
+      config,
+      appendBatch(updates) {
+        for (const update of updates) journal.add(update.update_id);
+      },
+      async persistConfig() {
+        persistCalls += 1;
+        if (persistCalls === 1) throw new Error("config commit failed");
+      },
+      signalWorker() {
+        signalCalls += 1;
+      },
+    });
+
+  await assert.rejects(admit(), /config commit failed/u);
+  assert.equal(config.lastUpdateId, 5);
+  assert.deepEqual([...journal], [6]);
+  assert.equal(signalCalls, 0);
+
+  await admit();
+  assert.equal(config.lastUpdateId, 6);
+  assert.deepEqual([...journal], [6]);
+  assert.equal(persistCalls, 2);
+  assert.equal(signalCalls, 1);
+});
+
+test("Polling batch admission fails closed on non-monotonic ids", async () => {
+  let appendCalls = 0;
+  await assert.rejects(
+    admitTelegramPollingUpdateBatch({
+      updates: [{ update_id: 7 }, { update_id: 6 }],
+      config: { botToken: "123:abc", lastUpdateId: 5 },
+      appendBatch() {
+        appendCalls += 1;
+      },
+      async persistConfig() {},
+      signalWorker() {},
+    }),
+    TelegramPollingBatchValidationError,
+  );
+  assert.equal(appendCalls, 0);
+});
+
+test("Polling restart replays journal authority after offset commit but before worker signal", async () => {
+  const config = { botToken: "123:abc", lastUpdateId: 5 };
+  const journal = new Set<number>();
+  await admitTelegramPollingUpdateBatch({
+    updates: [{ update_id: 6 }],
+    config,
+    appendBatch(updates) {
+      for (const update of updates) journal.add(update.update_id);
+    },
+    async persistConfig() {},
+    signalWorker() {
+      throw new Error("process exited before worker signal");
+    },
+  });
+  assert.equal(config.lastUpdateId, 6);
+  assert.deepEqual([...journal], [6]);
+
+  const replayedOnRestart: number[] = [];
+  for (const updateId of journal) replayedOnRestart.push(updateId);
+  assert.deepEqual(replayedOnRestart, [6]);
+  journal.delete(6);
+  assert.deepEqual([...journal], []);
+});
+
+test("Polling batch admission contains worker signal failures after durable offset", async () => {
+  const config = { botToken: "123:abc", lastUpdateId: 5 };
+  const runtimeEvents: Array<{
+    error: unknown;
+    details?: Record<string, unknown>;
+  }> = [];
+  await admitTelegramPollingUpdateBatch({
+    updates: [{ update_id: 6 }],
+    config,
+    appendBatch() {},
+    async persistConfig() {},
+    signalWorker() {
+      throw new Error("worker unavailable");
+    },
+    recordRuntimeEvent(_category, error, details) {
+      runtimeEvents.push({ error, details });
+    },
+  });
+  assert.equal(config.lastUpdateId, 6);
+  assert.equal(runtimeEvents.length, 1);
+  assert.match(String(runtimeEvents[0]?.error), /worker unavailable/u);
+  assert.deepEqual(runtimeEvents[0]?.details, {
+    phase: "worker-signal",
+    updateCount: 1,
+    latestUpdateId: 6,
+  });
+});
+
+test("Polling activity reports lifecycle ownership without inventing health", () => {
+  const state = createTelegramPollingControllerState();
+  const isActive = createTelegramPollingActivityReader(state);
+  const readState = createTelegramPollingStateReader(state);
+
+  assert.equal(isActive(), false);
+  assert.deepEqual(readState(), {
+    phase: "stopped",
+    phaseStartedAtMs: undefined,
+    currentUpdateId: undefined,
+    startedAtMs: undefined,
+    stoppedAtMs: undefined,
+    lastSuccessfulResponseAtMs: undefined,
+    lastSuccessfulResponseUpdateCount: undefined,
+    stopReason: "not-started",
+  });
+
+  state.pollingPromise = new Promise<void>(() => {});
+  state.phase = "persisting-journal";
+  state.currentUpdateId = 42;
+  assert.equal(isActive(), true);
+  assert.equal(readState().phase, "persisting-journal");
+  assert.equal(readState().currentUpdateId, 42);
+
+  state.pollingPromise = undefined;
+  assert.equal(isActive(), false);
+});
+
+test("Thread capability probes require direct or registered follower authority", () => {
+  assert.equal(
+    canProbeTelegramThreadCapability(TEST_CONTEXT, {
+      ownsLock: () => false,
+      isFollowerRegistered: () => false,
+    }),
+    false,
+  );
+  assert.equal(
+    canProbeTelegramThreadCapability(TEST_CONTEXT, {
+      ownsLock: () => true,
+      isFollowerRegistered: () => false,
+    }),
+    true,
+  );
+  assert.equal(
+    canProbeTelegramThreadCapability(TEST_CONTEXT, {
+      ownsLock: () => false,
+      isFollowerRegistered: () => true,
+    }),
+    true,
+  );
+});
+
+test("Thread capability monitor stays passive before transport authorization", async () => {
+  let calls = 0;
+  const monitor = createTelegramThreadCapabilityMonitor({
+    getAllowedUserId: () => 7,
+    callApi: async <TResponse>() => {
+      calls += 1;
+      return {} as TResponse;
+    },
+    topicTargetStore: {
+      load: async () => {},
+      persist: async () => {},
+      getBotState: () => ({}),
+      setBotState: () => {},
+    },
+    ownsLock: () => false,
+    isFollowerRegistered: () => false,
+    getPollingStartedWithTelegramBus: () => false,
+    setPollingStartedWithTelegramBus: () => {},
+    setTopicModeUnavailable: () => {},
+    stopFollowerRegistration: () => {},
+    startClassicPolling: () => {},
+    stopClassicPolling: () => {},
+    startBusPolling: () => {},
+    stopBusPolling: () => {},
+    startLeaderHealth: () => {},
+    stopLeaderHealth: () => {},
+    updateStatus: () => {},
+    recordEvent: () => {},
+    intervalMs: 1,
+  });
+
+  monitor.start(TEST_CONTEXT);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  monitor.stop();
+  assert.equal(calls, 0);
+});
+
+test("Thread capability monitor serializes probes across lifecycle generations", async () => {
+  let calls = 0;
+  let state: { threadMode?: "enabled" | "disabled" | "unknown" } = {};
+  const releases: Array<(value: unknown) => void> = [];
+  const monitor = createTelegramThreadCapabilityMonitor({
+    getAllowedUserId: () => 7,
+    callApi: <TResponse>() =>
+      new Promise<TResponse>((resolve) => {
+        calls += 1;
+        releases.push(resolve as (value: unknown) => void);
+      }),
+    topicTargetStore: {
+      load: async () => {},
+      persist: async () => {},
+      getBotState: () => state,
+      setBotState: (next) => {
+        state = { ...state, ...next };
+      },
+    },
+    ownsLock: () => true,
+    isFollowerRegistered: () => false,
+    getPollingStartedWithTelegramBus: () => false,
+    setPollingStartedWithTelegramBus: () => {},
+    setTopicModeUnavailable: () => {},
+    stopFollowerRegistration: () => {},
+    startClassicPolling: () => {},
+    stopClassicPolling: () => {},
+    startBusPolling: () => {},
+    stopBusPolling: () => {},
+    startLeaderHealth: () => {},
+    stopLeaderHealth: () => {},
+    updateStatus: () => {},
+    recordEvent: () => {},
+    intervalMs: 1,
+  });
+
+  monitor.start(TEST_CONTEXT);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(calls, 1);
+  monitor.stop();
+  monitor.start(TEST_CONTEXT);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(calls, 1);
+  releases[0]?.({ id: 1, has_topics_enabled: true });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(calls, 2);
+  assert.equal(state.threadMode, undefined);
+  releases[1]?.({ id: 1, has_topics_enabled: true });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(state.threadMode, "enabled");
+  monitor.stop();
 });
 
 test("Thread target observation binding supports late runtime composition", async () => {
@@ -92,8 +429,7 @@ test("Thread capability state runtime owns transition flags", () => {
   assert.equal(state.shouldForceFreshLeaderThread(), true);
 });
 
-test("Thread-aware polling blocks follower takeover during Threaded Mode downgrade", async () => {
-  const events: Array<{ category: string; details?: Record<string, unknown> }> = [];
+test("Thread-aware polling returns disabled mode to classic takeover despite retained thread history", async () => {
   const callApi = async <TResponse,>(): Promise<TResponse> => ({}) as TResponse;
   const store = {
     async load() {},
@@ -129,24 +465,61 @@ test("Thread-aware polling blocks follower takeover during Threaded Mode downgra
     stopLeaderHealth() {},
     registerFollowerWithLeader: async () => true,
     stopFollowerRegistration() {},
-    recordEvent(category, _error, details) {
-      events.push({ category, details });
-    },
+    recordEvent() {},
   });
 
-  await assert.rejects(
-    ports.registerFollowerWithOwner?.(TEST_CONTEXT, { pid: 1 }),
-    /current leader remains the classic polling owner/u,
+  assert.equal(
+    await ports.registerFollowerWithOwner?.(TEST_CONTEXT, { pid: 1 }),
+    undefined,
   );
-  assert.deepEqual(events, [
-    {
-      category: "bus",
-      details: {
-        phase: "follower-register-thread-mode-disabled",
-        reason: "active-thread-bindings-present",
-      },
+});
+
+test("Thread-aware polling refreshes owner-published enabled mode over stale local classic state", async () => {
+  let followerRegistrations = 0;
+  let threadMode: "disabled" | "enabled" = "disabled";
+  const store = {
+    async load() {},
+    async refresh() {
+      threadMode = "enabled";
     },
-  ]);
+    async persist() {},
+    getBotState() {
+      return { threadMode };
+    },
+    setBotState() {},
+    list() {
+      return [];
+    },
+  };
+  const ports = createTelegramThreadAwarePollingPorts({
+    getAllowedUserId: () => 42,
+    callApi: async <TResponse,>(): Promise<TResponse> => ({}) as TResponse,
+    topicTargetStore: store,
+    isBusRuntimeEnabled: () => false,
+    isTopicModeUnavailableError: () => false,
+    getPollingStartedWithTelegramBus: () => false,
+    setPollingStartedWithTelegramBus() {},
+    setForceFreshLeaderThreadOnNextStart() {},
+    setTopicModeUnavailable() {},
+    startClassicPolling() {},
+    async stopClassicPolling() {},
+    async startBusLeaderPolling() {},
+    async stopBusLeaderPolling() {},
+    startLeaderHealth() {},
+    stopLeaderHealth() {},
+    async registerFollowerWithLeader() {
+      followerRegistrations += 1;
+      return true;
+    },
+    stopFollowerRegistration() {},
+    recordEvent() {},
+  });
+
+  assert.equal(
+    await ports.registerFollowerWithOwner?.(TEST_CONTEXT, { pid: 1 }),
+    true,
+  );
+  assert.equal(followerRegistrations, 1);
 });
 
 test("Thread capability downgrade retries classic restore after failure", async () => {
@@ -327,6 +700,12 @@ test("Polling runtime starts and stops polling through state ports", async () =>
     updateStatus: (ctx: string) => {
       events.push(`status:${ctx}`);
     },
+    onPollingStarted: () => {
+      events.push("polling:started");
+    },
+    onPollingStopped: () => {
+      events.push("polling:stopped");
+    },
   };
   startTelegramPollingRuntime("ctx", deps);
   assert.equal(!!pollingPromise, true);
@@ -338,12 +717,14 @@ test("Polling runtime starts and stops polling through state ports", async () =>
   await stopPromise;
   assert.deepEqual(events, [
     "controller:set",
+    "polling:started",
     "run:false",
     "promise:set",
     "status:ctx",
     "typing:stop",
     "promise:clear",
     "controller:clear",
+    "polling:stopped",
     "status:ctx",
   ]);
 });
@@ -477,6 +858,56 @@ test("Polling runtime ignores stale-context status failures during start", () =>
   assert.deepEqual(runtimeEvents, ["polling:stale ctx:status-update"]);
 });
 
+test("Polling admission starts the session-owned worker before transport polling", async () => {
+  const events: string[] = [];
+  let failPollingStart = false;
+  let failValidation = false;
+  const runtime = createTelegramPollingAdmissionRuntime<string>({
+    validateStart: () => {
+      events.push("validate");
+      if (failValidation) throw new Error("cursor conflict");
+    },
+    polling: {
+      isActive: () => false,
+      start: () => {
+        events.push("polling:start");
+        if (failPollingStart) throw new Error("polling failed");
+      },
+      stop: async () => {
+        events.push("polling:stop");
+      },
+    },
+    worker: {
+      onSessionStart: async (ctx) => {
+        events.push(`worker:start:${ctx}`);
+      },
+    },
+  });
+
+  await runtime.start("ctx");
+  await runtime.stop();
+  assert.deepEqual(events, [
+    "validate",
+    "worker:start:ctx",
+    "polling:start",
+    "polling:stop",
+  ]);
+
+  events.length = 0;
+  failPollingStart = true;
+  await assert.rejects(runtime.start("ctx-2"), /polling failed/u);
+  assert.deepEqual(events, [
+    "validate",
+    "worker:start:ctx-2",
+    "polling:start",
+  ]);
+
+  events.length = 0;
+  failValidation = true;
+  await assert.rejects(runtime.start("ctx-3"), /cursor conflict/u);
+  assert.deepEqual(events, ["validate"]);
+});
+
 test("Polling controller owns polling promise and abort-controller state", async () => {
   const events: string[] = [];
   let finishPollLoop: (() => void) | undefined;
@@ -517,6 +948,83 @@ test("Polling controller owns polling promise and abort-controller state", async
   ]);
 });
 
+test("Polling controller settles unexpected runner failures into diagnostics", async () => {
+  const state = createTelegramPollingControllerState();
+  const runtimeEvents: string[] = [];
+  const controller = createTelegramPollingController({
+    state,
+    getNowMs: () => 2_000,
+    hasBotToken: () => true,
+    stopTypingLoop: () => {},
+    runPollLoop: async () => {
+      throw new Error("unexpected poll failure");
+    },
+    updateStatus: () => {},
+    recordRuntimeEvent: (category, error, details) => {
+      runtimeEvents.push(
+        `${category}:${error instanceof Error ? error.message : String(error)}:${details?.phase}`,
+      );
+    },
+  });
+
+  controller.start(TEST_CONTEXT);
+  await waitForPollingCondition(
+    () => state.phase === "stopped",
+    "failed polling controller did not settle",
+  );
+
+  assert.equal(controller.isActive(), false);
+  assert.equal(state.stopReason, "failed");
+  assert.equal(state.stoppedAtMs, 2_000);
+  assert.deepEqual(runtimeEvents, [
+    "polling:unexpected poll failure:controller",
+  ]);
+});
+
+test("Durable polling assembly owns journal ports and cursor bootstrap validation", async () => {
+  let bootstrapEntryCount = 1;
+  let workerStarts = 0;
+  const events: string[] = [];
+  const assembly = createTelegramDurablePollingRuntimeAssembly<
+    { update_id: number },
+    string
+  >({
+    getConfig: () => ({ botToken: "123:abc" }),
+    hasBotToken: () => true,
+    deleteWebhook: async () => {
+      events.push("deleteWebhook");
+    },
+    getUpdates: async () => {
+      throw new DOMException("stop", "AbortError");
+    },
+    persistConfig: async () => undefined,
+    journal: {
+      appendBatch: () => undefined,
+      getEntryCount: () => 0,
+      signalWorker: () => undefined,
+      getBootstrapEntryCount: () => bootstrapEntryCount,
+      onSessionStart: async () => {
+        workerStarts += 1;
+      },
+    },
+    stopTypingLoop: () => undefined,
+    updateStatus: () => undefined,
+  });
+
+  await assert.rejects(
+    () => assembly.admission.start("blocked"),
+    TelegramPollingCursorBootstrapError,
+  );
+  assert.equal(workerStarts, 0);
+  bootstrapEntryCount = 0;
+  await assembly.admission.start("ctx");
+  assert.equal(workerStarts, 1);
+  assert.equal(assembly.controller.isActive(), true);
+  await assembly.admission.stop();
+  assert.equal(assembly.controller.isActive(), false);
+  assert.deepEqual(events, ["deleteWebhook"]);
+});
+
 test("Polling controller runtime binds loop runner and controller state", async () => {
   const events: string[] = [];
   const state = createTelegramPollingControllerState();
@@ -533,9 +1041,7 @@ test("Polling controller runtime binds loop runner and controller state", async 
     persistConfig: async () => {
       events.push("persist");
     },
-    handleUpdate: async () => {
-      events.push("handle");
-    },
+    ...NOOP_JOURNAL_ADMISSION,
     stopTypingLoop: () => {
       events.push("typing:stop");
     },
@@ -555,6 +1061,77 @@ test("Polling controller runtime binds loop runner and controller state", async 
   ]);
 });
 
+test("Polling controller exposes exact phases and retained response evidence", async () => {
+  let nowMs = 1_000;
+  let getUpdatesCalls = 0;
+  let releaseAppend: (() => void) | undefined;
+  let releasePersist: (() => void) | undefined;
+  let secondPollSignal: AbortSignal | undefined;
+  const state = createTelegramPollingControllerState();
+  const controller = createTelegramPollingControllerRuntime({
+    state,
+    getNowMs: () => nowMs,
+    getConfig: () => ({ botToken: "123:abc", lastUpdateId: 5 }),
+    hasBotToken: () => true,
+    deleteWebhook: async () => {},
+    getUpdates: async (_body, signal) => {
+      getUpdatesCalls += 1;
+      if (getUpdatesCalls === 1) return [{ update_id: 6 }];
+      secondPollSignal = signal;
+      return await new Promise<never>(() => {});
+    },
+    appendUpdateBatch: async () =>
+      await new Promise<void>((resolve) => {
+        releaseAppend = resolve;
+      }),
+    getJournalEntryCount: () => 0,
+    signalUpdateWorker: () => {},
+    persistConfig: async () =>
+      await new Promise<void>((resolve) => {
+        releasePersist = resolve;
+      }),
+    stopTypingLoop: () => {},
+    updateStatus: () => {},
+  });
+
+  controller.start(TEST_CONTEXT);
+  await waitForPollingCondition(
+    () => state.phase === "persisting-journal" && !!releaseAppend,
+    "polling did not enter persisting-journal",
+  );
+  assert.equal(state.currentUpdateId, 6);
+  assert.equal(state.phaseStartedAtMs, 1_000);
+  assert.equal(state.lastSuccessfulResponseAtMs, 1_000);
+  assert.equal(state.lastSuccessfulResponseUpdateCount, 1);
+
+  nowMs = 1_100;
+  releaseAppend?.();
+  await waitForPollingCondition(
+    () => state.phase === "persisting-offset" && !!releasePersist,
+    "polling did not enter persisting-offset",
+  );
+  assert.equal(state.currentUpdateId, 6);
+  assert.equal(state.phaseStartedAtMs, 1_100);
+
+  nowMs = 1_200;
+  releasePersist?.();
+  await waitForPollingCondition(
+    () => state.phase === "long-poll" && !!secondPollSignal,
+    "polling did not resume long-polling",
+  );
+  assert.equal(state.currentUpdateId, undefined);
+  assert.equal(state.phaseStartedAtMs, 1_200);
+
+  nowMs = 1_300;
+  await controller.stop();
+  assert.equal(secondPollSignal?.aborted, true);
+  assert.equal(state.phase, "stopped");
+  assert.equal(state.phaseStartedAtMs, 1_300);
+  assert.equal(state.stoppedAtMs, 1_300);
+  assert.equal(state.stopReason, "requested");
+  assert.equal(state.lastSuccessfulResponseAtMs, 1_000);
+});
+
 test("Polling helpers stop only for abort conditions", () => {
   assert.equal(shouldStopTelegramPolling(true, new Error("ignored")), true);
   assert.equal(
@@ -562,6 +1139,64 @@ test("Polling helpers stop only for abort conditions", () => {
     true,
   );
   assert.equal(shouldStopTelegramPolling(false, new Error("network")), false);
+});
+
+test("Poll loop cancels stalled getUpdates at its owner-derived budget", async () => {
+  const controller = new AbortController();
+  const phases: string[] = [];
+  const statusMessages: string[] = [];
+  const runtimeEvents: Array<{
+    error: unknown;
+    details?: Record<string, unknown>;
+  }> = [];
+  let requestSignal: AbortSignal | undefined;
+
+  await runTelegramPollLoop({
+    ctx: TEST_CONTEXT,
+    signal: controller.signal,
+    config: { botToken: "123:abc", lastUpdateId: 1 },
+    deleteWebhook: async () => {},
+    getUpdatesRequestBudgetMs: (body) => {
+      assert.equal(body.timeout, 30);
+      return 5;
+    },
+    getUpdates: async (_body, signal) => {
+      requestSignal = signal;
+      return await new Promise<never>(() => {});
+    },
+    persistConfig: async () => {},
+    ...NOOP_JOURNAL_ADMISSION,
+    onErrorStatus: (message) => {
+      statusMessages.push(message);
+    },
+    onStatusReset: () => {
+      statusMessages.push("unexpected reset");
+    },
+    sleep: async (ms, signal) => {
+      assert.equal(ms, 3_000);
+      assert.equal(signal, controller.signal);
+      controller.abort();
+    },
+    onPhaseChange: (phase, updateId) => {
+      phases.push(`${phase}:${updateId ?? "none"}`);
+    },
+    recordRuntimeEvent: (_category, error, details) => {
+      runtimeEvents.push({ error, details });
+    },
+  });
+
+  assert.equal(requestSignal?.aborted, true);
+  assert.ok(requestSignal?.reason instanceof TelegramGetUpdatesTimeoutError);
+  assert.deepEqual(phases, ["long-poll:none", "retrying:none"]);
+  assert.deepEqual(statusMessages, [
+    "Telegram getUpdates timed out after 5 ms.",
+  ]);
+  assert.equal(runtimeEvents.length, 1);
+  assert.ok(runtimeEvents[0]?.error instanceof TelegramGetUpdatesTimeoutError);
+  assert.deepEqual(runtimeEvents[0]?.details, {
+    phase: "long-poll",
+    timeoutMs: 5,
+  });
 });
 
 test("Poll loop runner binds config, status, and transport ports", async () => {
@@ -584,8 +1219,12 @@ test("Poll loop runner binds config, status, and transport ports", async () => {
     persistConfig: async () => {
       events.push(`persist:${config.lastUpdateId}`);
     },
-    handleUpdate: async (update, ctx: string) => {
-      events.push(`handle:${ctx}:${update.update_id}`);
+    appendUpdateBatch: (updates) => {
+      events.push(`append:${updates.map((update) => update.update_id).join(",")}`);
+    },
+    getJournalEntryCount: () => 0,
+    signalUpdateWorker: () => {
+      events.push("signal");
     },
     updateStatus: (ctx, message) => {
       events.push(`status:${ctx}:${message ?? "ok"}`);
@@ -593,9 +1232,25 @@ test("Poll loop runner binds config, status, and transport ports", async () => {
     sleep: async () => {
       events.push("sleep");
     },
+    onPhaseChange: (phase, updateId) => {
+      events.push(`phase:${phase}:${updateId ?? "none"}`);
+    },
+    onSuccessfulResponse: (updateCount) => {
+      events.push(`response:${updateCount}`);
+    },
   });
   await runPollLoop("ctx", new AbortController().signal);
-  assert.deepEqual(events, ["deleteWebhook", "handle:ctx:6", "persist:6"]);
+  assert.deepEqual(events, [
+    "deleteWebhook",
+    "phase:long-poll:none",
+    "response:1",
+    "phase:persisting-journal:6",
+    "append:6",
+    "phase:persisting-offset:6",
+    "persist:6",
+    "signal",
+    "phase:long-poll:none",
+  ]);
 });
 
 test("Poll loop runner ignores stale-context status failures while retrying", async () => {
@@ -612,7 +1267,7 @@ test("Poll loop runner ignores stale-context status failures while retrying", as
       throw new DOMException("stop", "AbortError");
     },
     persistConfig: async () => {},
-    handleUpdate: async () => {},
+    ...NOOP_JOURNAL_ADMISSION,
     updateStatus: (_ctx: string, message?: string) => {
       events.push(`status:${message ?? "ok"}`);
       throw new Error("stale ctx");
@@ -634,37 +1289,110 @@ test("Poll loop runner ignores stale-context status failures while retrying", as
   ]);
 });
 
-test("Poll loop initializes lastUpdateId and processes prepared update batches", async () => {
-  const handled: number[] = [];
+test("Journal-first poll loop advances before unresolved worker execution", async () => {
+  const controller = new AbortController();
+  const config = { botToken: "123:abc", lastUpdateId: 0 };
+  const events: string[] = [];
+  let getUpdatesCalls = 0;
+  let unresolvedWorker: Promise<void> | undefined;
+
+  await runTelegramPollLoop({
+    ctx: TEST_CONTEXT,
+    signal: controller.signal,
+    config,
+    deleteWebhook: async () => undefined,
+    getUpdates: async () => {
+      getUpdatesCalls += 1;
+      if (getUpdatesCalls === 1) return [{ update_id: 1 }];
+      assert.equal(config.lastUpdateId, 1);
+      assert.ok(unresolvedWorker);
+      controller.abort();
+      throw new DOMException("stop", "AbortError");
+    },
+    appendUpdateBatch: (updates) => {
+      events.push(`append:${updates.map((update) => update.update_id).join(",")}`);
+    },
+    getJournalEntryCount: () => 0,
+    signalUpdateWorker: () => {
+      events.push("signal");
+      unresolvedWorker = new Promise<void>(() => {});
+    },
+    persistConfig: async () => {
+      events.push(`persist:${config.lastUpdateId}`);
+    },
+    prepareUpdateBatch: (updates) => {
+      events.push(`prepare:${updates.length}`);
+    },
+    onErrorStatus: () => {},
+    onStatusReset: () => {},
+    sleep: async () => {},
+    onPhaseChange: (phase) => events.push(`phase:${phase}`),
+  });
+
+  assert.equal(getUpdatesCalls, 2);
+  assert.deepEqual(events.slice(0, 6), [
+    "phase:long-poll",
+    "prepare:1",
+    "phase:persisting-journal",
+    "append:1",
+    "phase:persisting-offset",
+    "persist:1",
+  ]);
+  assert.equal(events[6], "signal");
+  assert.equal(events[7], "phase:long-poll");
+});
+
+test("Journal-first poll loop rejects a missing cursor with retained authority", async () => {
+  let getUpdatesCalls = 0;
+  await assert.rejects(
+    runTelegramPollLoop({
+      ctx: TEST_CONTEXT,
+      signal: new AbortController().signal,
+      config: { botToken: "123:abc" },
+      deleteWebhook: async () => undefined,
+      getUpdates: async () => {
+        getUpdatesCalls += 1;
+        return [];
+      },
+      appendUpdateBatch: () => undefined,
+      getJournalEntryCount: () => 1,
+      signalUpdateWorker: () => {},
+      persistConfig: async () => {},
+      onErrorStatus: () => {},
+      onStatusReset: () => {},
+      sleep: async () => {},
+    }),
+    TelegramPollingCursorBootstrapError,
+  );
+  assert.equal(getUpdatesCalls, 0);
+});
+
+test("Poll loop bootstraps once and journals each prepared response batch", async () => {
   const lifecycle: string[] = [];
   const config: { botToken: string; lastUpdateId?: number } = {
     botToken: "123:abc",
   };
   let getUpdatesCalls = 0;
   let persistCount = 0;
-  const signal = new AbortController().signal;
   await runTelegramPollLoop({
     ctx: TEST_CONTEXT,
-    signal,
+    signal: new AbortController().signal,
     config,
     deleteWebhook: async () => {},
     getUpdates: async () => {
       getUpdatesCalls += 1;
-      if (getUpdatesCalls === 1) {
-        return [{ update_id: 5 }];
-      }
-      if (getUpdatesCalls === 2) {
-        return [{ update_id: 6 }, { update_id: 7 }];
-      }
+      if (getUpdatesCalls === 1) return [{ update_id: 5 }];
+      if (getUpdatesCalls === 2) return [{ update_id: 6 }, { update_id: 7 }];
       throw new DOMException("stop", "AbortError");
     },
     persistConfig: async () => {
       persistCount += 1;
     },
-    handleUpdate: async (update) => {
-      lifecycle.push(`handle:${update.update_id}`);
-      handled.push(update.update_id);
+    appendUpdateBatch: (updates) => {
+      lifecycle.push(`append:${updates.map((update) => update.update_id).join(",")}`);
     },
+    getJournalEntryCount: () => 0,
+    signalUpdateWorker: () => lifecycle.push("signal"),
     prepareUpdateBatch: (updates) => {
       lifecycle.push(`batch:${updates.map((update) => update.update_id).join(",")}`);
     },
@@ -673,125 +1401,8 @@ test("Poll loop initializes lastUpdateId and processes prepared update batches",
     sleep: async () => {},
   });
   assert.equal(config.lastUpdateId, 7);
-  assert.deepEqual(handled, [6, 7]);
-  assert.deepEqual(lifecycle, ["batch:6,7", "handle:6", "handle:7"]);
-  assert.equal(persistCount, 3);
-});
-
-test("Poll loop persists long-poll offsets only after handling updates", async () => {
-  const config = { botToken: "123:abc", lastUpdateId: 5 };
-  const handled: number[] = [];
-  const persisted: number[] = [];
-  let calls = 0;
-  await runTelegramPollLoop({
-    ctx: TEST_CONTEXT,
-    signal: new AbortController().signal,
-    config,
-    deleteWebhook: async () => {},
-    getUpdates: async () => {
-      calls += 1;
-      if (calls === 1) return [{ update_id: 6 }];
-      throw new DOMException("stop", "AbortError");
-    },
-    persistConfig: async () => {
-      persisted.push(config.lastUpdateId ?? -1);
-    },
-    handleUpdate: async (update) => {
-      handled.push(update.update_id);
-      throw new Error("handler failed");
-    },
-    onErrorStatus: () => {},
-    onStatusReset: () => {},
-    sleep: async () => {},
-  });
-  assert.deepEqual(handled, [6]);
-  assert.equal(config.lastUpdateId, 5);
-  assert.deepEqual(persisted, []);
-});
-
-test("Poll loop does not readmit an update after offset persistence fails", async () => {
-  const config = { botToken: "123:abc", lastUpdateId: 5 };
-  const handled: number[] = [];
-  let getUpdatesCalls = 0;
-  let persistCalls = 0;
-  await runTelegramPollLoop({
-    ctx: TEST_CONTEXT,
-    signal: new AbortController().signal,
-    config,
-    deleteWebhook: async () => {},
-    getUpdates: async () => {
-      getUpdatesCalls += 1;
-      if (getUpdatesCalls <= 2) return [{ update_id: 6 }];
-      throw new DOMException("stop", "AbortError");
-    },
-    persistConfig: async () => {
-      persistCalls += 1;
-      if (persistCalls === 1) throw new Error("config commit failed");
-    },
-    handleUpdate: async (update) => {
-      handled.push(update.update_id);
-    },
-    onErrorStatus: () => {},
-    onStatusReset: () => {},
-    sleep: async () => {},
-  });
-
-  assert.deepEqual(handled, [6]);
-  assert.equal(persistCalls, 2);
-  assert.equal(config.lastUpdateId, 6);
-});
-
-test("Poll loop skips repeatedly failing updates after the configured threshold", async () => {
-  const config = { botToken: "123:abc", lastUpdateId: 5 };
-  const persisted: number[] = [];
-  const statusMessages: string[] = [];
-  const runtimeEvents: string[] = [];
-  let calls = 0;
-  await runTelegramPollLoop({
-    ctx: TEST_CONTEXT,
-    signal: new AbortController().signal,
-    config,
-    maxUpdateFailures: 2,
-    deleteWebhook: async () => {},
-    getUpdates: async () => {
-      calls += 1;
-      if (calls <= 2) return [{ update_id: 6 }];
-      throw new DOMException("stop", "AbortError");
-    },
-    persistConfig: async () => {
-      persisted.push(config.lastUpdateId ?? -1);
-    },
-    handleUpdate: async () => {
-      throw new Error("handler failed");
-    },
-    onErrorStatus: (message) => {
-      statusMessages.push(message);
-    },
-    onStatusReset: () => {
-      statusMessages.push("reset");
-    },
-    sleep: async (ms) => {
-      statusMessages.push(`sleep:${ms}`);
-    },
-    recordRuntimeEvent: (category, error, details) => {
-      const message = error instanceof Error ? error.message : String(error);
-      runtimeEvents.push(
-        `${category}:${message}:${details?.phase}:${details?.failureCount}`,
-      );
-    },
-  });
-  assert.equal(config.lastUpdateId, 6);
-  assert.deepEqual(persisted, [6]);
-  assert.deepEqual(statusMessages, [
-    "handler failed",
-    "sleep:3000",
-    "reset",
-    "skipping Telegram update 6 after 2 failures: handler failed",
-  ]);
-  assert.deepEqual(runtimeEvents, [
-    "polling:handler failed:handleUpdate:1",
-    "polling:handler failed:handleUpdate:2",
-  ]);
+  assert.deepEqual(lifecycle, ["batch:6,7", "append:6,7", "signal"]);
+  assert.equal(persistCount, 2);
 });
 
 test("Polling retry sleep resolves immediately when aborted", async () => {
@@ -815,7 +1426,7 @@ test("Poll loop stops without status reset when aborted during retry sleep", asy
       throw new Error("network down");
     },
     persistConfig: async () => {},
-    handleUpdate: async () => {},
+    ...NOOP_JOURNAL_ADMISSION,
     onErrorStatus: (message) => {
       statusMessages.push(`error:${message}`);
     },
@@ -840,6 +1451,7 @@ test("Poll loop suppresses getUpdates conflicts while another long poll drains",
     ctx: TEST_CONTEXT,
     signal: new AbortController().signal,
     config,
+    ...NOOP_JOURNAL_ADMISSION,
     deleteWebhook: async () => {},
     getUpdates: async () => {
       calls += 1;
@@ -851,7 +1463,6 @@ test("Poll loop suppresses getUpdates conflicts while another long poll drains",
       throw new DOMException("stop", "AbortError");
     },
     persistConfig: async () => {},
-    handleUpdate: async () => {},
     onErrorStatus: (message) => {
       statusMessages.push(`error:${message}`);
     },
@@ -890,6 +1501,7 @@ test("Poll loop reports retryable errors and sleeps before retrying", async () =
     ctx: TEST_CONTEXT,
     signal: new AbortController().signal,
     config,
+    ...NOOP_JOURNAL_ADMISSION,
     deleteWebhook: async () => {},
     getUpdates: async () => {
       calls += 1;
@@ -899,7 +1511,6 @@ test("Poll loop reports retryable errors and sleeps before retrying", async () =
       throw new DOMException("stop", "AbortError");
     },
     persistConfig: async () => {},
-    handleUpdate: async () => {},
     onErrorStatus: (message) => {
       statusMessages.push(`error:${message}`);
     },

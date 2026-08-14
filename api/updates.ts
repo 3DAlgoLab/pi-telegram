@@ -5,7 +5,12 @@
  */
 
 export {
+  assertTelegramUpdateExecutionCurrent,
+  carryTelegramUpdateExecutionFence,
+  createTelegramUpdateExecutionFenceGuard,
+  getTelegramUpdateExecutionFence,
   registerTelegramUpdateHandler,
+  type TelegramUpdateExecutionFence,
   type TelegramUpdateHandler,
   type TelegramUpdateHandlerVerdict,
 } from "../lib/updates.ts";

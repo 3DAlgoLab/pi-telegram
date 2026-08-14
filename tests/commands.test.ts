@@ -50,6 +50,7 @@ import {
   TELEGRAM_COMMAND_EMOJI,
   TELEGRAM_RESERVED_COMMAND_NAMES,
 } from "../lib/commands.ts";
+import { runTelegramPollLoop } from "../lib/polling.ts";
 import { createTelegramPollingStartRecoveryHandler } from "../lib/recovery.ts";
 import type { ExtensionAPI, ExtensionCommandContext } from "../lib/pi.ts";
 
@@ -140,6 +141,29 @@ test("Command helpers register Telegram bot commands through deps", async () => 
     },
   })();
   assert.deepEqual(calls, [TELEGRAM_BOT_COMMANDS, TELEGRAM_BOT_COMMANDS]);
+});
+
+test("Command helpers coalesce concurrent bot command sync", async () => {
+  let calls = 0;
+  let finish: (() => void) | undefined;
+  const registrar = createTelegramBotCommandRegistrar({
+    setMyCommands: async () => {
+      calls += 1;
+      if (calls === 1) {
+        await new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+      }
+    },
+  });
+  const first = registrar();
+  const joined = registrar();
+  await Promise.resolve();
+  assert.equal(calls, 1);
+  finish?.();
+  await Promise.all([first, joined]);
+  await registrar();
+  assert.equal(calls, 2);
 });
 
 test("Command helpers keep extension Telegram bot commands hidden by default", async () => {
@@ -794,6 +818,9 @@ test("Command target queue runtime binds control queue and chat targets", async 
       replyToMessageId: options.replyToMessageId,
       controlType: options.controlType,
       statusSummary: options.statusSummary,
+      ...(options.admissionReceipts
+        ? { admissionReceipts: options.admissionReceipts }
+        : {}),
       execute: options.execute,
     }),
     appendControlItem: (item, ctx) => {
@@ -817,6 +844,62 @@ test("Command target queue runtime binds control queue and chat targets", async 
     },
   );
   assert.deepEqual(calls, ["append:7:11:ctx", "execute:ctx", "dispatch:ctx"]);
+});
+
+test("Command target queue runtime binds source ids to exact control receipts", () => {
+  const queuedReceipts: unknown[] = [];
+  const reportedReceipts: unknown[] = [];
+  const runtime = createTelegramCommandTargetQueueRuntime<
+    {
+      chat: { id: number };
+      message_id: number;
+      pi_telegram_source_update_id?: number;
+    },
+    string
+  >({
+    createControlItem: (options) => ({
+      kind: "control",
+      queueLane: "control",
+      queueOrder: 0,
+      laneOrder: 0,
+      chatId: options.chatId,
+      replyToMessageId: options.replyToMessageId,
+      controlType: options.controlType,
+      statusSummary: options.statusSummary,
+      ...(options.admissionReceipts
+        ? { admissionReceipts: options.admissionReceipts }
+        : {}),
+      execute: options.execute,
+    }),
+    appendControlItem: (item) => {
+      queuedReceipts.push(item.admissionReceipts);
+    },
+    dispatchNextQueuedTelegramTurn: () => {},
+    getAdmissionScope: () => "profile-a:bot-a",
+    onControlQueued: (_message, receipt) => {
+      reportedReceipts.push(receipt);
+    },
+    showStatus: async () => {},
+    openModelMenu: async () => {},
+    sendTextReply: async () => {},
+  });
+
+  runtime.enqueueControlItem(
+    {
+      chat: { id: 7 },
+      message_id: 11,
+      pi_telegram_source_update_id: 91,
+    },
+    "ctx",
+    "status",
+    "status",
+    async () => {},
+  );
+  assert.deepEqual(queuedReceipts, [reportedReceipts]);
+  assert.deepEqual(
+    (reportedReceipts[0] as { sourceUpdateIds: number[] }).sourceUpdateIds,
+    [91],
+  );
 });
 
 test("Command target runtime binds chat reply targets to command ports", async () => {
@@ -1526,6 +1609,7 @@ test("Command runtime routes commands through runtime ports", async () => {
   };
   let allowedUserId: number | undefined;
   let compactComplete: (() => void) | undefined;
+  let contextActive = true;
   const deps = {
     hasAbortHandler: () => true,
     clearPendingModelSwitch: () => {
@@ -1553,6 +1637,7 @@ test("Command runtime routes commands through runtime ports", async () => {
     updateStatus: () => {
       events.push("status");
     },
+    isContextActive: () => contextActive,
     dispatchNextQueuedTelegramTurn: () => {
       events.push("dispatch");
     },
@@ -1630,18 +1715,23 @@ test("Command runtime routes commands through runtime ports", async () => {
   compactComplete?.();
   assert.equal(await handleCommand("stop", message, { idle: true }), true);
   assert.equal(await handleCommand("unknown", message, { idle: true }), false);
+  const eventCountBeforeStaleCommand = events.length;
+  contextActive = false;
+  assert.equal(await handleCommand("status", message, { idle: true }), true);
+  await Promise.resolve();
+  assert.equal(events.length, eventCountBeforeStaleCommand);
   assert.equal(allowedUserId, 7);
   assert.deepEqual(events, [
     "show:42",
     "model:42",
     "thinking:42",
-    "register",
     "pair:7",
     "persist",
     "status",
     "show:42",
     "register",
     "show:42",
+    "register",
     "continue:99",
     "continue:99",
     "compact:true",
@@ -1663,9 +1753,12 @@ test("Command runtime routes commands through runtime ports", async () => {
   ]);
 });
 
-test("Command runtime does not first-pair from group start", async () => {
+test("Command admission advances polling while start-menu effects remain unsettled", async () => {
   const events: string[] = [];
+  const persistedOffsets: number[] = [];
   let allowedUserId: number | undefined;
+  let finishMenu: (() => void) | undefined;
+  let failRegistration: ((error: Error) => void) | undefined;
   const message = {
     chat: { id: -1001, type: "supergroup" },
     message_id: 55,
@@ -1693,6 +1786,10 @@ test("Command runtime does not first-pair from group start", async () => {
     enqueueControlItem: () => {},
     showStatus: async () => {
       events.push("show");
+      await new Promise<void>((resolve) => {
+        finishMenu = resolve;
+      });
+      events.push("show:done");
     },
     openModelMenu: async () => {},
     openThinkingMenu: async () => {},
@@ -1704,6 +1801,9 @@ test("Command runtime does not first-pair from group start", async () => {
     },
     registerBotCommands: async () => {
       events.push("register");
+      await new Promise<void>((_resolve, reject) => {
+        failRegistration = reject;
+      });
     },
     persistConfig: async () => {
       events.push("persist");
@@ -1711,11 +1811,59 @@ test("Command runtime does not first-pair from group start", async () => {
     sendTextReply: async (_message: typeof message, text: string) => {
       events.push(`reply:${text}`);
     },
+    recordRuntimeEvent: (category, error, details) => {
+      events.push(
+        `runtime:${category}:${error instanceof Error ? error.message : String(error)}:${details?.phase}`,
+      );
+    },
+  });
+  const controller = new AbortController();
+  const config = { botToken: "123:abc", lastUpdateId: 0 };
+  let getUpdatesCalls = 0;
+
+  await runTelegramPollLoop({
+    ctx: {},
+    signal: controller.signal,
+    config,
+    deleteWebhook: async () => {},
+    getUpdates: async () => {
+      getUpdatesCalls += 1;
+      if (getUpdatesCalls === 1) return [{ update_id: 1, message }];
+      controller.abort();
+      throw new DOMException("stop", "AbortError");
+    },
+    persistConfig: async (nextConfig) => {
+      persistedOffsets.push(nextConfig.lastUpdateId ?? -1);
+    },
+    appendUpdateBatch: () => undefined,
+    getJournalEntryCount: () => 0,
+    signalUpdateWorker() {
+      void handleCommand("start", message, {}).then((handled) => {
+        assert.equal(handled, true);
+      });
+    },
+    onErrorStatus: () => {},
+    onStatusReset: () => {},
+    sleep: async () => {},
   });
 
-  assert.equal(await handleCommand("start", message, {}), true);
   assert.equal(allowedUserId, undefined);
-  assert.deepEqual(events, ["register", "show"]);
+  assert.equal(getUpdatesCalls, 2);
+  assert.equal(config.lastUpdateId, 1);
+  assert.deepEqual(persistedOffsets, [1]);
+  assert.deepEqual(events.slice(0, 2), ["show", "register"]);
+  assert.equal(events.includes("show:done"), false);
+
+  finishMenu?.();
+  failRegistration?.(new Error("sync failed"));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(events.includes("show:done"), true);
+  assert.equal(
+    events.includes(
+      "runtime:telegram-command:sync failed:bot-command-sync",
+    ),
+    true,
+  );
 });
 
 test("Command or prompt runtime routes commands before enqueue fallback", async () => {
@@ -1758,6 +1906,63 @@ test("Command or prompt runtime routes commands before enqueue fallback", async 
     "command:none:hello:ctx",
     "enqueue:1:hello:ctx",
   ]);
+});
+
+test("Command or prompt runtime rejects stale delegated command effects", async () => {
+  let current = true;
+  let enqueues = 0;
+  const runtime = createTelegramCommandOrPromptRuntime<
+    { text: string },
+    { id: string }
+  >({
+    extractRawText: (messages) => messages[0]?.text ?? "",
+    handleCommand: async () => {
+      current = false;
+      return false;
+    },
+    replaceMessageText: (message, text) => ({ ...message, text }),
+    enqueueTurn: async () => {
+      enqueues += 1;
+    },
+    assertExecutionCurrent() {
+      if (!current) throw new DOMException("Aborted", "AbortError");
+    },
+  });
+
+  await assert.rejects(
+    runtime.dispatchMessages([{ text: "stale" }], { id: "ctx" }),
+    /Abort/u,
+  );
+  assert.equal(enqueues, 0);
+});
+
+test("Command or prompt runtime rejects stale extension command completion", async () => {
+  let current = true;
+  let enqueues = 0;
+  const runtime = createTelegramCommandOrPromptRuntime<
+    { text: string },
+    { id: string }
+  >({
+    extractRawText: (messages) => messages[0]?.text ?? "",
+    handleCommand: async () => false,
+    executeExtensionCommand: async () => {
+      current = false;
+      return false;
+    },
+    replaceMessageText: (message, text) => ({ ...message, text }),
+    enqueueTurn: async () => {
+      enqueues += 1;
+    },
+    assertExecutionCurrent() {
+      if (!current) throw new DOMException("Aborted", "AbortError");
+    },
+  });
+
+  await assert.rejects(
+    runtime.dispatchMessages([{ text: "/extension" }], { id: "ctx" }),
+    /Abort/u,
+  );
+  assert.equal(enqueues, 0);
 });
 
 test("Command or prompt runtime can ignore non-prompt message batches", async () => {

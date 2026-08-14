@@ -25,7 +25,9 @@ import {
 } from "../lib/bus-transport.ts";
 import {
   createCurrentTelegramBusProcessRuntime,
+  createTelegramBusFollowerDeliveryIdentity,
   createTelegramBusFollowerRegistry,
+  createTelegramBusProtocolIdentity,
   createTelegramBusForeignOwnedUpdateForwarder,
   createTelegramFollowerApiCallAuthorizer,
   createTelegramBusLocalServer,
@@ -33,10 +35,15 @@ import {
   createTelegramBusRequestId,
   createTelegramBusRequestIdFactory,
   encodeTelegramBusEnvelope,
+  getTelegramBusEnvelopeTrafficClass,
   getTelegramBusFollowerSocketPath,
+  getTelegramBusProtocolCompatibility,
   getTelegramBusSocketPath,
   getTelegramFollowerTargetOwnership,
   getTelegramProcessBirthIdentity,
+  getTelegramProcessLiveness,
+  hasTelegramBusCapability,
+  isTelegramBusEnvelopeAuthorized,
   isTelegramFollowerApiCallAllowed,
   markTelegramBusAggregateDelivery,
   markTelegramBusCrossTargetDelivery,
@@ -44,7 +51,149 @@ import {
   resolveTelegramBusSocketPath,
   stripTelegramBusApiMetadata,
   sendTelegramBusLocalEnvelope,
+  TELEGRAM_BUS_CAPABILITY_DURABLE_FOLLOWER_ADMISSION,
+  TELEGRAM_BUS_CAPABILITY_QUEUE_HANDOFF,
 } from "../lib/bus.ts";
+
+test("Bus envelope auth compares the exact secret in constant time", () => {
+  const secret = "leader-minted-secret";
+  assert.equal(
+    isTelegramBusEnvelopeAuthorized(
+      { kind: "bus.ack", requestId: "r", ok: true, auth: secret },
+      secret,
+    ),
+    true,
+  );
+  assert.equal(
+    isTelegramBusEnvelopeAuthorized(
+      { kind: "bus.ack", requestId: "r", ok: true, auth: "00000000000000000000" },
+      secret,
+    ),
+    false,
+  );
+  assert.equal(
+    isTelegramBusEnvelopeAuthorized(
+      { kind: "bus.ack", requestId: "r", ok: true, auth: "short" },
+      secret,
+    ),
+    false,
+  );
+  assert.equal(
+    isTelegramBusEnvelopeAuthorized(
+      { kind: "bus.ack", requestId: "r", ok: true },
+      secret,
+    ),
+    false,
+  );
+  assert.equal(
+    isTelegramBusEnvelopeAuthorized(
+      { kind: "bus.ack", requestId: "r", ok: true },
+      undefined,
+    ),
+    true,
+  );
+});
+
+test("Bus envelopes classify bootstrap, fenced traffic, and responses", () => {
+  assert.equal(
+    getTelegramBusEnvelopeTrafficClass({
+      kind: "follower.register",
+      requestId: "register:1",
+      registration: { instanceId: "follower", connectedAtMs: 1 },
+    }),
+    "bootstrap",
+  );
+  assert.equal(
+    getTelegramBusEnvelopeTrafficClass({
+      kind: "follower.heartbeat",
+      requestId: "heartbeat:1",
+      instanceId: "follower",
+      registrationGeneration: "generation-1",
+      sentAtMs: 1,
+    }),
+    "generation-fenced",
+  );
+  assert.equal(
+    getTelegramBusEnvelopeTrafficClass({
+      kind: "bus.ack",
+      requestId: "response:1",
+      ok: true,
+    }),
+    "response",
+  );
+});
+
+test("Bus protocol capabilities are explicit and independently negotiable", () => {
+  const identity = createTelegramBusProtocolIdentity({
+    runtimeBuild: "0.28.0",
+    capabilities: [TELEGRAM_BUS_CAPABILITY_QUEUE_HANDOFF],
+  });
+  assert.equal(
+    hasTelegramBusCapability(identity, TELEGRAM_BUS_CAPABILITY_QUEUE_HANDOFF),
+    true,
+  );
+  assert.equal(
+    hasTelegramBusCapability(
+      identity,
+      TELEGRAM_BUS_CAPABILITY_DURABLE_FOLLOWER_ADMISSION,
+    ),
+    false,
+  );
+  assert.equal(
+    hasTelegramBusCapability(undefined, TELEGRAM_BUS_CAPABILITY_QUEUE_HANDOFF),
+    false,
+  );
+});
+
+test("Bus protocol compatibility ignores build skew and enforces capabilities", () => {
+  const local = createTelegramBusProtocolIdentity({
+    runtimeBuild: "0.28.0",
+    capabilities: [TELEGRAM_BUS_CAPABILITY_DURABLE_FOLLOWER_ADMISSION],
+  });
+  const compatibleSkew = createTelegramBusProtocolIdentity({
+    runtimeBuild: "0.28.1",
+    capabilities: [TELEGRAM_BUS_CAPABILITY_DURABLE_FOLLOWER_ADMISSION],
+  });
+  assert.deepEqual(
+    getTelegramBusProtocolCompatibility({ local, remote: compatibleSkew }),
+    { compatible: true, missingCapabilities: [] },
+  );
+  assert.deepEqual(
+    getTelegramBusProtocolCompatibility({ local }),
+    {
+      compatible: false,
+      reason: "missing-identity",
+      missingCapabilities: [],
+    },
+  );
+  assert.deepEqual(
+    getTelegramBusProtocolCompatibility({
+      local,
+      remote: createTelegramBusProtocolIdentity({ runtimeBuild: "0.28.2" }),
+    }),
+    {
+      compatible: false,
+      reason: "missing-capability",
+      missingCapabilities: [
+        TELEGRAM_BUS_CAPABILITY_DURABLE_FOLLOWER_ADMISSION,
+      ],
+    },
+  );
+});
+
+test("Follower delivery identity stays stable across registration replacement", () => {
+  const first = createTelegramBusFollowerDeliveryIdentity({
+    kind: "leader.forwardMessage",
+    recipientBindingKey: "manual:owner-a",
+    sourceUpdateId: 44,
+  });
+  const replacement = createTelegramBusFollowerDeliveryIdentity({
+    kind: "leader.forwardMessage",
+    recipientBindingKey: "manual:owner-a",
+    sourceUpdateId: 44,
+  });
+  assert.deepEqual(replacement, first);
+});
 
 test("Current bus process runtime owns process identity defaults", () => {
   const runtime = createCurrentTelegramBusProcessRuntime({
@@ -54,6 +203,8 @@ test("Current bus process runtime owns process identity defaults", () => {
     createdAtMs: 1000,
   });
   assert.equal(runtime.instanceId, "42:1000");
+  assert.equal(runtime.processId, 42);
+  assert.match(runtime.processBirthId, /^42:/u);
   assert.match(runtime.manualFollowerOwnerId, /^7:/u);
 });
 
@@ -80,6 +231,60 @@ test(
     assert.match(first, new RegExp(`^${process.pid}:start:[a-f0-9]{16}$`, "u"));
   },
 );
+
+test("Process liveness requires a stable platform birth proof", () => {
+  const linuxStat = (ticks: string) =>
+    `(worker name) S ${Array(18).fill("0").join(" ")} ${ticks}`;
+  assert.equal(
+    getTelegramProcessLiveness(
+      { processId: 42, processBirthId: "42:start:12345" },
+      {
+        platform: "linux",
+        isProcessAlive: () => true,
+        readProcStat: () => linuxStat("12345"),
+      },
+    ),
+    "alive",
+  );
+  assert.equal(
+    getTelegramProcessLiveness(
+      { processId: 42, processBirthId: "42:start:old" },
+      {
+        platform: "linux",
+        isProcessAlive: () => true,
+        readProcStat: () => linuxStat("new"),
+      },
+    ),
+    "dead",
+  );
+  assert.equal(
+    getTelegramProcessLiveness(
+      { processId: 42, processBirthId: "42:generation:owner" },
+      { platform: "win32", isProcessAlive: () => true },
+    ),
+    "unverifiable",
+  );
+  assert.equal(
+    getTelegramProcessLiveness(
+      { processId: 42, processBirthId: "42:start:any" },
+      { platform: "win32", isProcessAlive: () => false },
+    ),
+    "dead",
+  );
+  assert.equal(
+    getTelegramProcessLiveness(
+      { processId: 42, processBirthId: "42:start:any" },
+      {
+        platform: "darwin",
+        isProcessAlive: () => true,
+        readDarwinProcessStart: () => {
+          throw new Error("inaccessible");
+        },
+      },
+    ),
+    "unverifiable",
+  );
+});
 
 test("Process birth identity preserves Linux start ticks and fallback", () => {
   const stat = `(worker name) S ${Array(18).fill("0").join(" ")} 12345`;
@@ -306,7 +511,12 @@ test("Bus contract encodes and parses follower registration envelopes", () => {
       slot: "E",
       cwd: "/work/project",
       pid: 123,
+      processBirthId: "123:start:abc",
+      sessionGeneration: 4,
       target: { chatId: -1007, threadId: 42 },
+      protocol: createTelegramBusProtocolIdentity({
+        runtimeBuild: "0.28.0",
+      }),
       connectedAtMs: 1000,
     },
   };
@@ -364,6 +574,98 @@ test("Bus contract encodes and parses follower target replacement envelopes", ()
         target: { chatId: 7 },
         reason: "thread-restore",
         sentAtMs: 6000,
+      }),
+    ),
+    undefined,
+  );
+});
+
+test("Bus contract encodes and parses queue handoff envelopes", () => {
+  const payload = {
+    kind: "prompt" as const,
+    chatId: 7,
+    target: { chatId: 7, threadId: 42 },
+    replyToMessageId: 10,
+    queueOrder: 1,
+    queueLane: "default" as const,
+    laneOrder: 1,
+    statusSummary: "handoff",
+    admissionReceipts: [
+      {
+        queueKind: "prompt" as const,
+        receiptId: "receipt-1",
+        sourceUpdateIds: [1],
+      },
+    ],
+    sourceMessageIds: [10],
+    queuedAttachments: [],
+    content: [{ type: "text" as const, text: "handoff prompt" }],
+    historyText: "handoff",
+    reactionSuppressionEmoji: "👎",
+  };
+  const leaderEnvelope = {
+    kind: "leader.offerQueueHandoff" as const,
+    requestId: "leader:handoff:1",
+    recipientInstanceId: "inst-b",
+    recipientRegistrationGeneration: "generation-b",
+    donorInstanceId: "inst-a",
+    donorProcessId: 101,
+    donorProcessBirthId: "101:start:a",
+    donorSessionGeneration: 2,
+    donorAcquisitionId: "acquisition-a",
+    donorAcquiredAtMs: 1000,
+    handoffToken: "x".repeat(32),
+    payload,
+    sentAtMs: 2000,
+  };
+  assert.deepEqual(
+    parseTelegramBusEnvelope(
+      encodeTelegramBusEnvelope(leaderEnvelope).trimEnd(),
+    ),
+    leaderEnvelope,
+  );
+  const followerEnvelope = {
+    kind: "follower.offerQueueHandoff" as const,
+    requestId: "follower:handoff:1",
+    instanceId: "inst-a",
+    registrationGeneration: "generation-a",
+    recipientInstanceId: "inst-b",
+    recipientRegistrationGeneration: "generation-b",
+    donorProcessId: 101,
+    donorProcessBirthId: "101:start:a",
+    donorSessionGeneration: 2,
+    donorAcquisitionId: "acquisition-a",
+    donorAcquiredAtMs: 1000,
+    handoffToken: "y".repeat(32),
+    payload,
+    sentAtMs: 2000,
+  };
+  assert.deepEqual(
+    parseTelegramBusEnvelope(
+      encodeTelegramBusEnvelope(followerEnvelope).trimEnd(),
+    ),
+    followerEnvelope,
+  );
+  assert.equal(
+    parseTelegramBusEnvelope(
+      JSON.stringify({ ...leaderEnvelope, handoffToken: "short" }),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTelegramBusEnvelope(
+      JSON.stringify({
+        ...leaderEnvelope,
+        payload: { ...payload, admissionReceipts: [] },
+      }),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseTelegramBusEnvelope(
+      JSON.stringify({
+        ...leaderEnvelope,
+        payload: { ...payload, reactionSuppressionEmoji: 1 },
       }),
     ),
     undefined,
@@ -449,55 +751,22 @@ test("Bus contract encodes and parses follower API call envelopes", () => {
   );
 });
 
-test("Bus contract encodes and parses forwarded update envelopes", () => {
-  assert.deepEqual(
-    parseTelegramBusEnvelope(
-      encodeTelegramBusEnvelope({
-        kind: "leader.forwardCallback",
-        requestId: "leader:2",
-        recipientInstanceId: "inst-b",
-        query: { id: "cb-1", data: "continue" },
-        sentAtMs: 2000,
-      }).trimEnd(),
-    ),
+test("Bus contract rejects forwarded updates without durable identity", () => {
+  for (const envelope of [
     {
       kind: "leader.forwardCallback",
       requestId: "leader:2",
       recipientInstanceId: "inst-b",
-      query: { id: "cb-1", data: "continue" },
+      query: { id: "cb-1" },
       sentAtMs: 2000,
     },
-  );
-
-  assert.deepEqual(
-    parseTelegramBusEnvelope(
-      encodeTelegramBusEnvelope({
-        kind: "leader.forwardReaction",
-        requestId: "leader:3",
-        recipientInstanceId: "inst-b",
-        reactionUpdate: { message_id: 9, new_reaction: [] },
-        sentAtMs: 3000,
-      }).trimEnd(),
-    ),
     {
       kind: "leader.forwardReaction",
       requestId: "leader:3",
       recipientInstanceId: "inst-b",
-      reactionUpdate: { message_id: 9, new_reaction: [] },
+      reactionUpdate: { message_id: 9 },
       sentAtMs: 3000,
     },
-  );
-
-  assert.deepEqual(
-    parseTelegramBusEnvelope(
-      encodeTelegramBusEnvelope({
-        kind: "leader.forwardMessage",
-        requestId: "leader:4",
-        recipientInstanceId: "inst-b",
-        message: { message_id: 10 },
-        sentAtMs: 4000,
-      }).trimEnd(),
-    ),
     {
       kind: "leader.forwardMessage",
       requestId: "leader:4",
@@ -505,18 +774,6 @@ test("Bus contract encodes and parses forwarded update envelopes", () => {
       message: { message_id: 10 },
       sentAtMs: 4000,
     },
-  );
-
-  assert.deepEqual(
-    parseTelegramBusEnvelope(
-      encodeTelegramBusEnvelope({
-        kind: "leader.forwardEditedMessage",
-        requestId: "leader:5",
-        recipientInstanceId: "inst-b",
-        message: { message_id: 11 },
-        sentAtMs: 5000,
-      }).trimEnd(),
-    ),
     {
       kind: "leader.forwardEditedMessage",
       requestId: "leader:5",
@@ -524,7 +781,9 @@ test("Bus contract encodes and parses forwarded update envelopes", () => {
       message: { message_id: 11 },
       sentAtMs: 5000,
     },
-  );
+  ]) {
+    assert.equal(parseTelegramBusEnvelope(JSON.stringify(envelope)), undefined);
+  }
 });
 
 test("Bus contract rejects malformed envelopes", () => {
@@ -1614,7 +1873,19 @@ test("Bus foreign-owned update forwarder sends routed update envelopes", async (
     socketPath,
     handleEnvelope: (envelope) => {
       received.push(envelope);
-      return { kind: "bus.ack", requestId: envelope.requestId, ok: true };
+      return {
+        kind: "bus.ack",
+        requestId: envelope.requestId,
+        ok: true,
+        ...("delivery" in envelope && envelope.delivery
+          ? {
+              result: {
+                deliveryId: envelope.delivery.deliveryId,
+                sourceUpdateId: envelope.delivery.sourceUpdateId,
+              },
+            }
+          : {}),
+      };
     },
   });
   let sequence = 0;
@@ -1623,74 +1894,319 @@ test("Bus foreign-owned update forwarder sends routed update envelopes", async (
     createRequestId: () => `leader:${++sequence}`,
     getNowMs: () => 9000,
   });
+  const expectedDelivery = createTelegramBusFollowerDeliveryIdentity({
+    kind: "leader.forwardMessage",
+    recipientBindingKey: "manual:owner-b",
+    sourceUpdateId: 44,
+  });
   try {
     await server.start();
-    assert.equal(
+    assert.deepEqual(
       await forwarder.forwardCallback({
         query: { id: "cb-1" },
         ownership: { instanceId: "inst-b" },
         ctx: "ctx",
       }),
-      true,
+      {
+        status: "terminal-rejected",
+        failureClass: "source-update-identity-missing",
+        message: "Forwarded Telegram update has no durable source identity.",
+      },
     );
-    assert.equal(
+    assert.deepEqual(
       await forwarder.forwardReaction({
         reactionUpdate: { message_id: 7 },
         ownership: { instanceId: "inst-b" },
         ctx: "ctx",
       }),
-      true,
+      {
+        status: "terminal-rejected",
+        failureClass: "source-update-identity-missing",
+        message: "Forwarded Telegram update has no durable source identity.",
+      },
     );
-    assert.equal(
+    const generationlessDelivery =
+      createTelegramBusFollowerDeliveryIdentity({
+        kind: "leader.forwardMessage",
+        recipientBindingKey: "manual:owner-b",
+        sourceUpdateId: 43,
+      });
+    assert.deepEqual(
       await forwarder.forwardMessage({
-        message: { message_id: 8 },
+        message: { message_id: 7, pi_telegram_source_update_id: 43 },
+        ownership: {
+          instanceId: "inst-b",
+          recipientBindingKey: "manual:owner-b",
+        },
+        ctx: "ctx",
+      }),
+      {
+        status: "retryable",
+        failureClass: "recipient-generation-missing",
+        message: "Forwarded Telegram update has no live recipient generation.",
+        delivery: generationlessDelivery,
+      },
+    );
+    assert.deepEqual(
+      await forwarder.forwardMessage({
+        message: { message_id: 7, pi_telegram_source_update_id: 43 },
         ownership: {
           instanceId: "inst-b",
           ownerGeneration: "registration-b",
         },
         ctx: "ctx",
       }),
-      true,
+      {
+        status: "terminal-rejected",
+        failureClass: "recipient-binding-missing",
+        message: "Forwarded Telegram update has no stable recipient binding.",
+        sourceUpdateId: 43,
+      },
     );
-    assert.equal(
+    assert.deepEqual(
+      await forwarder.forwardMessage({
+        message: {
+          message_id: 8,
+          pi_telegram_source_update_id: 44,
+        },
+        ownership: {
+          instanceId: "inst-b",
+          ownerGeneration: "registration-b",
+          recipientBindingKey: "manual:owner-b",
+        },
+        ctx: "ctx",
+      }),
+      { status: "accepted", delivery: expectedDelivery },
+    );
+    assert.deepEqual(
       await forwarder.forwardEditedMessage({
         message: { message_id: 9 },
         ownership: { instanceId: "inst-b" },
         ctx: "ctx",
       }),
-      true,
+      {
+        status: "terminal-rejected",
+        failureClass: "source-update-identity-missing",
+        message: "Forwarded Telegram update has no durable source identity.",
+      },
     );
     assert.deepEqual(received, [
       {
-        kind: "leader.forwardCallback",
+        kind: "leader.forwardMessage",
         requestId: "leader:1",
         recipientInstanceId: "inst-b",
-        query: { id: "cb-1" },
-        sentAtMs: 9000,
-      },
-      {
-        kind: "leader.forwardReaction",
-        requestId: "leader:2",
-        recipientInstanceId: "inst-b",
-        reactionUpdate: { message_id: 7 },
-        sentAtMs: 9000,
-      },
-      {
-        kind: "leader.forwardMessage",
-        requestId: "leader:3",
-        recipientInstanceId: "inst-b",
         recipientRegistrationGeneration: "registration-b",
-        message: { message_id: 8 },
-        sentAtMs: 9000,
-      },
-      {
-        kind: "leader.forwardEditedMessage",
-        requestId: "leader:4",
-        recipientInstanceId: "inst-b",
-        message: { message_id: 9 },
+        delivery: expectedDelivery,
+        message: {
+          message_id: 8,
+          pi_telegram_source_update_id: 44,
+        },
         sentAtMs: 9000,
       },
     ]);
+  } finally {
+    await server.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Bus durable follower forwarding rejects an ACK without the exact receipt", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-missing-receipt-"));
+  const socketPath = join(dir, "bus.sock");
+  const server = createTelegramBusLocalServer({
+    socketPath,
+    handleEnvelope: (envelope) => ({
+      kind: "bus.ack",
+      requestId: envelope.requestId,
+      ok: true,
+    }),
+  });
+  const forwarder = createTelegramBusForeignOwnedUpdateForwarder({
+    socketPath,
+    createRequestId: () => "leader:missing-receipt",
+  });
+  try {
+    await server.start();
+    const delivery = createTelegramBusFollowerDeliveryIdentity({
+      kind: "leader.forwardMessage",
+      recipientBindingKey: "manual:owner-b",
+      sourceUpdateId: 44,
+    });
+    assert.deepEqual(
+      await forwarder.forwardMessage({
+        message: { message_id: 8, pi_telegram_source_update_id: 44 },
+        ownership: {
+          instanceId: "inst-b",
+          ownerGeneration: "registration-b",
+          recipientBindingKey: "manual:owner-b",
+        },
+        ctx: "ctx",
+      }),
+      {
+        status: "terminal-rejected",
+        failureClass: "durable-receipt-missing",
+        message: "Follower acknowledgement omitted the durable receipt.",
+        delivery,
+      },
+    );
+  } finally {
+    await server.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Bus durable follower forwarding classifies negative ACKs as retryable", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-negative-ack-"));
+  const socketPath = join(dir, "bus.sock");
+  const server = createTelegramBusLocalServer({
+    socketPath,
+    handleEnvelope: (envelope) => ({
+      kind: "bus.ack",
+      requestId: envelope.requestId,
+      ok: false,
+      message: "Stale Telegram bus follower registration generation.",
+    }),
+  });
+  const forwarder = createTelegramBusForeignOwnedUpdateForwarder({
+    socketPath,
+    createRequestId: () => "leader:negative-ack",
+  });
+  const delivery = createTelegramBusFollowerDeliveryIdentity({
+    kind: "leader.forwardMessage",
+    recipientBindingKey: "manual:owner-b",
+    sourceUpdateId: 44,
+  });
+  try {
+    await server.start();
+    assert.deepEqual(
+      await forwarder.forwardMessage({
+        message: { message_id: 8, pi_telegram_source_update_id: 44 },
+        ownership: {
+          instanceId: "inst-b",
+          ownerGeneration: "registration-b",
+          recipientBindingKey: "manual:owner-b",
+        },
+        ctx: "ctx",
+      }),
+      {
+        status: "retryable",
+        failureClass: "acknowledgement-rejected",
+        message: "Stale Telegram bus follower registration generation.",
+        delivery,
+      },
+    );
+  } finally {
+    await server.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Bus durable follower forwarding rejects a mismatched receipt", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-mismatched-receipt-"));
+  const socketPath = join(dir, "bus.sock");
+  const server = createTelegramBusLocalServer({
+    socketPath,
+    handleEnvelope: (envelope) => ({
+      kind: "bus.ack",
+      requestId: envelope.requestId,
+      ok: true,
+      result: { deliveryId: "wrong-delivery", sourceUpdateId: 44 },
+    }),
+  });
+  const forwarder = createTelegramBusForeignOwnedUpdateForwarder({
+    socketPath,
+    createRequestId: () => "leader:mismatched-receipt",
+  });
+  const delivery = createTelegramBusFollowerDeliveryIdentity({
+    kind: "leader.forwardMessage",
+    recipientBindingKey: "manual:owner-b",
+    sourceUpdateId: 44,
+  });
+  try {
+    await server.start();
+    assert.deepEqual(
+      await forwarder.forwardMessage({
+        message: { message_id: 8, pi_telegram_source_update_id: 44 },
+        ownership: {
+          instanceId: "inst-b",
+          ownerGeneration: "registration-b",
+          recipientBindingKey: "manual:owner-b",
+        },
+        ctx: "ctx",
+      }),
+      {
+        status: "terminal-rejected",
+        failureClass: "durable-receipt-mismatched",
+        message: "Follower acknowledgement returned a mismatched durable receipt.",
+        delivery,
+      },
+    );
+  } finally {
+    await server.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Bus lost ACK replay keeps delivery identity and follower admission idempotent", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-lost-ack-"));
+  const socketPath = join(dir, "bus.sock");
+  const admitted = new Set<number>();
+  const journalAppends: number[] = [];
+  const server = createTelegramBusLocalServer({
+    socketPath,
+    handleEnvelope(envelope) {
+      if (!("delivery" in envelope) || !envelope.delivery) return undefined;
+      if (!admitted.has(envelope.delivery.sourceUpdateId)) {
+        admitted.add(envelope.delivery.sourceUpdateId);
+        journalAppends.push(envelope.delivery.sourceUpdateId);
+      }
+      return {
+        kind: "bus.ack",
+        requestId: envelope.requestId,
+        ok: true,
+        result: {
+          deliveryId: envelope.delivery.deliveryId,
+          sourceUpdateId: envelope.delivery.sourceUpdateId,
+        },
+      };
+    },
+    shouldDropResponse: (request) => request.requestId === "leader:1",
+  });
+  let sequence = 0;
+  const forwarder = createTelegramBusForeignOwnedUpdateForwarder({
+    socketPath,
+    createRequestId: () => `leader:${++sequence}`,
+    timeoutMs: 20,
+  });
+  const delivery = createTelegramBusFollowerDeliveryIdentity({
+    kind: "leader.forwardMessage",
+    recipientBindingKey: "manual:owner-b",
+    sourceUpdateId: 44,
+  });
+  const forward = () =>
+    forwarder.forwardMessage({
+      message: { message_id: 8, pi_telegram_source_update_id: 44 },
+      ownership: {
+        instanceId: "inst-b",
+        ownerGeneration: "registration-b",
+        recipientBindingKey: "manual:owner-b",
+      },
+      ctx: "ctx",
+    });
+  try {
+    await server.start();
+    const first = await forward();
+    assert.equal(first.status, "retryable");
+    assert.equal(
+      first.status === "retryable" ? first.failureClass : undefined,
+      "transport-failed",
+    );
+    assert.deepEqual(
+      first.status === "retryable" ? first.delivery : undefined,
+      delivery,
+    );
+    assert.deepEqual(await forward(), { status: "accepted", delivery });
+    assert.deepEqual(journalAppends, [44]);
   } finally {
     await server.stop();
     rmSync(dir, { recursive: true, force: true });
@@ -1704,7 +2220,18 @@ test("Bus foreign-owned update forwarder supports tolerant timeouts", async () =
     socketPath,
     async handleEnvelope(envelope) {
       await new Promise((resolve) => setTimeout(resolve, 40));
-      return { kind: "bus.ack", requestId: envelope.requestId, ok: true };
+      return {
+        kind: "bus.ack",
+        requestId: envelope.requestId,
+        ok: true,
+        result:
+          "delivery" in envelope && envelope.delivery
+            ? {
+                deliveryId: envelope.delivery.deliveryId,
+                sourceUpdateId: envelope.delivery.sourceUpdateId,
+              }
+            : undefined,
+      };
     },
   });
   const forwarder = createTelegramBusForeignOwnedUpdateForwarder({
@@ -1714,13 +2241,22 @@ test("Bus foreign-owned update forwarder supports tolerant timeouts", async () =
   });
   try {
     await server.start();
-    assert.equal(
+    const delivery = createTelegramBusFollowerDeliveryIdentity({
+      kind: "leader.forwardMessage",
+      recipientBindingKey: "manual:owner-b",
+      sourceUpdateId: 44,
+    });
+    assert.deepEqual(
       await forwarder.forwardMessage({
-        message: { message_id: 8 },
-        ownership: { instanceId: "inst-b" },
+        message: { message_id: 8, pi_telegram_source_update_id: 44 },
+        ownership: {
+          instanceId: "inst-b",
+          ownerGeneration: "registration-b",
+          recipientBindingKey: "manual:owner-b",
+        },
         ctx: "ctx",
       }),
-      true,
+      { status: "accepted", delivery },
     );
   } finally {
     await server.stop();
@@ -1782,8 +2318,15 @@ test("Bus follower target ownership carries the live registration generation", (
       followers: [
         {
           instanceId: "follower-live",
+          profileKey: "manual:owner-live",
           target: { chatId: 1, threadId: 2 },
           registrationGeneration: "registration-2",
+          protocol: createTelegramBusProtocolIdentity({
+            runtimeBuild: "0.28.0",
+            capabilities: [
+              TELEGRAM_BUS_CAPABILITY_DURABLE_FOLLOWER_ADMISSION,
+            ],
+          }),
           connectedAtMs: 2000,
           lastHeartbeatMs: 2001,
         },
@@ -1792,6 +2335,44 @@ test("Bus follower target ownership carries the live registration generation", (
     {
       instanceId: "follower-live",
       ownerGeneration: "registration-2",
+      recipientBindingKey: "manual:owner-live",
+    },
+  );
+});
+
+test("Bus follower target ownership requires negotiated routing capabilities", () => {
+  const follower = {
+    instanceId: "follower-live",
+    profileKey: "manual:owner-a",
+    target: { chatId: 1, threadId: 2 },
+    connectedAtMs: 1,
+    lastHeartbeatMs: 2,
+    registrationGeneration: "registration-2",
+    protocol: createTelegramBusProtocolIdentity({
+      runtimeBuild: "0.28.0",
+      capabilities: [],
+    }),
+  };
+  assert.equal(
+    getTelegramFollowerTargetOwnership({
+      target: { chatId: 1, threadId: 2 },
+      followers: [follower],
+    }),
+    undefined,
+  );
+  follower.protocol = createTelegramBusProtocolIdentity({
+    runtimeBuild: "0.28.0",
+    capabilities: [TELEGRAM_BUS_CAPABILITY_DURABLE_FOLLOWER_ADMISSION],
+  });
+  assert.deepEqual(
+    getTelegramFollowerTargetOwnership({
+      target: { chatId: 1, threadId: 2 },
+      followers: [follower],
+    }),
+    {
+      instanceId: "follower-live",
+      ownerGeneration: "registration-2",
+      recipientBindingKey: "manual:owner-a",
     },
   );
 });
@@ -1855,11 +2436,19 @@ test("Bus follower registry returns defensive copies", () => {
   const registered = registry.register({
     instanceId: "inst-a",
     target: { chatId: 1, threadId: 2 },
+    protocol: createTelegramBusProtocolIdentity({
+      runtimeBuild: "0.28.0",
+      capabilities: [TELEGRAM_BUS_CAPABILITY_DURABLE_FOLLOWER_ADMISSION],
+    }),
     connectedAtMs: 1000,
   });
   registered.target = { chatId: 99 };
+  registered.protocol?.capabilities.splice(0);
 
   assert.deepEqual(registry.get("inst-a")?.target, { chatId: 1, threadId: 2 });
+  assert.deepEqual(registry.get("inst-a")?.protocol?.capabilities, [
+    TELEGRAM_BUS_CAPABILITY_DURABLE_FOLLOWER_ADMISSION,
+  ]);
   const byTarget = registry.getByTarget({ chatId: 1, threadId: 2 });
   if (byTarget) byTarget.target = { chatId: 99 };
   assert.deepEqual(registry.getByTarget({ chatId: 1, threadId: 2 })?.target, {

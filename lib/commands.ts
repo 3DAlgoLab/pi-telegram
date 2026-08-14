@@ -13,7 +13,9 @@ import type { TelegramBridgeStatusLineOptions } from "./status.ts";
 import {
   createTelegramControlItemBuilder,
   createTelegramControlQueueController,
+  createTelegramQueueAdmissionReceipt,
   type PendingTelegramControlItem,
+  type TelegramQueueAdmissionReceipt,
 } from "./queue.ts";
 
 export interface ParsedTelegramCommand {
@@ -282,7 +284,16 @@ export async function registerTelegramBotCommands(
 export function createTelegramBotCommandRegistrar(
   deps: TelegramBotCommandRegistrationDeps,
 ): () => Promise<void> {
-  return () => registerTelegramBotCommands(deps);
+  let pending: Promise<void> | undefined;
+  return () => {
+    if (pending) return pending;
+    let request: Promise<void>;
+    request = registerTelegramBotCommands(deps).finally(() => {
+      if (pending === request) pending = undefined;
+    });
+    pending = request;
+    return request;
+  };
 }
 
 export interface TelegramBridgeCommandStartPollingOptions {
@@ -652,6 +663,7 @@ export interface TelegramCommandRuntimeMessage {
   message_id: number;
   message_thread_id?: number;
   from?: { id?: number };
+  pi_telegram_source_update_id?: number;
 }
 
 export interface TelegramCommandMessageTarget {
@@ -673,6 +685,14 @@ export interface TelegramCommandTargetRuntimeDeps<TContext> {
     controlType: TelegramControlCommandType,
     statusSummary: string,
     execute: (ctx: TContext) => Promise<void>,
+    admissionReceipts?: TelegramQueueAdmissionReceipt[],
+    onQueued?: (item: PendingTelegramControlItem<TContext>) => void,
+  ) => void;
+  getAdmissionScope?: () => string | undefined;
+  getAdmissionJournalBinding?: () => string | undefined;
+  onControlQueued?: (
+    message: TelegramCommandRuntimeMessage,
+    receipt: TelegramQueueAdmissionReceipt,
   ) => void;
   showStatus: (
     chatId: number,
@@ -737,6 +757,7 @@ export interface TelegramCommandControlQueueRuntimeDeps<TContext> {
     replyToMessageId: number;
     controlType: TelegramControlCommandType;
     statusSummary: string;
+    admissionReceipts?: TelegramQueueAdmissionReceipt[];
     execute: (ctx: TContext) => Promise<void>;
   }) => PendingTelegramControlItem<TContext>;
   appendControlItem: (
@@ -766,22 +787,34 @@ export function createTelegramCommandControlEnqueueAdapter<TContext>(deps: {
     replyToMessageId: number;
     controlType: TelegramControlCommandType;
     statusSummary: string;
+    admissionReceipts?: TelegramQueueAdmissionReceipt[];
     execute: (ctx: TContext) => Promise<void>;
   }) => PendingTelegramControlItem<TContext>;
   enqueueControlItem: (
     item: PendingTelegramControlItem<TContext>,
     ctx: TContext,
+    onQueued?: (item: PendingTelegramControlItem<TContext>) => void,
   ) => void;
 }): TelegramCommandTargetRuntimeDeps<TContext>["enqueueControlItem"] {
-  return (target, ctx, controlType, statusSummary, execute) => {
+  return (
+    target,
+    ctx,
+    controlType,
+    statusSummary,
+    execute,
+    admissionReceipts,
+    onQueued,
+  ) => {
     deps.enqueueControlItem(
       deps.createControlItem({
         ...target,
         controlType,
         statusSummary,
+        ...(admissionReceipts?.length ? { admissionReceipts } : {}),
         execute,
       }),
       ctx,
+      onQueued,
     );
   };
 }
@@ -802,6 +835,9 @@ export function createTelegramCommandTargetQueueRuntime<
       appendControlItem: deps.appendControlItem,
       dispatchNextQueuedTelegramTurn: deps.dispatchNextQueuedTelegramTurn,
     }),
+    getAdmissionScope: deps.getAdmissionScope,
+    getAdmissionJournalBinding: deps.getAdmissionJournalBinding,
+    onControlQueued: deps.onControlQueued,
     showStatus: deps.showStatus,
     openModelMenu: deps.openModelMenu,
     openSettingsMenu: deps.openSettingsMenu,
@@ -817,12 +853,32 @@ export function createTelegramCommandTargetRuntime<
 ): TelegramCommandTargetRuntime<TMessage, TContext> {
   return {
     enqueueControlItem: (message, ctx, controlType, statusSummary, execute) => {
+      const sourceUpdateId = message.pi_telegram_source_update_id;
+      const baseReceipt =
+        typeof sourceUpdateId === "number"
+          ? createTelegramQueueAdmissionReceipt({
+              queueKind: "control",
+              scope: deps.getAdmissionScope?.() ?? "",
+              sourceUpdateIds: [sourceUpdateId],
+            })
+          : undefined;
+      const journalBindingKey = deps.getAdmissionJournalBinding?.();
+      const receipt = baseReceipt
+        ? {
+            ...baseReceipt,
+            ...(journalBindingKey ? { journalBindingKey } : {}),
+          }
+        : undefined;
       deps.enqueueControlItem(
         getTelegramCommandMessageTarget(message),
         ctx,
         controlType,
         statusSummary,
         execute,
+        receipt ? [receipt] : undefined,
+        receipt
+          ? () => deps.onControlQueued?.(message, receipt)
+          : undefined,
       );
     },
     showStatus: (message, ctx) => {
@@ -889,6 +945,7 @@ export interface TelegramCommandOrPromptRuntimeDeps<TMessage, TContext> {
   ) => string | undefined;
   replaceMessageText: (message: TMessage, text: string) => TMessage;
   enqueueTurn: (messages: TMessage[], ctx: TContext) => Promise<void>;
+  assertExecutionCurrent?: (message: TMessage) => void;
 }
 
 export interface TelegramCommandRuntimeDeps<
@@ -908,6 +965,7 @@ export interface TelegramCommandRuntimeDeps<
   isCompactionInProgress: () => boolean;
   setCompactionInProgress: (inProgress: boolean) => void;
   updateStatus: (ctx: TContext) => void;
+  isContextActive?: (ctx: TContext) => boolean;
   dispatchNextQueuedTelegramTurn: (ctx: TContext) => void;
   requestDeferredDispatchNextQueuedTelegramTurn?: (
     dispatch: (ctx: TContext) => void,
@@ -946,6 +1004,7 @@ export interface TelegramCommandRuntimeDeps<
   persistConfig: () => Promise<void>;
   sendTextReply: (message: TMessage, text: string) => Promise<void>;
   sendInteractiveMessage?: TelegramCompactConfirmationDeps["sendInteractiveMessage"];
+  assertExecutionCurrent?: (message: TMessage) => void;
 }
 
 export const TELEGRAM_APP_MENU_INTRO_HTML = [
@@ -1420,6 +1479,9 @@ export function createTelegramCommandHandlerTargetRuntime<
     }),
     appendControlItem: deps.appendControlItem,
     dispatchNextQueuedTelegramTurn: deps.dispatchNextQueuedTelegramTurn,
+    getAdmissionScope: deps.getAdmissionScope,
+    getAdmissionJournalBinding: deps.getAdmissionJournalBinding,
+    onControlQueued: deps.onControlQueued,
     showStatus: deps.showStatus,
     openModelMenu: deps.openModelMenu,
     openSettingsMenu: deps.openSettingsMenu,
@@ -1439,6 +1501,7 @@ export function createTelegramCommandHandlerTargetRuntime<
     isCompactionInProgress: deps.isCompactionInProgress,
     setCompactionInProgress: deps.setCompactionInProgress,
     updateStatus: deps.updateStatus,
+    isContextActive: deps.isContextActive,
     dispatchNextQueuedTelegramTurn: deps.dispatchNextQueuedTelegramTurn,
     startTypingLoop: deps.startTypingLoop,
     stopTypingLoop: deps.stopTypingLoop,
@@ -1487,12 +1550,14 @@ export function createTelegramCommandOrPromptRuntime<TMessage, TContext>(
       const firstMessage = messages[0];
       if (!firstMessage) return;
       if (deps.shouldIgnoreMessages?.(messages)) return;
+      deps.assertExecutionCurrent?.(firstMessage);
       const command = parseTelegramCommand(deps.extractRawText(messages));
       const handled = await deps.handleCommand(
         command?.name,
         firstMessage,
         ctx,
       );
+      deps.assertExecutionCurrent?.(firstMessage);
       if (handled) return;
       if (command && deps.executeExtensionCommand) {
         const handledByExtension = await deps.executeExtensionCommand(
@@ -1500,6 +1565,7 @@ export function createTelegramCommandOrPromptRuntime<TMessage, TContext>(
           messages[0]!,
           ctx,
         );
+        deps.assertExecutionCurrent?.(firstMessage);
         if (handledByExtension) return;
       }
       if (command?.name && deps.expandPromptTemplateCommand) {
@@ -1508,6 +1574,7 @@ export function createTelegramCommandOrPromptRuntime<TMessage, TContext>(
           command.args,
         );
         if (expanded !== undefined) {
+          deps.assertExecutionCurrent?.(firstMessage);
           await deps.enqueueTurn(
             [
               deps.replaceMessageText(firstMessage, expanded),
@@ -1518,9 +1585,39 @@ export function createTelegramCommandOrPromptRuntime<TMessage, TContext>(
           return;
         }
       }
+      deps.assertExecutionCurrent?.(firstMessage);
       await deps.enqueueTurn(messages, ctx);
     },
   };
+}
+
+function scheduleTelegramCommandEffect<TContext>(
+  ctx: TContext,
+  command: string,
+  phase: string,
+  deps: TelegramRuntimeEventRecorderPort & {
+    isContextActive?: (ctx: TContext) => boolean;
+  },
+  effect: () => Promise<void>,
+  assertExecutionCurrent?: () => void,
+): void {
+  void Promise.resolve()
+    .then(async () => {
+      if (deps.isContextActive?.(ctx) === false) return;
+      assertExecutionCurrent?.();
+      await effect();
+      assertExecutionCurrent?.();
+    })
+    .catch((error) => {
+      try {
+        deps.recordRuntimeEvent?.("telegram-command", error, {
+          command,
+          phase,
+        });
+      } catch {
+        // Effect diagnostics cannot create an unhandled detached Promise.
+      }
+    });
 }
 
 async function handleTelegramCommandRuntime<
@@ -1532,8 +1629,13 @@ async function handleTelegramCommandRuntime<
   ctx: TContext,
   deps: TelegramCommandRuntimeDeps<TMessage, TContext>,
 ): Promise<boolean> {
-  const sendReplyFor = (nextMessage: TMessage) => (text: string) =>
-    deps.sendTextReply(nextMessage, text);
+  const assertExecutionCurrentFor = (nextMessage: TMessage) => (): void =>
+    deps.assertExecutionCurrent?.(nextMessage);
+  const sendReplyFor = (nextMessage: TMessage) => async (text: string) => {
+    deps.assertExecutionCurrent?.(nextMessage);
+    await deps.sendTextReply(nextMessage, text);
+    deps.assertExecutionCurrent?.(nextMessage);
+  };
   const updateStatusFor = (commandCtx: TContext) => () =>
     deps.updateStatus(commandCtx);
   return executeTelegramCommandAction(
@@ -1585,7 +1687,14 @@ async function handleTelegramCommandRuntime<
         });
       },
       handleQueue: async (nextMessage, commandCtx) => {
-        await deps.openQueueMenu(nextMessage, commandCtx);
+        scheduleTelegramCommandEffect(
+          commandCtx,
+          "queue",
+          "menu-render",
+          deps,
+          () => deps.openQueueMenu(nextMessage, commandCtx),
+          assertExecutionCurrentFor(nextMessage),
+        );
       },
       handleCompact: async (nextMessage, commandCtx) => {
         if (deps.sendInteractiveMessage) {
@@ -1626,33 +1735,53 @@ async function handleTelegramCommandRuntime<
         });
       },
       handleStatus: async (nextMessage, commandCtx) => {
-        await deps.showStatus(nextMessage, commandCtx);
+        scheduleTelegramCommandEffect(
+          commandCtx,
+          "status",
+          "menu-render",
+          deps,
+          () => deps.showStatus(nextMessage, commandCtx),
+          assertExecutionCurrentFor(nextMessage),
+        );
       },
       handleModel: async (nextMessage, commandCtx) => {
-        await handleTelegramModelCommand<TContext>({
-          ctx: commandCtx,
-          openModelMenu: (controlCtx) =>
-            deps.openModelMenu(nextMessage, controlCtx),
-        });
+        scheduleTelegramCommandEffect(
+          commandCtx,
+          "model",
+          "menu-render",
+          deps,
+          () =>
+            handleTelegramModelCommand<TContext>({
+              ctx: commandCtx,
+              openModelMenu: (controlCtx) =>
+                deps.openModelMenu(nextMessage, controlCtx),
+            }),
+          assertExecutionCurrentFor(nextMessage),
+        );
       },
       handleThinking: async (nextMessage, commandCtx) => {
-        await deps.openThinkingMenu(nextMessage, commandCtx);
+        scheduleTelegramCommandEffect(
+          commandCtx,
+          "thinking",
+          "menu-render",
+          deps,
+          () => deps.openThinkingMenu(nextMessage, commandCtx),
+          assertExecutionCurrentFor(nextMessage),
+        );
       },
       handleSettings: deps.openSettingsMenu
         ? async (nextMessage, commandCtx) => {
-            await deps.openSettingsMenu?.(nextMessage, commandCtx);
+            scheduleTelegramCommandEffect(
+              commandCtx,
+              "settings",
+              "menu-render",
+              deps,
+              () => deps.openSettingsMenu!(nextMessage, commandCtx),
+              assertExecutionCurrentFor(nextMessage),
+            );
           }
         : undefined,
       handleHelp: async (nextMessage, nextCommandName, commandCtx) => {
-        try {
-          await deps.registerBotCommands();
-        } catch (error) {
-          const errorMessage = getTelegramCommandErrorMessage(error);
-          await deps.sendTextReply(
-            nextMessage,
-            `Warning: failed to register bot commands menu: ${errorMessage}`,
-          );
-        }
         if (
           nextMessage.from?.id !== undefined &&
           canPairTelegramUserFromCommandMessage(nextMessage)
@@ -1663,16 +1792,41 @@ async function handleTelegramCommandRuntime<
             setAllowedUserId: deps.setAllowedUserId,
             persistConfig: deps.persistConfig,
             updateStatus: updateStatusFor(commandCtx),
+            assertExecutionCurrent: assertExecutionCurrentFor(nextMessage),
           });
         }
-        const forumBootstrapMessage =
-          nextCommandName === "start"
-            ? await deps.handleForumBootstrap?.(nextMessage, commandCtx)
-            : undefined;
-        if (forumBootstrapMessage) {
-          await deps.sendTextReply(nextMessage, forumBootstrapMessage);
-        }
-        await deps.showStatus(nextMessage, commandCtx);
+        const isContextActive = () =>
+          deps.isContextActive?.(commandCtx) !== false;
+        scheduleTelegramCommandEffect(
+          commandCtx,
+          nextCommandName,
+          "menu-render",
+          deps,
+          async () => {
+            let forumBootstrapMessage: string | undefined;
+            if (nextCommandName === "start" && deps.handleForumBootstrap) {
+              forumBootstrapMessage = await deps.handleForumBootstrap(
+                nextMessage,
+                commandCtx,
+              );
+            }
+            if (!isContextActive()) return;
+            if (forumBootstrapMessage) {
+              await deps.sendTextReply(nextMessage, forumBootstrapMessage);
+            }
+            if (!isContextActive()) return;
+            await deps.showStatus(nextMessage, commandCtx);
+          },
+          assertExecutionCurrentFor(nextMessage),
+        );
+        scheduleTelegramCommandEffect(
+          commandCtx,
+          nextCommandName,
+          "bot-command-sync",
+          deps,
+          deps.registerBotCommands,
+          assertExecutionCurrentFor(nextMessage),
+        );
       },
     },
   );

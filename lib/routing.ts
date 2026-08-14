@@ -515,6 +515,8 @@ export interface TelegramInboundRouteRuntimeDeps<
     body: Record<string, unknown>,
   ) => Promise<TResponse>;
   getCurrentInstanceId?: () => string | undefined;
+  getAdmissionScope?: () => string | undefined;
+  getAdmissionJournalBinding?: () => string | undefined;
   getMessageOwnership?: Updates.TelegramMessageOwnershipLookup;
   getTargetOwnership?: Updates.TelegramTargetOwnershipLookup;
   recordMessageOwnership?: Updates.TelegramMessageOwnershipRecorder;
@@ -591,6 +593,7 @@ export interface TelegramInboundRouteRuntimeDeps<
   inboundHandlerRuntime: TelegramInboundHandlerRuntime<TContext>;
   threadStore?: Threads.TelegramTopicTargetStore;
   updateStatus: (ctx: TContext, error?: string) => void;
+  isContextActive?: (ctx: TContext) => boolean;
   dispatchNextQueuedTelegramTurn: (ctx: TContext) => void;
   requestDeferredDispatchNextQueuedTelegramTurn?: (
     dispatch: (ctx: TContext) => void,
@@ -743,6 +746,32 @@ export function createTelegramInboundRouteRuntime<
       );
     }
   };
+  const createAdmissionReceipts = (
+    queueKind: Queue.TelegramQueueItemKind,
+    sources: readonly unknown[],
+  ): Queue.TelegramQueueAdmissionReceipt[] => {
+    const sourceUpdateIds =
+      Updates.collectTelegramAdmissionSourceUpdateIds(sources);
+    if (sourceUpdateIds.length === 0) return [];
+    const receipt = Queue.createTelegramQueueAdmissionReceipt({
+      queueKind,
+      scope: deps.getAdmissionScope?.() ?? "",
+      sourceUpdateIds,
+    });
+    const journalBindingKey = deps.getAdmissionJournalBinding?.();
+    return receipt
+      ? [{
+          ...receipt,
+          ...(journalBindingKey ? { journalBindingKey } : {}),
+        }]
+      : [];
+  };
+  const reportQueueAdmission = (
+    sources: readonly unknown[],
+    receipts: readonly Queue.TelegramQueueAdmissionReceipt[],
+  ): void => {
+    Updates.reportTelegramQueueAdmission(sources, receipts);
+  };
   const prunePendingUnboundReroutes = () => {
     const nowMs = Date.now();
     for (const [id, entry] of pendingUnboundReroutes) {
@@ -811,10 +840,15 @@ export function createTelegramInboundRouteRuntime<
       prompt: string,
       ctx: TContext,
       target?: Queue.TelegramQueueTarget,
+      source?: unknown,
     ) => {
       const chatId = target?.chatId ?? deps.configStore.getAllowedUserId();
       if (typeof chatId !== "number") return;
       const order = deps.bridgeRuntime.queue.allocateItemOrder();
+      const admissionReceipts = createAdmissionReceipts(
+        "prompt",
+        source === undefined ? [] : [source],
+      );
       const turn: Queue.PendingTelegramTurn = {
         kind: "prompt",
         chatId,
@@ -833,8 +867,13 @@ export function createTelegramInboundRouteRuntime<
         ],
         historyText: Turns.truncateTelegramQueueSummary(prompt),
         statusSummary: Turns.truncateTelegramQueueSummary(prompt),
+        ...(admissionReceipts.length > 0 ? { admissionReceipts } : {}),
       };
       deps.queueMutationRuntime.append(turn, ctx);
+      reportQueueAdmission(
+        source === undefined ? [] : [source],
+        admissionReceipts,
+      );
       deps.updateStatus(ctx);
       requestDispatchNextQueuedTelegramTurn(ctx);
     },
@@ -845,17 +884,22 @@ export function createTelegramInboundRouteRuntime<
   ): TMessage[] => {
     return messages.map(
       (message) =>
-        ({
-          ...message,
-          message_id: 0,
-          message_thread_id: threadId,
-          reply_to_message: undefined,
-        }) as TMessage,
+        Updates.carryTelegramUpdateExecutionFence(
+          message,
+          {
+            ...message,
+            message_id: 0,
+            message_thread_id: threadId,
+            reply_to_message: undefined,
+          } as TMessage,
+        ),
     );
   };
   const applyThreadCleanupPlan = async (
     plan: ThreadReconciler.ThreadReconciliationPlan,
+    assertExecutionCurrent?: () => void,
   ): Promise<boolean> => {
+    assertExecutionCurrent?.();
     deps.recordThreadReconciliationPlan?.(plan);
     const result = await ThreadReconciler.applyThreadReconciliationPlan(plan, {
       callApi: deps.callApi,
@@ -871,10 +915,12 @@ export function createTelegramInboundRouteRuntime<
       getCurrentLeaderEpoch: deps.getCurrentLeaderEpoch,
       recordRuntimeEvent: deps.recordRuntimeEvent,
     });
+    assertExecutionCurrent?.();
     return (result.incompleteActions?.length ?? 0) === 0;
   };
   const dismissRerouteChooserMessage = async (
     query: TCallbackQuery,
+    assertExecutionCurrent?: () => void,
   ): Promise<boolean> => {
     const chatId = query.message?.chat?.id;
     const messageId = query.message?.message_id;
@@ -886,7 +932,9 @@ export function createTelegramInboundRouteRuntime<
       return false;
     }
     try {
+      assertExecutionCurrent?.();
       await deps.deleteMessage(chatId, messageId);
+      assertExecutionCurrent?.();
       return true;
     } catch (error) {
       deps.recordRuntimeEvent?.("telegram", error, {
@@ -901,6 +949,7 @@ export function createTelegramInboundRouteRuntime<
   const closeReroutedUnboundTopic = async (
     target: { chatId: number; threadId: number } | undefined,
     messageId: number | undefined,
+    assertExecutionCurrent?: () => void,
   ): Promise<boolean> => {
     if (!target || !deps.threadStore) return true;
     const nowMs = Date.now();
@@ -923,10 +972,11 @@ export function createTelegramInboundRouteRuntime<
         },
       ],
     });
-    return applyThreadCleanupPlan(plan);
+    return applyThreadCleanupPlan(plan, assertExecutionCurrent);
   };
   const closePreviousLeaderThread = async (
     target: { chatId: number; threadId: number } | undefined,
+    assertExecutionCurrent?: () => void,
   ): Promise<boolean> => {
     if (!target || !deps.threadStore) return true;
     const currentLeaderEpoch = deps.getCurrentLeaderEpoch?.();
@@ -942,11 +992,12 @@ export function createTelegramInboundRouteRuntime<
             : {}),
         },
       ],
-    });
+    }, assertExecutionCurrent);
   };
   const closeReplacedFollowerThread = async (
     target: { chatId: number; threadId: number } | undefined,
     instanceId: string | undefined,
+    assertExecutionCurrent?: () => void,
   ): Promise<boolean> => {
     if (!target || !deps.threadStore) return true;
     const currentLeaderEpoch = deps.getCurrentLeaderEpoch?.();
@@ -962,18 +1013,27 @@ export function createTelegramInboundRouteRuntime<
             : {}),
         },
       ],
-    });
+    }, assertExecutionCurrent);
   };
   const retryPendingRerouteCleanup = async (
     cleanup: PendingRerouteCleanup,
+    assertExecutionCurrent?: () => void,
   ): Promise<boolean> => {
     if (cleanup.kind === "unbound") {
-      return closeReroutedUnboundTopic(cleanup.target, cleanup.messageId);
+      return closeReroutedUnboundTopic(
+        cleanup.target,
+        cleanup.messageId,
+        assertExecutionCurrent,
+      );
     }
     if (cleanup.kind === "previous-leader") {
-      return closePreviousLeaderThread(cleanup.target);
+      return closePreviousLeaderThread(cleanup.target, assertExecutionCurrent);
     }
-    return closeReplacedFollowerThread(cleanup.target, cleanup.instanceId);
+    return closeReplacedFollowerThread(
+      cleanup.target,
+      cleanup.instanceId,
+      assertExecutionCurrent,
+    );
   };
   let dispatchReroutedCommandMessages:
     | ((messages: TMessage[], ctx: TContext) => Promise<void>)
@@ -994,8 +1054,12 @@ export function createTelegramInboundRouteRuntime<
     pending: PendingUnboundReroute,
     query: TCallbackQuery,
     successMessage: string,
+    assertExecutionCurrent?: () => void,
   ): Promise<void> => {
-    const dismissed = await dismissRerouteChooserMessage(query);
+    const dismissed = await dismissRerouteChooserMessage(
+      query,
+      assertExecutionCurrent,
+    );
     if (dismissed) {
       pendingUnboundReroutes.delete(rerouteId);
       await deps.answerCallbackQuery(query.id, successMessage);
@@ -1012,7 +1076,9 @@ export function createTelegramInboundRouteRuntime<
     instanceId: string,
     threadId: number,
     ctx: TContext,
+    assertExecutionCurrent?: () => void,
   ): Promise<boolean> => {
+    assertExecutionCurrent?.();
     const forwardMessage = deps.foreignOwnedUpdateForwarder?.forwardMessage;
     if (!forwardMessage) return false;
     const messages = cloneTelegramMessagesForThread(pending.messages, threadId);
@@ -1025,9 +1091,15 @@ export function createTelegramInboundRouteRuntime<
         }),
       ),
     );
+    assertExecutionCurrent?.();
     pending.messages = pending.messages.filter((_, index) => {
       const outcome = outcomes[index];
-      if (outcome?.status === "fulfilled" && outcome.value) return false;
+      if (
+        outcome?.status === "fulfilled" &&
+        outcome.value.status === "accepted"
+      ) {
+        return false;
+      }
       if (outcome?.status === "rejected") {
         deps.recordRuntimeEvent?.("bus", outcome.reason, {
           phase: "reroute-foreign-forward",
@@ -1100,6 +1172,9 @@ export function createTelegramInboundRouteRuntime<
   ): Promise<boolean> => {
     const parsed = parseTelegramUnboundRerouteCallbackData(query.data);
     if (!parsed) return false;
+    const assertExecutionCurrent =
+      Updates.createTelegramUpdateExecutionFenceGuard(query);
+    assertExecutionCurrent();
     const chatId = query.message?.chat?.id;
     const pending = pendingUnboundReroutes.get(parsed.rerouteId);
     if (typeof chatId !== "number" || !deps.threadStore || !pending) {
@@ -1107,12 +1182,14 @@ export function createTelegramInboundRouteRuntime<
       return true;
     }
     await deps.threadStore.load();
+    assertExecutionCurrent();
     if (pending.finalizeMessage) {
       await finalizePendingReroute(
         parsed.rerouteId,
         pending,
         query,
         pending.finalizeMessage,
+        assertExecutionCurrent,
       );
       return true;
     }
@@ -1123,6 +1200,7 @@ export function createTelegramInboundRouteRuntime<
         retry.instanceId,
         retry.threadId,
         ctx,
+        assertExecutionCurrent,
       );
       if (!allForwarded) {
         await deps.answerCallbackQuery(
@@ -1135,7 +1213,10 @@ export function createTelegramInboundRouteRuntime<
       if (retry.cleanup) pending.cleanup = retry.cleanup;
     }
     if (pending.cleanup) {
-      const cleanupComplete = await retryPendingRerouteCleanup(pending.cleanup);
+      const cleanupComplete = await retryPendingRerouteCleanup(
+        pending.cleanup,
+        assertExecutionCurrent,
+      );
       if (!cleanupComplete) {
         await deps.answerCallbackQuery(
           query.id,
@@ -1149,6 +1230,7 @@ export function createTelegramInboundRouteRuntime<
         pending,
         query,
         "Thread cleanup completed.",
+        assertExecutionCurrent,
       );
       return true;
     }
@@ -1192,11 +1274,13 @@ export function createTelegramInboundRouteRuntime<
         );
         return true;
       }
+      assertExecutionCurrent();
       const replaced = await deps.replaceFollowerThreadTarget({
         record,
         target: sourceTarget,
         oldTarget: record.target,
       });
+      assertExecutionCurrent();
       if (!replaced) {
         await deps.answerCallbackQuery(
           query.id,
@@ -1207,6 +1291,7 @@ export function createTelegramInboundRouteRuntime<
       const nowMs = Date.now();
       const slot = record.slot ?? "?";
       const threadName = getRestoredThreadName(record, slot);
+      assertExecutionCurrent();
       deps.threadStore.markStaleByTarget(
         record.target,
         "deleted",
@@ -1224,13 +1309,16 @@ export function createTelegramInboundRouteRuntime<
         rerouteConfirmedAtMs: nowMs,
       });
       await deps.threadStore.persist();
+      assertExecutionCurrent();
       if (deps.callApi) {
         try {
+          assertExecutionCurrent();
           await deps.callApi("editForumTopic", {
             chat_id: sourceTarget.chatId,
             message_thread_id: sourceTarget.threadId,
             name: Threads.getTelegramTopicTitleForThreadName(threadName, slot),
           });
+          assertExecutionCurrent();
         } catch (renameError) {
           deps.recordRuntimeEvent?.("telegram", renameError, {
             phase: "follower-topic-reroute-restore-rename",
@@ -1250,6 +1338,7 @@ export function createTelegramInboundRouteRuntime<
         record.instanceId!,
         sourceTarget.threadId,
         ctx,
+        assertExecutionCurrent,
       );
       if (!allForwarded) {
         pending.foreignRetry = {
@@ -1263,7 +1352,10 @@ export function createTelegramInboundRouteRuntime<
         );
         return true;
       }
-      const cleanupComplete = await retryPendingRerouteCleanup(cleanup);
+      const cleanupComplete = await retryPendingRerouteCleanup(
+        cleanup,
+        assertExecutionCurrent,
+      );
       if (!cleanupComplete) {
         pending.cleanup = cleanup;
         await deps.answerCallbackQuery(
@@ -1297,6 +1389,7 @@ export function createTelegramInboundRouteRuntime<
         record.instanceId,
         parsed.threadId,
         ctx,
+        assertExecutionCurrent,
       );
       if (!allForwarded) {
         await deps.answerCallbackQuery(
@@ -1308,6 +1401,7 @@ export function createTelegramInboundRouteRuntime<
       const cleanupComplete = await closeReroutedUnboundTopic(
         sourceTarget,
         sourceMessageId,
+        assertExecutionCurrent,
       );
       if (!cleanupComplete && sourceTarget) {
         pending.cleanup = {
@@ -1371,11 +1465,13 @@ export function createTelegramInboundRouteRuntime<
       });
       if (deps.callApi) {
         try {
+          assertExecutionCurrent();
           await deps.callApi("editForumTopic", {
             chat_id: sourceTarget.chatId,
             message_thread_id: sourceTarget.threadId,
             name: Threads.getTelegramTopicTitleForThreadName(threadName, slot),
           });
+          assertExecutionCurrent();
         } catch (renameError) {
           deps.recordRuntimeEvent?.("telegram", renameError, {
             phase: "leader-topic-reroute-reclaim-rename",
@@ -1402,7 +1498,10 @@ export function createTelegramInboundRouteRuntime<
         ctx,
       );
       pending.messages = [];
-      const cleanupComplete = await closePreviousLeaderThread(record.target);
+      const cleanupComplete = await closePreviousLeaderThread(
+        record.target,
+        assertExecutionCurrent,
+      );
       if (!cleanupComplete) {
         pending.cleanup = {
           kind: "previous-leader",
@@ -1427,6 +1526,7 @@ export function createTelegramInboundRouteRuntime<
     const cleanupComplete = await closeReroutedUnboundTopic(
       sourceTarget,
       sourceMessageId,
+      assertExecutionCurrent,
     );
     if (!cleanupComplete && sourceTarget) {
       pending.cleanup = {
@@ -1454,6 +1554,9 @@ export function createTelegramInboundRouteRuntime<
     query: TCallbackQuery,
     ctx: TContext,
   ): Promise<void> => {
+    const assertExecutionCurrent =
+      Updates.createTelegramUpdateExecutionFenceGuard(query);
+    assertExecutionCurrent();
     if (await handleUnboundRerouteRestoreMenuCallback(query, ctx)) return;
     if (await handleUnboundRerouteCallback(query, ctx)) return;
     if (deps.buttonActionStore) {
@@ -1486,31 +1589,43 @@ export function createTelegramInboundRouteRuntime<
             if (typeof chatId !== "number" || typeof messageId !== "number")
               return false;
             const queueOrder = deps.bridgeRuntime.queue.allocateItemOrder();
-            const turn = OutboundHandlers.createTelegramButtonPromptTurn({
-              chatId,
-              target:
-                typeof buttonQuery.message?.message_thread_id === "number"
-                  ? {
-                      chatId,
-                      threadId: buttonQuery.message.message_thread_id,
-                    }
-                  : { chatId },
-              replyToMessageId: messageId,
-              queueOrder,
-              action,
-            });
+            const admissionReceipts = createAdmissionReceipts("prompt", [
+              buttonQuery,
+            ]);
+            const turn: Queue.PendingTelegramTurn = {
+              ...OutboundHandlers.createTelegramButtonPromptTurn({
+                chatId,
+                target:
+                  typeof buttonQuery.message?.message_thread_id === "number"
+                    ? {
+                        chatId,
+                        threadId: buttonQuery.message.message_thread_id,
+                      }
+                    : { chatId },
+                replyToMessageId: messageId,
+                queueOrder,
+                action,
+              }),
+              ...(admissionReceipts.length > 0 ? { admissionReceipts } : {}),
+            };
             const result = Queue.appendTelegramPromptTurnOnce(
               deps.telegramQueueStore.getQueuedItems(),
               turn,
             );
-            if (!result.appended) return false;
+            if (!result.appended) {
+              reportQueueAdmission([buttonQuery], admissionReceipts);
+              return false;
+            }
+            Updates.assertTelegramUpdateExecutionCurrent(buttonQuery);
             deps.telegramQueueStore.setQueuedItems(result.items);
+            reportQueueAdmission([buttonQuery], admissionReceipts);
             deps.updateStatus(context);
             requestDispatchNextQueuedTelegramTurn(context);
             return true;
           },
         },
       );
+      assertExecutionCurrent();
       if (handled) return;
     }
     const handledByCompact =
@@ -1556,13 +1671,16 @@ export function createTelegramInboundRouteRuntime<
           });
         },
       });
+    assertExecutionCurrent();
     if (handledByCompact) return;
     const handledByQueue = await deps.queueMenuCallbackHandler(query, ctx);
+    assertExecutionCurrent();
     if (handledByQueue) return;
     const handledBySettings = await deps.settingsMenuCallbackHandler?.(
       query,
       ctx,
     );
+    assertExecutionCurrent();
     if (handledBySettings) return;
     const callbackData = query.data;
     if (callbackData && !isTelegramOwnedCallbackData(callbackData)) {
@@ -1574,6 +1692,7 @@ export function createTelegramInboundRouteRuntime<
           typeof query.message?.message_thread_id === "number"
             ? { chatId, threadId: query.message.message_thread_id }
             : { chatId };
+        const admissionReceipts = createAdmissionReceipts("prompt", [query]);
         const turn: Queue.PendingTelegramTurn = {
           kind: "prompt",
           chatId,
@@ -1587,15 +1706,20 @@ export function createTelegramInboundRouteRuntime<
           content: [{ type: "text", text: `[callback] ${callbackData}` }],
           historyText: callbackData,
           statusSummary: callbackData,
+          ...(admissionReceipts.length > 0 ? { admissionReceipts } : {}),
         };
         const result = Queue.appendTelegramPromptTurnOnce(
           deps.telegramQueueStore.getQueuedItems(),
           turn,
         );
         if (result.appended) {
+          Updates.assertTelegramUpdateExecutionCurrent(query);
           deps.telegramQueueStore.setQueuedItems(result.items);
+          reportQueueAdmission([query], admissionReceipts);
           deps.updateStatus(ctx);
           requestDispatchNextQueuedTelegramTurn(ctx);
+        } else {
+          reportQueueAdmission([query], admissionReceipts);
         }
       }
       await deps.answerCallbackQuery(query.id);
@@ -1612,6 +1736,11 @@ export function createTelegramInboundRouteRuntime<
     processAttachments: deps.inboundHandlerRuntime.process,
     resolveTimeLine: deps.resolveTimeLine,
     getAllowedUserId: deps.configStore.getAllowedUserId,
+    getAdmissionScope: deps.getAdmissionScope,
+    getAdmissionJournalBinding: deps.getAdmissionJournalBinding,
+    assertExecutionCurrent(message) {
+      Updates.assertTelegramUpdateExecutionCurrent(message);
+    },
 
     // Voice policy resolves missing, invalid, and legacy manual config to hidden.
     getVoiceReplyMode: () => getTelegramVoiceReplyMode(deps.configStore.get()),
@@ -1661,7 +1790,12 @@ export function createTelegramInboundRouteRuntime<
       laneOrder: deps.bridgeRuntime.queue.allocateControlOrder(),
       statusSummary: "continue",
     };
+    Updates.assertTelegramUpdateExecutionCurrent(message);
     deps.queueMutationRuntime.append(continueTurn, ctx);
+    reportQueueAdmission(
+      [continueMessage],
+      continueTurn.admissionReceipts ?? [],
+    );
     requestDispatchNextQueuedTelegramTurn(ctx);
   };
   const reservedCommandNames = () =>
@@ -1675,6 +1809,9 @@ export function createTelegramInboundRouteRuntime<
     TMessage,
     TContext
   >({
+    assertExecutionCurrent(message) {
+      Updates.assertTelegramUpdateExecutionCurrent(message);
+    },
     hasAbortHandler: deps.bridgeRuntime.abort.hasHandler,
     clearPendingModelSwitch: deps.modelSwitchController.clearPendingSwitch,
     hasQueuedTelegramItems: deps.telegramQueueStore.hasQueuedItems,
@@ -1690,6 +1827,7 @@ export function createTelegramInboundRouteRuntime<
     setCompactionInProgress:
       deps.bridgeRuntime.lifecycle.setCompactionInProgress,
     updateStatus: deps.updateStatus,
+    isContextActive: deps.isContextActive,
     dispatchNextQueuedTelegramTurn: deps.dispatchNextQueuedTelegramTurn,
     requestDeferredDispatchNextQueuedTelegramTurn:
       deps.requestDeferredDispatchNextQueuedTelegramTurn,
@@ -1700,6 +1838,10 @@ export function createTelegramInboundRouteRuntime<
     allocateItemOrder: deps.bridgeRuntime.queue.allocateItemOrder,
     allocateControlOrder: deps.bridgeRuntime.queue.allocateControlOrder,
     appendControlItem: deps.queueMutationRuntime.append,
+    getAdmissionScope: deps.getAdmissionScope,
+    getAdmissionJournalBinding: deps.getAdmissionJournalBinding,
+    onControlQueued: (message, receipt) =>
+      reportQueueAdmission([message], [receipt]),
     showStatus: deps.menuActions.sendStatusMessage,
     openModelMenu: deps.menuActions.openModelMenu,
     openThinkingMenu: (message, ctx) => {
@@ -1720,27 +1862,36 @@ export function createTelegramInboundRouteRuntime<
     sendInteractiveMessage: deps.sendInteractiveMessage,
     recordRuntimeEvent: deps.recordRuntimeEvent,
   });
-  const promptEnqueue = Queue.createTelegramPromptEnqueueController<
-    TMessage,
-    TContext
-  >({
-    ...deps.telegramQueueStore,
-    getFoldQueuedPromptsIntoHistory:
-      deps.bridgeRuntime.lifecycle.shouldFoldQueuedPromptsIntoHistory,
-    setFoldQueuedPromptsIntoHistory:
-      deps.bridgeRuntime.lifecycle.setFoldQueuedPromptsIntoHistory,
-    createTurn: async (messages, historyTurns, turnCtx) => {
-      const turn = await promptTurnBuilder(messages, historyTurns, turnCtx);
-      return turn.replyToMessageId > 0
-        ? turn
-        : { ...turn, replyToMessageId: 0 };
-    },
-    updateStatus: deps.updateStatus,
-    dispatchNextQueuedTelegramTurn: requestDispatchNextQueuedTelegramTurn,
-  }).enqueue;
+  const promptEnqueueController =
+    Queue.createTelegramPromptEnqueueController<TMessage, TContext>({
+      ...deps.telegramQueueStore,
+      getFoldQueuedPromptsIntoHistory:
+        deps.bridgeRuntime.lifecycle.shouldFoldQueuedPromptsIntoHistory,
+      setFoldQueuedPromptsIntoHistory:
+        deps.bridgeRuntime.lifecycle.setFoldQueuedPromptsIntoHistory,
+      createTurn: async (messages, historyTurns, turnCtx) => {
+        const turn = await promptTurnBuilder(messages, historyTurns, turnCtx);
+        return turn.replyToMessageId > 0
+          ? turn
+          : { ...turn, replyToMessageId: 0 };
+      },
+      updateStatus: deps.updateStatus,
+      dispatchNextQueuedTelegramTurn: requestDispatchNextQueuedTelegramTurn,
+      assertExecutionCurrent: (messages) =>
+        Updates.assertTelegramUpdateExecutionCurrent(messages[0]),
+    });
+  const promptEnqueue = async (
+    messages: TMessage[],
+    ctx: TContext,
+  ): Promise<Queue.PendingTelegramTurn> => {
+    return promptEnqueueController.enqueue(messages, ctx, (turn) => {
+      reportQueueAdmission(messages, turn.admissionReceipts ?? []);
+    });
+  };
   const sendUnboundRerouteChooserNow = async (
     messages: TMessage[],
     ctx: TContext,
+    reportDeferred = true,
   ): Promise<void> => {
     const message = messages[0];
     if (!message || !deps.threadStore) return;
@@ -1775,6 +1926,11 @@ export function createTelegramInboundRouteRuntime<
       return;
     }
     const rerouteId = storePendingUnboundReroute(messages);
+    if (reportDeferred) {
+      for (const source of messages) {
+        Updates.reportTelegramUpdateDeferred(source);
+      }
+    }
     const text = formatTelegramUnboundRerouteChooserText(activeRecords, {
       includeGuidance,
     });
@@ -1821,10 +1977,11 @@ export function createTelegramInboundRouteRuntime<
     const messages = [...(existing?.messages ?? []), message];
     const timer = setTimeout(() => {
       pendingUnboundRerouteMediaGroups.delete(groupKey);
-      void sendUnboundRerouteChooserNow(messages, ctx);
+      void sendUnboundRerouteChooserNow(messages, ctx, false);
     }, 1200);
     timer.unref?.();
     pendingUnboundRerouteMediaGroups.set(groupKey, { messages, timer });
+    Updates.reportTelegramUpdateDeferred(message);
   };
   const getKnownTelegramAllTabCommand = (
     text: string,
@@ -1864,6 +2021,7 @@ export function createTelegramInboundRouteRuntime<
       caption: undefined,
     } as TMessage;
     const rerouteId = storePendingUnboundReroute([commandMessage], "command");
+    Updates.reportTelegramUpdateDeferred(commandMessage);
     const text = formatTelegramAllTabMenuChooserText(command.name);
     const replyMarkup = buildTelegramUnboundRerouteChooserMarkup(
       rerouteId,
@@ -1917,6 +2075,9 @@ export function createTelegramInboundRouteRuntime<
     TContext
   >({
     extractRawText: Media.extractFirstTelegramMessageText,
+    assertExecutionCurrent(message) {
+      Updates.assertTelegramUpdateExecutionCurrent(message);
+    },
     shouldIgnoreMessages: (messages) =>
       !Media.hasTelegramMessagesPromptContent(messages),
     handleCommand: commandHandler,
@@ -1926,18 +2087,26 @@ export function createTelegramInboundRouteRuntime<
       );
       if (!extensionCommand) return false;
       const sourceTarget = Updates.getTelegramMessageTarget(message);
+      const assertExecutionCurrent =
+        Updates.createTelegramUpdateExecutionFenceGuard(message);
       try {
+        assertExecutionCurrent();
         await extensionCommand.handler({
           name: command.name,
           args: command.args,
-          reply: (text) =>
-            deps
-              .sendTextReply(message.chat.id, message.message_id, text, {
-                target: sourceTarget,
-              })
-              .then(() => {}),
-          enqueuePrompt: (prompt) =>
-            promptEnqueue(
+          reply: async (text) => {
+            assertExecutionCurrent();
+            await deps.sendTextReply(
+              message.chat.id,
+              message.message_id,
+              text,
+              { target: sourceTarget },
+            );
+            assertExecutionCurrent();
+          },
+          enqueuePrompt: async (prompt) => {
+            assertExecutionCurrent();
+            await promptEnqueue(
               [
                 {
                   ...message,
@@ -1946,12 +2115,15 @@ export function createTelegramInboundRouteRuntime<
                 } as TMessage,
               ],
               ctx,
-            ),
+            );
+          },
         });
+        assertExecutionCurrent();
       } catch (error) {
         deps.recordRuntimeEvent?.("telegram-command", error, {
           command: command.name,
         });
+        assertExecutionCurrent();
         await deps.sendTextReply(
           message.chat.id,
           message.message_id,
@@ -1969,7 +2141,9 @@ export function createTelegramInboundRouteRuntime<
       ),
     replaceMessageText: (message, text) =>
       ({ ...message, text, caption: undefined }) as TMessage,
-    enqueueTurn: promptEnqueue,
+    enqueueTurn: async (messages, ctx) => {
+      await promptEnqueue(messages, ctx);
+    },
   });
   dispatchReroutedCommandMessages = (messages, ctx) =>
     commandOrPrompt.dispatchMessages(messages, ctx);
@@ -1979,6 +2153,7 @@ export function createTelegramInboundRouteRuntime<
   >({
     mediaGroups: deps.mediaGroupRuntime,
     dispatchMessages: commandOrPrompt.dispatchMessages,
+    onDeferredMessage: Updates.reportTelegramUpdateDeferred,
   });
   const textDispatch = TextGroups.createTelegramTextGroupDispatchRuntime<
     TMessage,
@@ -1987,6 +2162,7 @@ export function createTelegramInboundRouteRuntime<
     textGroups: deps.textGroupRuntime,
     dispatchMessages: commandOrPrompt.dispatchMessages,
     dispatchSingleMessage: mediaDispatch.handleMessage,
+    onDeferredMessage: Updates.reportTelegramUpdateDeferred,
   });
   const editRuntime = Turns.createTelegramQueuedPromptEditRuntime<
     TMessage,
@@ -1999,16 +2175,24 @@ export function createTelegramInboundRouteRuntime<
     lifecycle: Updates.TelegramTopicLifecycleUpdate<TMessage>,
     ctx: TContext,
   ): Promise<void> => {
+    const assertExecutionCurrent =
+      Updates.createTelegramUpdateExecutionFenceGuard(lifecycle.message);
+    assertExecutionCurrent();
     await deps.handleTelegramTopicLifecycleUpdate?.(lifecycle, ctx);
+    assertExecutionCurrent();
     if (lifecycle.kind !== "created" || !deps.threadStore) {
       return;
     }
     await deps.threadStore.load();
+    assertExecutionCurrent();
   };
   const handleAuthorizedTelegramGuestMessage = async (
     guestMessage: Updates.TelegramGuestMessage & { from: TelegramUser },
     ctx: TContext,
   ): Promise<void> => {
+    const assertExecutionCurrent =
+      Updates.createTelegramUpdateExecutionFenceGuard(guestMessage);
+    assertExecutionCurrent();
     const text = guestMessage.text ?? "";
     const gm = guestMessage as unknown as Record<string, unknown>;
     // Build telegram prefix with guest context
@@ -2062,14 +2246,17 @@ export function createTelegramInboundRouteRuntime<
           { downloadFile: deps.downloadFile },
         )
       : [];
+    assertExecutionCurrent();
     const files = await Media.downloadTelegramMessageFiles([guestMsg], {
       downloadFile: deps.downloadFile,
     });
+    assertExecutionCurrent();
     const processed = await deps.inboundHandlerRuntime.process(
       files,
       text,
       ctx,
     );
+    assertExecutionCurrent();
     const rawText = processed.rawText || text;
     let sourceContext = "";
     if (replyMsg) {
@@ -2099,6 +2286,7 @@ export function createTelegramInboundRouteRuntime<
       if (file.isImage && file.mimeType) {
         try {
           const buffer = await readFile(file.path);
+          assertExecutionCurrent();
           content.push({
             type: "image",
             data: Buffer.from(buffer).toString("base64"),
@@ -2109,6 +2297,7 @@ export function createTelegramInboundRouteRuntime<
         }
       }
     }
+    const admissionReceipts = createAdmissionReceipts("prompt", [guestMessage]);
     const guestTurn: Queue.PendingTelegramTurn = {
       kind: "prompt",
       chatId: 0,
@@ -2128,11 +2317,14 @@ export function createTelegramInboundRouteRuntime<
       statusSummary: Turns.truncateTelegramQueueSummary(
         processed.rawText || text,
       ),
+      ...(admissionReceipts.length > 0 ? { admissionReceipts } : {}),
     };
     const items = deps.telegramQueueStore.getQueuedItems();
+    Updates.assertTelegramUpdateExecutionCurrent(guestMessage);
     deps.telegramQueueStore.setQueuedItems(
       Queue.appendTelegramQueueItem(items, guestTurn),
     );
+    reportQueueAdmission([guestMessage], admissionReceipts);
     deps.updateStatus(ctx);
     requestDispatchNextQueuedTelegramTurn(ctx);
   };
@@ -2148,17 +2340,20 @@ export function createTelegramInboundRouteRuntime<
     persistConfig: deps.configStore.persist,
     updateStatus: deps.updateStatus,
     removePendingMediaGroupMessages: deps.mediaGroupRuntime.removeMessages,
+    flushPendingMediaGroupMessage: deps.mediaGroupRuntime.flushMessage,
+    flushPendingTextGroupMessage: deps.textGroupRuntime.flushMessage,
     removeQueuedTelegramTurnsByMessageIds:
       deps.queueMutationRuntime.removeByMessageIds,
-    clearQueuedTelegramTurnPriorityByMessageId:
-      deps.queueMutationRuntime.clearPriorityByMessageId,
-    prioritizeQueuedTelegramTurnByMessageId:
-      deps.queueMutationRuntime.prioritizeByMessageId,
+    applyQueuedTelegramTurnReactionByMessageId:
+      deps.queueMutationRuntime.applyReactionByMessageId,
     answerCallbackQuery: deps.answerCallbackQuery,
     answerGuestQuery: deps.answerGuestQuery,
     handleAuthorizedTelegramCallbackQuery: callbackHandler,
     sendTextReply: deps.sendTextReply,
     handleAuthorizedTelegramMessage: async (message, ctx) => {
+      const assertExecutionCurrent =
+        Updates.createTelegramUpdateExecutionFenceGuard(message);
+      assertExecutionCurrent();
       if (typeof message.message_thread_id === "number") {
         await deps.handleTelegramThreadTargetObserved?.(
           {
@@ -2167,12 +2362,14 @@ export function createTelegramInboundRouteRuntime<
           },
           ctx,
         );
+        assertExecutionCurrent();
       }
       const text = Media.extractFirstTelegramMessageText([
         message as TMessage,
       ]).trim();
       if (deps.threadStore && typeof message.message_thread_id !== "number") {
         await deps.threadStore.load();
+        assertExecutionCurrent();
         if (deps.threadStore.getBotState().threadMode === "disabled") {
           await textDispatch.handleMessage(message as TMessage, ctx);
           return;
@@ -2213,6 +2410,7 @@ export function createTelegramInboundRouteRuntime<
                     "thread-mode-unavailable-threadless-prompt",
                 });
                 await deps.threadStore.persist();
+                assertExecutionCurrent();
                 await textDispatch.handleMessage(message as TMessage, ctx);
                 return;
               }
@@ -2236,11 +2434,15 @@ export function createTelegramInboundRouteRuntime<
     handleAuthorizedTelegramEditedMessage: editRuntime.updateFromEditedMessage,
     handleAuthorizedTelegramGuestMessage,
     handleUnboundTelegramTopicMessage: async (message, ctx) => {
+      const assertExecutionCurrent =
+        Updates.createTelegramUpdateExecutionFenceGuard(message);
+      assertExecutionCurrent();
       if (!deps.threadStore) {
         await textDispatch.handleMessage(message as TMessage, ctx);
         return;
       }
       await deps.threadStore.load();
+      assertExecutionCurrent();
       if (deps.threadStore.getBotState().threadMode === "disabled") {
         await textDispatch.handleMessage(message as TMessage, ctx);
         return;
@@ -2280,6 +2482,7 @@ export function createTelegramInboundRouteRuntime<
               rerouteConfirmedAtMs: nowMs,
             });
             await deps.threadStore.persist();
+            assertExecutionCurrent();
           }
           await textDispatch.handleMessage(message as TMessage, ctx);
           return;
@@ -2350,6 +2553,7 @@ export function createTelegramInboundRouteRuntime<
             slot,
           });
           await deps.threadStore.persist();
+          assertExecutionCurrent();
           deps.setCurrentLeaderIdentity?.({
             target: { chatId: target.chatId, threadId: target.threadId },
             slot,
@@ -2378,6 +2582,27 @@ export function createTelegramInboundRouteRuntime<
             existing.status +
             ". Start a Pi instance to claim it.",
           { target },
+        );
+        return;
+      }
+      const deletedObservation = deps.threadStore
+        .listSyncObservations()
+        .find(
+          (observation) =>
+            observation.syncStatus === "deleted" &&
+            observation.target.chatId === target.chatId &&
+            observation.target.threadId === target.threadId,
+        );
+      if (deletedObservation) {
+        deps.recordRuntimeEvent?.(
+          "inbound-worker",
+          "Discarded update from a confirmed deleted Telegram thread",
+          {
+            phase: "discard-deleted-thread",
+            chatId: target.chatId,
+            threadId: target.threadId,
+            messageId: message.message_id,
+          },
         );
         return;
       }
@@ -2464,6 +2689,7 @@ export function createTelegramInboundRouteRuntime<
               slot,
             });
             await deps.threadStore.persist();
+            assertExecutionCurrent();
             deps.setCurrentLeaderIdentity?.({
               target: { chatId: target.chatId, threadId: target.threadId },
               slot,
@@ -2535,6 +2761,7 @@ export function createTelegramInboundRouteRuntime<
           slot,
         });
         await deps.threadStore.persist();
+        assertExecutionCurrent();
         deps.setCurrentLeaderIdentity?.({
           target: { chatId: target.chatId, threadId: target.threadId },
           slot,

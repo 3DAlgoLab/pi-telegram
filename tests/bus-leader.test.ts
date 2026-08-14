@@ -10,9 +10,14 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  createTelegramBusFollowerDeliveryIdentity,
   createTelegramBusFollowerRegistry,
+  createTelegramBusLocalServer,
+  createTelegramBusProtocolIdentity,
   resolveTelegramBusSocketPath,
   sendTelegramBusLocalEnvelope,
+  TELEGRAM_BUS_CAPABILITY_DURABLE_FOLLOWER_ADMISSION,
+  TELEGRAM_BUS_CAPABILITY_QUEUE_HANDOFF,
 } from "../lib/bus.ts";
 import {
   createTelegramBusFollowerDisconnectHandler,
@@ -20,13 +25,67 @@ import {
   createTelegramBusInstanceLifecycleAnnouncement,
   createTelegramBusLeaderActivationScheduler,
   createTelegramBusLeaderApiProxy,
-  createTelegramBusLeaderEnvelopeHandler,
-  createTelegramBusLeaderRuntime,
+  createTelegramBusLeaderEnvelopeHandler as createRawTelegramBusLeaderEnvelopeHandler,
+  createTelegramBusLeaderRuntime as createRawTelegramBusLeaderRuntime,
   createTelegramBusLeaderRuntimeAssembly,
   createTelegramBusLeaderTargetProvisioner,
+  type TelegramBusLeaderRuntimeDeps,
 } from "../lib/bus-leader.ts";
 import { createTelegramTopicTargetStore } from "../lib/threads.ts";
 import { TelegramApiCommitUnknownError } from "../lib/telegram-api.ts";
+
+const TEST_BUS_PROTOCOL_IDENTITY = createTelegramBusProtocolIdentity({
+  runtimeBuild: "test",
+  capabilities: [
+    TELEGRAM_BUS_CAPABILITY_DURABLE_FOLLOWER_ADMISSION,
+    TELEGRAM_BUS_CAPABILITY_QUEUE_HANDOFF,
+  ],
+});
+
+function createTelegramBusLeaderEnvelopeHandler(
+  deps: Omit<
+    Parameters<typeof createRawTelegramBusLeaderEnvelopeHandler>[0],
+    "protocolIdentity"
+  > & {
+    protocolIdentity?: Parameters<
+      typeof createRawTelegramBusLeaderEnvelopeHandler
+    >[0]["protocolIdentity"];
+  },
+) {
+  const { protocolIdentity = TEST_BUS_PROTOCOL_IDENTITY, ...ports } = deps;
+  const handle = createRawTelegramBusLeaderEnvelopeHandler({
+    ...ports,
+    protocolIdentity,
+  });
+  return async (envelope: Parameters<typeof handle>[0]) => {
+    const injectProtocol =
+      envelope.kind === "follower.register" &&
+      !envelope.registration.protocol;
+    const response = await handle(
+      injectProtocol && envelope.kind === "follower.register"
+        ? {
+            ...envelope,
+            registration: {
+              ...envelope.registration,
+              protocol: protocolIdentity,
+            },
+          }
+        : envelope,
+    );
+    if (!injectProtocol || response.kind !== "bus.ack") return response;
+    const { protocol: _protocol, ...legacyExpectation } = response;
+    return legacyExpectation;
+  };
+}
+
+function createTelegramBusLeaderRuntime<TContext>(
+  deps: Omit<TelegramBusLeaderRuntimeDeps<TContext>, "protocolIdentity"> & {
+    protocolIdentity?: TelegramBusLeaderRuntimeDeps<TContext>["protocolIdentity"];
+  },
+) {
+  const { protocolIdentity = TEST_BUS_PROTOCOL_IDENTITY, ...ports } = deps;
+  return createRawTelegramBusLeaderRuntime({ ...ports, protocolIdentity });
+}
 
 test("Bus leader preserves a binding through follower reload handoff", async () => {
   const dir = mkdtempSync(join(tmpdir(), "pi-telegram-follower-gap-"));
@@ -1274,6 +1333,103 @@ test("Bus leader activation scheduler hot-switches an owning classic poller", as
   ]);
 });
 
+test("Bus leader routes authenticated queue handoff between exact follower generations", async () => {
+  const registry = createTelegramBusFollowerRegistry();
+  const routed: unknown[] = [];
+  registry.register({
+    instanceId: "donor",
+    registrationGeneration: "donor-generation",
+    protocol: TEST_BUS_PROTOCOL_IDENTITY,
+    connectedAtMs: 1,
+  });
+  registry.register({
+    instanceId: "recipient",
+    registrationGeneration: "recipient-generation",
+    protocol: TEST_BUS_PROTOCOL_IDENTITY,
+    connectedAtMs: 1,
+  });
+  const handleEnvelope = createTelegramBusLeaderEnvelopeHandler({
+    followerRegistry: registry,
+    authSecret: "secret",
+    routeQueueHandoff(follower, envelope) {
+      routed.push({ follower, envelope });
+      return { status: "staged", receiptId: "receipt-1", sourceUpdateIds: [1] };
+    },
+  });
+  const payload = {
+    kind: "prompt" as const,
+    chatId: 7,
+    replyToMessageId: 10,
+    queueOrder: 1,
+    queueLane: "default" as const,
+    laneOrder: 1,
+    statusSummary: "handoff",
+    admissionReceipts: [
+      {
+        queueKind: "prompt" as const,
+        receiptId: "receipt-1",
+        sourceUpdateIds: [1],
+      },
+    ],
+    sourceMessageIds: [10],
+    queuedAttachments: [],
+    content: [{ type: "text" as const, text: "handoff prompt" }],
+    historyText: "handoff",
+  };
+  const envelope = {
+    kind: "follower.offerQueueHandoff" as const,
+    requestId: "handoff:1",
+    auth: "secret",
+    instanceId: "donor",
+    registrationGeneration: "donor-generation",
+    recipientInstanceId: "recipient",
+    recipientRegistrationGeneration: "recipient-generation",
+    donorProcessId: 101,
+    donorProcessBirthId: "101:start:donor",
+    donorSessionGeneration: 1,
+    donorAcquisitionId: "donor-acquisition",
+    donorAcquiredAtMs: 1000,
+    handoffToken: "x".repeat(32),
+    payload,
+    sentAtMs: 2000,
+  };
+  assert.deepEqual(await handleEnvelope(envelope), {
+    kind: "bus.ack",
+    requestId: "handoff:1",
+    ok: true,
+    result: { status: "staged", receiptId: "receipt-1", sourceUpdateIds: [1] },
+  });
+  assert.equal(routed.length, 1);
+  assert.equal((routed[0] as { follower: { instanceId: string } }).follower.instanceId, "donor");
+  assert.deepEqual(
+    await handleEnvelope({
+      ...envelope,
+      requestId: "handoff:2",
+      registrationGeneration: "stale",
+    }),
+    {
+      kind: "bus.ack",
+      requestId: "handoff:2",
+      ok: false,
+      message: "Stale Telegram bus follower registration generation.",
+    },
+  );
+  assert.deepEqual(
+    await handleEnvelope({
+      ...envelope,
+      requestId: "handoff:3",
+      recipientRegistrationGeneration: "stale",
+    }),
+    {
+      kind: "bus.ack",
+      requestId: "handoff:3",
+      ok: false,
+      message: "Stale Telegram queue handoff recipient registration generation.",
+    },
+  );
+  assert.equal(routed.length, 1);
+});
+
 test("Bus leader envelope handler registers and heartbeats followers", async () => {
   const registry = createTelegramBusFollowerRegistry();
   const handleEnvelope = createTelegramBusLeaderEnvelopeHandler({
@@ -1301,6 +1457,7 @@ test("Bus leader envelope handler registers and heartbeats followers", async () 
     connectedAtMs: 2000,
     lastHeartbeatMs: 2000,
     registrationGeneration: "inst-a:1",
+    protocol: TEST_BUS_PROTOCOL_IDENTITY,
     target: undefined,
     slot: "C",
   });
@@ -1320,6 +1477,105 @@ test("Bus leader envelope handler registers and heartbeats followers", async () 
     },
   );
   assert.equal(registry.get("inst-a")?.lastHeartbeatMs, 2000);
+});
+
+test("Bus leader rejects incompatible protocol before follower provisioning", async () => {
+  const registry = createTelegramBusFollowerRegistry();
+  const protocolIdentity = createTelegramBusProtocolIdentity({
+    runtimeBuild: "0.27.12",
+    capabilities: [TELEGRAM_BUS_CAPABILITY_DURABLE_FOLLOWER_ADMISSION],
+  });
+  let provisions = 0;
+  const handleEnvelope = createRawTelegramBusLeaderEnvelopeHandler({
+    followerRegistry: registry,
+    protocolIdentity,
+    provisionFollowerTarget: () => {
+      provisions += 1;
+      return { chatId: 7, threadId: 42 };
+    },
+  });
+
+  const missing = await handleEnvelope({
+    kind: "follower.register",
+    requestId: "missing:1",
+    registration: {
+      instanceId: "missing",
+      registrationGeneration: "missing:1",
+      connectedAtMs: 1000,
+    },
+  });
+  assert.deepEqual(missing, {
+    kind: "bus.ack",
+    requestId: "missing:1",
+    ok: false,
+    protocol: protocolIdentity,
+    error: { code: "incompatible-protocol" },
+    message: "Incompatible Telegram bus protocol: missing-identity.",
+  });
+
+  const mismatched = await handleEnvelope({
+    kind: "follower.register",
+    requestId: "future:1",
+    registration: {
+      instanceId: "future",
+      registrationGeneration: "future:1",
+      protocol: {
+        protocolVersion: 2,
+        runtimeBuild: "0.29.0",
+        capabilities: [],
+      },
+      connectedAtMs: 1000,
+    },
+  });
+  assert.equal(
+    mismatched.kind === "bus.ack" ? mismatched.ok : true,
+    false,
+  );
+  assert.equal(registry.list().length, 0);
+  assert.equal(provisions, 0);
+
+  const missingCapability = await handleEnvelope({
+    kind: "follower.register",
+    requestId: "legacy:1",
+    registration: {
+      instanceId: "legacy",
+      registrationGeneration: "legacy:1",
+      protocol: createTelegramBusProtocolIdentity({
+        runtimeBuild: "0.28.0",
+      }),
+      connectedAtMs: 1000,
+    },
+  });
+  assert.equal(
+    missingCapability.kind === "bus.ack"
+      ? missingCapability.message
+      : undefined,
+    "Incompatible Telegram bus protocol: missing-capability.",
+  );
+  assert.equal(registry.list().length, 0);
+  assert.equal(provisions, 0);
+
+  const compatible = createTelegramBusProtocolIdentity({
+    runtimeBuild: "0.28.1",
+    capabilities: [TELEGRAM_BUS_CAPABILITY_DURABLE_FOLLOWER_ADMISSION],
+  });
+  const accepted = await handleEnvelope({
+    kind: "follower.register",
+    requestId: "compatible:1",
+    registration: {
+      instanceId: "compatible",
+      registrationGeneration: "compatible:1",
+      protocol: compatible,
+      connectedAtMs: 1000,
+    },
+  });
+  assert.equal(accepted.kind === "bus.ack" && accepted.ok, true);
+  assert.deepEqual(
+    accepted.kind === "bus.ack" ? accepted.protocol : undefined,
+    protocolIdentity,
+  );
+  assert.deepEqual(registry.get("compatible")?.protocol, compatible);
+  assert.equal(provisions, 1);
 });
 
 test("Bus leader rejects generationless registration and disconnect envelopes", async () => {
@@ -1538,6 +1794,7 @@ test("Bus leader provisions targets before registering followers", async () => {
       threadName: "repo",
       connectedAtMs: 1000,
       registrationGeneration: "inst-a:1",
+      protocol: TEST_BUS_PROTOCOL_IDENTITY,
     },
   ]);
 });
@@ -1609,6 +1866,7 @@ test("Bus leader records ownership for follower-sent messages", async () => {
   registry.register({
     instanceId: "inst-a",
     connectedAtMs: 1000,
+    registrationGeneration: "generation-a",
     target: { chatId: 1, threadId: 42 },
   });
   const ownership: unknown[] = [];
@@ -1632,6 +1890,7 @@ test("Bus leader records ownership for follower-sent messages", async () => {
     kind: "follower.callApi",
     requestId: "inst-a:4",
     instanceId: "inst-a",
+    registrationGeneration: "generation-a",
     method: "call",
     args: ["sendMessage", { chat_id: 1, text: "Menu" }],
     sentAtMs: 4000,
@@ -1649,7 +1908,11 @@ test("Bus leader records ownership for follower-sent messages", async () => {
 
 test("Bus leader handles follower API call envelopes for registered followers", async () => {
   const registry = createTelegramBusFollowerRegistry();
-  registry.register({ instanceId: "inst-a", connectedAtMs: 1000 });
+  registry.register({
+    instanceId: "inst-a",
+    registrationGeneration: "generation-a",
+    connectedAtMs: 1000,
+  });
   const calls: unknown[] = [];
   const handleEnvelope = createTelegramBusLeaderEnvelopeHandler({
     followerRegistry: registry,
@@ -1665,6 +1928,7 @@ test("Bus leader handles follower API call envelopes for registered followers", 
       kind: "follower.callApi",
       requestId: "inst-a:4",
       instanceId: "inst-a",
+      registrationGeneration: "generation-a",
       method: "sendRichMessage",
       args: [{ chat_id: 1 }],
       sentAtMs: 4000,
@@ -1736,7 +2000,11 @@ test("Bus leader rejects delayed API calls from a replaced follower generation",
 
 test("Bus leader encodes commit-unknown API failures structurally", async () => {
   const registry = createTelegramBusFollowerRegistry();
-  registry.register({ instanceId: "inst-a", connectedAtMs: 1000 });
+  registry.register({
+    instanceId: "inst-a",
+    registrationGeneration: "generation-a",
+    connectedAtMs: 1000,
+  });
   const handleEnvelope = createTelegramBusLeaderEnvelopeHandler({
     followerRegistry: registry,
     async callApi() {
@@ -1752,6 +2020,7 @@ test("Bus leader encodes commit-unknown API failures structurally", async () => 
       kind: "follower.callApi",
       requestId: "inst-a:ambiguous:1",
       instanceId: "inst-a",
+      registrationGeneration: "generation-a",
       method: "call",
       args: ["sendMessage", { chat_id: 1 }],
       sentAtMs: 4000,
@@ -1765,6 +2034,100 @@ test("Bus leader encodes commit-unknown API failures structurally", async () => 
       error: { code: "commit-unknown", method: "sendMessage" },
     },
   );
+});
+
+test("Bus leader proxies only exact-generation traffic and preserves durable receipts", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-exact-proxy-"));
+  const followerSocketPath = join(dir, "follower.sock");
+  let forwarded = 0;
+  const followerServer = createTelegramBusLocalServer({
+    socketPath: followerSocketPath,
+    handleEnvelope(envelope) {
+      forwarded += 1;
+      return {
+        kind: "bus.ack",
+        requestId: envelope.requestId,
+        ok: true,
+        result:
+          "delivery" in envelope && envelope.delivery
+            ? {
+                deliveryId: envelope.delivery.deliveryId,
+                sourceUpdateId: envelope.delivery.sourceUpdateId,
+              }
+            : undefined,
+      };
+    },
+  });
+  const registry = createTelegramBusFollowerRegistry();
+  registry.register({
+    instanceId: "inst-a",
+    registrationGeneration: "generation-a",
+    busSocketPath: followerSocketPath,
+    connectedAtMs: 1000,
+  });
+  const handleEnvelope = createTelegramBusLeaderEnvelopeHandler({
+    followerRegistry: registry,
+  });
+  const delivery = (sourceUpdateId: number) =>
+    createTelegramBusFollowerDeliveryIdentity({
+      kind: "leader.forwardMessage",
+      recipientBindingKey: "manual:owner-a",
+      sourceUpdateId,
+    });
+  try {
+    await followerServer.start();
+    assert.deepEqual(
+      await handleEnvelope({
+        kind: "leader.forwardMessage",
+        requestId: "leader:1",
+        recipientInstanceId: "inst-a",
+        recipientRegistrationGeneration: "generation-a",
+        delivery: delivery(44),
+        message: { message_id: 1 },
+        sentAtMs: 2000,
+      }),
+      {
+        kind: "bus.ack",
+        requestId: "leader:1",
+        ok: true,
+        result: { deliveryId: delivery(44).deliveryId, sourceUpdateId: 44 },
+      },
+    );
+    assert.deepEqual(
+      await handleEnvelope({
+        kind: "leader.forwardMessage",
+        requestId: "leader:stale",
+        recipientInstanceId: "inst-a",
+        recipientRegistrationGeneration: "generation-old",
+        delivery: delivery(45),
+        message: { message_id: 2 },
+        sentAtMs: 2001,
+      }),
+      {
+        kind: "bus.ack",
+        requestId: "leader:stale",
+        ok: false,
+        message: "Stale Telegram bus follower registration generation.",
+      },
+    );
+    assert.deepEqual(
+      await handleEnvelope({
+        kind: "bus.ack",
+        requestId: "nested-response",
+        ok: true,
+      }),
+      {
+        kind: "bus.ack",
+        requestId: "nested-response",
+        ok: false,
+        message: "Telegram bus response envelope cannot be used as a request.",
+      },
+    );
+    assert.equal(forwarded, 1);
+  } finally {
+    await followerServer.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("Bus leader rejects unauthenticated envelopes when a secret is configured", async () => {
@@ -1802,6 +2165,12 @@ test("Bus leader rejects unauthenticated envelopes when a secret is configured",
       kind: "leader.forwardMessage" as const,
       requestId: "leader:4",
       recipientInstanceId: "inst-a",
+      recipientRegistrationGeneration: "inst-a:1",
+      delivery: createTelegramBusFollowerDeliveryIdentity({
+        kind: "leader.forwardMessage",
+        recipientBindingKey: "manual:owner-a",
+        sourceUpdateId: 1,
+      }),
       message: { message_id: 1 },
       sentAtMs: 4000,
     },
@@ -1891,6 +2260,7 @@ test("Bus leader authorizes scoped follower API calls", async () => {
   registry.register({
     instanceId: "inst-a",
     connectedAtMs: 1000,
+    registrationGeneration: "generation-a",
     target: { chatId: 100, threadId: 42 },
   });
   const calls: unknown[] = [];
@@ -1917,6 +2287,7 @@ test("Bus leader authorizes scoped follower API calls", async () => {
       kind: "follower.callApi",
       requestId: "inst-a:allowed",
       instanceId: "inst-a",
+      registrationGeneration: "generation-a",
       method: "call",
       args: ["sendMessage", { chat_id: 100, message_thread_id: 42 }],
       sentAtMs: 2000,
@@ -1933,6 +2304,7 @@ test("Bus leader authorizes scoped follower API calls", async () => {
       kind: "follower.callApi",
       requestId: "inst-a:denied",
       instanceId: "inst-a",
+      registrationGeneration: "generation-a",
       method: "call",
       args: ["deleteMessage", { chat_id: 999 }],
       sentAtMs: 3000,
@@ -1962,6 +2334,7 @@ test("Bus leader assembly wires provisioners, reconciliation, API, and runtime",
     runtime: {
       socketPath,
       followerRegistry: createTelegramBusFollowerRegistry(),
+      protocolIdentity: TEST_BUS_PROTOCOL_IDENTITY,
       startPolling: () => {
         events.push("poll-start");
       },
@@ -1990,6 +2363,78 @@ test("Bus leader assembly wires provisioners, reconciliation, API, and runtime",
     await runtime.stopPolling();
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("Bus leader runtime exposes direct leader-to-follower queue handoff", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-leader-handoff-route-"));
+  const socketPath = join(dir, "bus.sock");
+  const registry = createTelegramBusFollowerRegistry();
+  const recipientSocketPath = join(dir, "recipient.sock");
+  registry.register({
+    instanceId: "recipient",
+    pid: 202,
+    target: { chatId: 7, threadId: 20 },
+    busSocketPath: recipientSocketPath,
+    registrationGeneration: "recipient-generation",
+    protocol: TEST_BUS_PROTOCOL_IDENTITY,
+    connectedAtMs: 1,
+  });
+  const runtime = createTelegramBusLeaderRuntime({
+    socketPath,
+    followerRegistry: registry,
+    protocolIdentity: TEST_BUS_PROTOCOL_IDENTITY,
+    startPolling: () => undefined,
+    stopPolling: () => undefined,
+  });
+  const recipientServer = createTelegramBusLocalServer({
+    socketPath: recipientSocketPath,
+    handleEnvelope: (envelope) => ({
+      kind: "bus.ack",
+      requestId: envelope.requestId,
+      ok: true,
+      result: { status: "staged", receiptId: "receipt-1", sourceUpdateIds: [1] },
+    }),
+  });
+  await recipientServer.start();
+  const response = await runtime.routeQueueHandoff({
+    requestId: "handoff:runtime",
+    auth: undefined,
+    recipientInstanceId: "recipient",
+    recipientRegistrationGeneration: "recipient-generation",
+    donorInstanceId: "leader",
+    donorProcessId: 101,
+    donorProcessBirthId: "101:start:donor",
+    donorSessionGeneration: 1,
+    donorAcquisitionId: "acquisition",
+    donorAcquiredAtMs: 1,
+    handoffToken: "x".repeat(32),
+    payload: {
+      kind: "prompt",
+      chatId: 7,
+      replyToMessageId: 10,
+      queueOrder: 1,
+      queueLane: "default",
+      laneOrder: 1,
+      statusSummary: "handoff",
+      admissionReceipts: [
+        { queueKind: "prompt", receiptId: "receipt-1", sourceUpdateIds: [1] },
+      ],
+      sourceMessageIds: [10],
+      queuedAttachments: [],
+      content: [{ type: "text", text: "handoff prompt" }],
+      historyText: "handoff",
+    },
+    sentAtMs: 1,
+  });
+  assert.deepEqual(response, {
+    kind: "bus.ack",
+    requestId: "handoff:runtime",
+    ok: true,
+    result: { status: "staged", receiptId: "receipt-1", sourceUpdateIds: [1] },
+  });
+  await recipientServer.stop();
+  await runtime.stopPolling();
+  rmSync(dir, { recursive: true, force: true });
 });
 
 test("Bus leader runtime provisions leader target before polling", async () => {
@@ -2096,6 +2541,7 @@ test("Bus leader runtime starts the local server around polling", async () => {
               instanceId: "inst-a",
               connectedAtMs: 1000,
               registrationGeneration: "inst-a:1",
+              protocol: TEST_BUS_PROTOCOL_IDENTITY,
             },
           },
         })
@@ -2164,6 +2610,56 @@ test("Bus leader runtime prunes stale followers while polling", async () => {
       true,
     );
   } finally {
+    await runtime.stopPolling();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Bus leader owns one generation-fenced follower prune", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-prune-gate-"));
+  const socketPath = join(dir, "bus.sock");
+  const registry = createTelegramBusFollowerRegistry();
+  registry.register({
+    instanceId: "dead",
+    connectedAtMs: 0,
+    pid: 4242,
+    registrationGeneration: "generation-dead",
+  });
+  let policyCalls = 0;
+  let releasePolicy: (() => void) | undefined;
+  const policy = new Promise<void>((resolve) => {
+    releasePolicy = resolve;
+  });
+  const cleaned: string[] = [];
+  const runtime = createTelegramBusLeaderRuntime({
+    socketPath,
+    followerRegistry: registry,
+    getNowMs: () => 1000,
+    followerPruneIntervalMs: 5,
+    followerStaleAfterMs: 100,
+    isFollowerProcessAlive: () => false,
+    async shouldCleanupConfirmedDeadFollower() {
+      policyCalls += 1;
+      await policy;
+      return true;
+    },
+    onFollowerConfirmedDead(follower) {
+      cleaned.push(follower.instanceId);
+    },
+    startPolling: () => undefined,
+    stopPolling: () => undefined,
+  });
+  try {
+    await runtime.startPolling("ctx");
+    await waitForCondition(() => policyCalls === 1);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.equal(policyCalls, 1);
+    await runtime.stopPolling();
+    releasePolicy?.();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(cleaned, []);
+  } finally {
+    releasePolicy?.();
     await runtime.stopPolling();
     rmSync(dir, { recursive: true, force: true });
   }
@@ -2259,6 +2755,7 @@ test("Bus leader serializes confirmed-dead cleanup before replacement registrati
           profileKey: "manual:owner-a",
           connectedAtMs: 1000,
           registrationGeneration: "generation-new",
+          protocol: TEST_BUS_PROTOCOL_IDENTITY,
           target: { chatId: 7, threadId: 12 },
         },
       },

@@ -38,6 +38,8 @@ export interface TelegramTextGroupState<TMessage, TContext = unknown> {
   dispatching?: boolean;
   suspended?: boolean;
   reschedule?: (delayMs?: number) => void;
+  dispatchNow?: () => Promise<void>;
+  dispatchPromise?: Promise<void>;
   dispatchLimit?: number;
   forwardPairCandidate?: TelegramForwardCommentBatchPosition;
 }
@@ -63,6 +65,7 @@ export interface TelegramTextGroupController<TMessage, TContext = unknown> {
       ctx: TContext,
     ) => unknown | Promise<unknown>;
   }) => boolean;
+  flushMessage: (messageId: number) => Promise<boolean>;
   suspend: () => void;
   resume: (context: TContext) => void;
   clear: () => void;
@@ -193,9 +196,18 @@ export function queueTelegramTextGroupMessage<
   const key = getTelegramTextGroupKey(options.message);
   if (!key) return false;
   const existing = options.groups.get(key);
-  if (existing?.messages.some(
+  const duplicateIndex = existing?.messages.findIndex(
     (message) => message.message_id === options.message.message_id,
-  )) return true;
+  );
+  if (existing && duplicateIndex !== undefined && duplicateIndex >= 0) {
+    existing.messages[duplicateIndex] = options.message;
+    existing.context = options.context;
+    existing.forwardPairCandidate = options.forwardPairCandidate;
+    if (!existing.suspended && !existing.dispatching && !existing.flushTimer) {
+      existing.reschedule?.();
+    }
+    return true;
+  }
   if (
     !existing &&
     !options.forceStart &&
@@ -208,46 +220,52 @@ export function queueTelegramTextGroupMessage<
   state.messages.push(options.message);
   state.context = options.context;
   state.forwardPairCandidate = options.forwardPairCandidate;
-  const dispatchQueued = (): void => {
-      state.flushTimer = undefined;
-      const queued = options.groups.get(key);
-      if (!queued || queued.context === undefined) return;
-      if (queued.dispatching) {
-        scheduleDispatch();
-        return;
-      }
-      const dispatchCount = queued.dispatchLimit ?? queued.messages.length;
-      queued.dispatchLimit = undefined;
-      const dispatchedMessages = queued.messages.slice(0, dispatchCount);
-      const dispatchedIds = new Set(
-        dispatchedMessages.map((message) => message.message_id),
-      );
-      queued.dispatching = true;
-      void Promise.resolve(
-        options.dispatchMessages(dispatchedMessages, queued.context),
-      ).then(
-        () => {
-          if (options.groups.get(key) !== queued) return;
-          queued.messages = queued.messages.filter(
-            (message) => !dispatchedIds.has(message.message_id),
-          );
+  const dispatchQueued = (): Promise<void> => {
+    state.flushTimer = undefined;
+    const queued = options.groups.get(key);
+    if (!queued || queued.context === undefined) return Promise.resolve();
+    if (queued.dispatching) return queued.dispatchPromise ?? Promise.resolve();
+    const dispatchCount = queued.dispatchLimit ?? queued.messages.length;
+    queued.dispatchLimit = undefined;
+    const dispatchedMessages = queued.messages.slice(0, dispatchCount);
+    const dispatchedIds = new Set(
+      dispatchedMessages.map((message) => message.message_id),
+    );
+    queued.dispatching = true;
+    const operation = Promise.resolve(
+      options.dispatchMessages(dispatchedMessages, queued.context),
+    ).then(
+      () => {
+        if (options.groups.get(key) !== queued) return;
+        queued.messages = queued.messages.filter(
+          (message) => !dispatchedIds.has(message.message_id),
+        );
+        queued.dispatching = false;
+        queued.dispatchPromise = undefined;
+        if (queued.messages.length === 0) options.groups.delete(key);
+        else if (!queued.flushTimer) scheduleDispatch();
+      },
+      (error) => {
+        if (options.groups.get(key) === queued) {
           queued.dispatching = false;
-          if (queued.messages.length === 0) options.groups.delete(key);
-          else if (!queued.flushTimer) scheduleDispatch();
-        },
-        () => {
-          if (options.groups.get(key) !== queued) return;
-          queued.dispatching = false;
+          queued.dispatchPromise = undefined;
           if (!queued.flushTimer) scheduleDispatch();
-        },
-      );
+        }
+        throw error;
+      },
+    );
+    queued.dispatchPromise = operation;
+    return operation;
   };
   const scheduleDispatch = (delayMs = options.debounceMs): void => {
     if (state.suspended) return;
-    state.flushTimer = options.setTimer(dispatchQueued, delayMs);
+    state.flushTimer = options.setTimer(() => {
+      void dispatchQueued().catch(() => undefined);
+    }, delayMs);
     state.flushTimer.unref?.();
   };
   state.reschedule = scheduleDispatch;
+  state.dispatchNow = dispatchQueued;
   if (state.flushTimer) options.clearTimer(state.flushTimer);
   scheduleDispatch(
     options.dispatchImmediately ? 0 : (options.delayMs ?? options.debounceMs),
@@ -390,6 +408,24 @@ export function createTelegramTextGroupController<
             : undefined,
       });
     },
+    async flushMessage(messageId) {
+      for (const state of groups.values()) {
+        if (!state.messages.some((message) => message.message_id === messageId)) {
+          continue;
+        }
+        if (state.flushTimer) clearTimer(state.flushTimer);
+        state.flushTimer = undefined;
+        await state.dispatchNow?.();
+        if (
+          state.messages.some((message) => message.message_id === messageId) &&
+          !state.dispatching
+        ) {
+          await state.dispatchNow?.();
+        }
+        return true;
+      }
+      return false;
+    },
     suspend: () => {
       for (const state of groups.values()) {
         state.suspended = true;
@@ -422,6 +458,7 @@ export function createTelegramTextGroupDispatchRuntime<
   textGroups: TelegramTextGroupController<TMessage, TContext>;
   dispatchMessages: (messages: TMessage[], ctx: TContext) => Promise<void>;
   dispatchSingleMessage: (message: TMessage, ctx: TContext) => Promise<void>;
+  onDeferredMessage?: (message: TMessage) => void;
 }): TelegramTextGroupDispatchRuntime<TMessage, TContext> {
   return {
     handleMessage: async (message, ctx) => {
@@ -431,7 +468,10 @@ export function createTelegramTextGroupDispatchRuntime<
         dispatchMessages: (messages, queuedCtx) =>
           deps.dispatchMessages(messages, queuedCtx),
       });
-      if (queuedTextGroup) return;
+      if (queuedTextGroup) {
+        deps.onDeferredMessage?.(message);
+        return;
+      }
       await deps.dispatchSingleMessage(message, ctx);
     },
   };

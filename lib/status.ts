@@ -110,6 +110,11 @@ export interface TelegramBridgeStatusBusFollower {
   cwd?: string;
   lastHeartbeatMs: number;
   target?: { chatId: number; threadId?: number };
+  protocol?: {
+    protocolVersion: number;
+    runtimeBuild: string;
+    capabilities: string[];
+  };
   slot?: string;
   threadName?: string;
   status?: string;
@@ -124,6 +129,11 @@ export interface TelegramBridgeStatusLocalBus {
   followerTarget?: { chatId: number; threadId?: number };
   followerSlot?: string;
   followerThreadName?: string;
+  leaderProtocol?: {
+    protocolVersion: number;
+    runtimeBuild: string;
+    capabilities: string[];
+  };
 }
 
 export interface TelegramBridgeStatusTopicTarget {
@@ -179,6 +189,57 @@ export interface TelegramBridgeThreadReconciliationState {
 export type TelegramBridgeBusRole = "leader" | "follower";
 export type TelegramBridgeBusLifecyclePhase = "electing";
 
+export interface TelegramBridgePollingState {
+  phase: string;
+  phaseStartedAtMs?: number;
+  currentUpdateId?: number;
+  startedAtMs?: number;
+  stoppedAtMs?: number;
+  lastSuccessfulResponseAtMs?: number;
+  lastSuccessfulResponseUpdateCount?: number;
+  stopReason?: string;
+}
+
+export interface TelegramBridgeInboundWorkerState {
+  phase: string;
+  generation: number;
+  phaseStartedAtMs?: number;
+  currentUpdateId?: number;
+  blockedReason?: string;
+  journalEntryCount: number;
+  journalSerializedBytes: number;
+  oldestAdmittedAtMs?: number;
+  deferredClaimCount: number;
+  queuedClaimCount: number;
+  foreignQueuedCount: number;
+  foreignQueuedOwnerLiveness?: "alive" | "dead" | "unverifiable";
+  foreignQueuedOwner?: {
+    instanceId: string;
+    processId: number;
+    processBirthId: string;
+    sessionGeneration: number;
+    acquisitionId: string;
+    acquiredAtMs: number;
+  };
+  retryWaitCount: number;
+  failedCount: number;
+  nextRetryUpdateId?: number;
+  nextRetryAtMs?: number;
+  nextRetryAttemptCount?: number;
+  nextRetryFailureClass?: string;
+  failedUpdateId?: number;
+  failedFailureId?: string;
+  failedAttemptCount?: number;
+  failedClass?: string;
+  failedSummary?: string;
+  terminalFailureAtMs?: number;
+  unsettledExecutionCount: number;
+  lastCompletedUpdateId?: number;
+  lastCompletedAtMs?: number;
+  lastFailureAtMs?: number;
+  lastFailurePhase?: string;
+}
+
 export interface TelegramBridgeStatusLineState {
   hasBotToken?: boolean;
   botUsername?: string;
@@ -189,11 +250,18 @@ export interface TelegramBridgeStatusLineState {
   botThreadModeUpdatedAtMs?: number;
   botThreadModeAction?: string;
   busRole?: TelegramBridgeBusRole;
+  busProtocol?: {
+    protocolVersion: number;
+    runtimeBuild: string;
+    capabilities: string[];
+  };
   busLifecyclePhase?: TelegramBridgeBusLifecyclePhase;
   instanceSlot?: string;
   instanceThreadName?: string;
   lockState?: string;
   pollingActive: boolean;
+  polling?: TelegramBridgePollingState;
+  inboundWorker?: TelegramBridgeInboundWorkerState;
   lastUpdateId?: number;
   activeSourceMessageIds?: number[];
   pendingDispatch: boolean;
@@ -214,7 +282,7 @@ export interface TelegramBridgeStatusLineState {
 
 export interface TelegramStatusBarTheme {
   fg: (
-    token: "accent" | "error" | "muted" | "warning" | "success",
+    token: "accent" | "dim" | "error" | "muted" | "warning" | "success",
     text: string,
   ) => string;
 }
@@ -267,6 +335,8 @@ export interface TelegramBridgeStatusRuntimeDeps<
     logs: string;
   };
   isPollingActive: () => boolean;
+  getPollingState?: () => TelegramBridgePollingState;
+  getInboundWorkerState?: () => TelegramBridgeInboundWorkerState | undefined;
   getActiveSourceMessageIds: () => number[] | undefined;
   hasActiveTurn: () => boolean;
   hasDispatchPending: () => boolean;
@@ -278,6 +348,11 @@ export interface TelegramBridgeStatusRuntimeDeps<
   getRecentRuntimeEvents: () => TelegramRuntimeEvent[];
   getRuntimeLockState?: () => string;
   getBusRole?: () => TelegramBridgeBusRole | undefined;
+  getBusProtocol?: () => {
+    protocolVersion: number;
+    runtimeBuild: string;
+    capabilities: string[];
+  };
   getBusLifecyclePhase?: () => TelegramBridgeBusLifecyclePhase | undefined;
   getBotThreadMode?: () =>
     | {
@@ -402,15 +477,6 @@ export function recordStructuredTelegramRuntimeEvent(
   while (events.length > options.maxEvents) {
     events.shift();
   }
-}
-
-export function recordTelegramRuntimeEvent(
-  events: TelegramRuntimeEvent[],
-  category: string,
-  error: unknown,
-  options: { botToken?: string; maxEvents: number; now?: number },
-): void {
-  recordStructuredTelegramRuntimeEvent(events, { category, error }, options);
 }
 
 function getOrCreateTelegramStatusLineProviderRegistry(): Map<
@@ -639,11 +705,18 @@ export function createTelegramBridgeStatusRuntime<
         botThreadModeUpdatedAtMs: botThreadMode?.updatedAtMs,
         botThreadModeAction: botThreadMode?.lastReconcileAction,
         busRole: deps.getBusRole?.(),
+        busProtocol: deps.getBusProtocol?.(),
         busLifecyclePhase: deps.getBusLifecyclePhase?.(),
         instanceSlot: deps.getInstanceSlot?.(),
         instanceThreadName: deps.getInstanceThreadName?.(),
         lockState: deps.getRuntimeLockState?.(),
         pollingActive: deps.isPollingActive(),
+        ...(deps.getPollingState
+          ? { polling: deps.getPollingState() }
+          : {}),
+        ...(deps.getInboundWorkerState
+          ? { inboundWorker: deps.getInboundWorkerState() }
+          : {}),
         lastUpdateId: config.lastUpdateId,
         activeSourceMessageIds: deps.getActiveSourceMessageIds(),
         pendingDispatch: deps.hasDispatchPending(),
@@ -705,6 +778,7 @@ export function createTelegramStatusSnapshot(
       instanceSlot: state.instanceSlot,
       instanceThreadName: state.instanceThreadName,
       pollingActive: state.pollingActive,
+      ...(state.polling ? { polling: state.polling } : {}),
       lockState: state.lockState,
     },
     liveRoster: {
@@ -735,14 +809,39 @@ export function createTelegramRuntimeDiagnosticsSnapshotScheduler(deps: {
 }): () => void {
   const setTimer = deps.setTimer ?? setTimeout;
   let timer: { unref?: () => void } | number | undefined;
-  return () => {
-    if (timer) return;
+  let persistPromise: Promise<void> | undefined;
+  let pending = false;
+  const recordError = (error: unknown): void => {
+    try {
+      deps.recordError(error);
+    } catch {
+      // Snapshot diagnostics cannot create an unhandled scheduler rejection.
+    }
+  };
+  const request = (): void => {
+    if (timer || persistPromise) {
+      pending = true;
+      return;
+    }
     timer = setTimer(() => {
       timer = undefined;
-      void deps.persistSnapshot().catch(deps.recordError);
+      let tracked: Promise<void>;
+      tracked = Promise.resolve()
+        .then(deps.persistSnapshot)
+        .catch(recordError)
+        .finally(() => {
+          if (persistPromise !== tracked) return;
+          persistPromise = undefined;
+          if (pending) {
+            pending = false;
+            request();
+          }
+        });
+      persistPromise = tracked;
     }, TELEGRAM_DIAGNOSTICS_SNAPSHOT_COALESCE_MS);
     if (typeof timer !== "number") timer?.unref?.();
   };
+  return request;
 }
 
 export function getTelegramStatusBarProcessingStatus(state: {
@@ -785,7 +884,7 @@ export function buildTelegramStatusBarText(
   if (state.busLifecyclePhase === "electing")
     return `${label} ${theme.fg("warning", "electing")}${queued}`;
   if (!state.pollingActive && state.busRole !== "follower")
-    return `${theme.fg("accent", "telegram")} ${theme.fg("muted", "disconnected")}${queued}`;
+    return `${theme.fg("accent", "telegram")} ${theme.fg("dim", "disconnected")}${queued}`;
   if (state.processing) {
     const processingStatus = state.queuedStatus
       ? "active"
@@ -826,6 +925,23 @@ function formatTelegramThreadStatusLabel(input: {
   return input.slot ? `[${input.slot}]` : "";
 }
 
+function formatTelegramBusProtocolIdentity(
+  protocol:
+    | {
+        protocolVersion: number;
+        runtimeBuild: string;
+        capabilities: string[];
+      }
+    | undefined,
+): string {
+  if (!protocol) return "";
+  const capabilities =
+    protocol.capabilities.length > 0
+      ? ` capabilities=${protocol.capabilities.join(",")}`
+      : " capabilities=none";
+  return ` protocol=v${protocol.protocolVersion} build=${protocol.runtimeBuild}${capabilities}`;
+}
+
 function buildTelegramBusFollowerLines(
   state: Pick<TelegramBridgeStatusLineState, "busFollowers" | "busNowMs">,
 ): string[] {
@@ -846,7 +962,8 @@ function buildTelegramBusFollowerLines(
       const statusLabel = follower.status ? ` (${follower.status})` : "";
       const cwd = follower.cwd ? ` ${follower.cwd}` : "";
       const target = formatTelegramStatusTarget(follower.target);
-      return `- ${follower.instanceId}:${labelSuffix} heartbeat ${ageSeconds}s ago${statusLabel}${target}${cwd}`;
+      const protocol = formatTelegramBusProtocolIdentity(follower.protocol);
+      return `- ${follower.instanceId}:${labelSuffix} heartbeat ${ageSeconds}s ago${statusLabel}${target}${cwd}${protocol}`;
     }),
   ];
 }
@@ -862,7 +979,10 @@ function buildTelegramLocalBusLines(
     slot: localBus.followerSlot,
     threadName: localBus.followerThreadName,
   });
-  const followerLine = `- follower registered: ${localBus.followerRegistered ? "yes" : "no"}${label ? ` ${label}` : ""}${target}`;
+  const protocol = formatTelegramBusProtocolIdentity(
+    localBus.leaderProtocol,
+  );
+  const followerLine = `- follower registered: ${localBus.followerRegistered ? "yes" : "no"}${label ? ` ${label}` : ""}${target}${protocol}`;
   const lines = ["", "local bus:", followerLine];
   if (options.verbose) {
     if (localBus.leaderSocketPath) {
@@ -1050,6 +1170,109 @@ function buildTelegramBridgeCompactThreadLines(
   return lines;
 }
 
+function formatTelegramPollingLifecycle(
+  state: Pick<TelegramBridgeStatusLineState, "pollingActive" | "polling">,
+): string {
+  const lifecycle = state.pollingActive ? "running" : "stopped";
+  if (!state.polling) return lifecycle;
+  if (state.pollingActive) return `${lifecycle} (${state.polling.phase})`;
+  return state.polling.stopReason
+    ? `${lifecycle} (${state.polling.stopReason})`
+    : lifecycle;
+}
+
+function buildTelegramPollingDiagnosticLines(
+  polling: TelegramBridgePollingState | undefined,
+): string[] {
+  if (!polling) return [];
+  return [
+    `- phase: ${polling.phase}`,
+    ...(polling.phaseStartedAtMs !== undefined
+      ? [
+          `- phase started: ${new Date(polling.phaseStartedAtMs).toISOString()}`,
+        ]
+      : []),
+    ...(polling.currentUpdateId !== undefined
+      ? [`- current update id: ${polling.currentUpdateId}`]
+      : []),
+    ...(polling.lastSuccessfulResponseAtMs !== undefined
+      ? [
+          `- last successful response: ${new Date(polling.lastSuccessfulResponseAtMs).toISOString()} (updates=${polling.lastSuccessfulResponseUpdateCount ?? "unknown"})`,
+        ]
+      : []),
+    ...(polling.startedAtMs !== undefined
+      ? [`- started: ${new Date(polling.startedAtMs).toISOString()}`]
+      : []),
+    ...(polling.stoppedAtMs !== undefined
+      ? [`- stopped: ${new Date(polling.stoppedAtMs).toISOString()}`]
+      : []),
+    ...(polling.stopReason ? [`- stop reason: ${polling.stopReason}`] : []),
+  ];
+}
+
+function formatTelegramInboundWorkerState(
+  worker: TelegramBridgeInboundWorkerState | undefined,
+): string {
+  if (!worker) return "not started";
+  const depth = worker.journalEntryCount;
+  return `${worker.phase} (depth=${depth}, queued=${worker.queuedClaimCount}, foreign=${worker.foreignQueuedCount}, deferred=${worker.deferredClaimCount}, retry=${worker.retryWaitCount}, failed=${worker.failedCount})`;
+}
+
+function buildTelegramInboundWorkerDiagnosticLines(
+  worker: TelegramBridgeInboundWorkerState | undefined,
+): string[] {
+  if (!worker) return ["- state: not started"];
+  return [
+    `- state: ${worker.phase}`,
+    `- generation: ${worker.generation}`,
+    ...(worker.phaseStartedAtMs !== undefined
+      ? [`- phase started: ${new Date(worker.phaseStartedAtMs).toISOString()}`]
+      : []),
+    `- journal: entries=${worker.journalEntryCount}, bytes=${worker.journalSerializedBytes}`,
+    `- claims: queued=${worker.queuedClaimCount}, foreign-queued=${worker.foreignQueuedCount}, deferred=${worker.deferredClaimCount}, unsettled=${worker.unsettledExecutionCount}`,
+    ...(worker.foreignQueuedOwner
+      ? [
+          `- queued semantic owner: instance=${worker.foreignQueuedOwner.instanceId}, pid=${worker.foreignQueuedOwner.processId}, birth=${worker.foreignQueuedOwner.processBirthId}, session=${worker.foreignQueuedOwner.sessionGeneration}, acquisition=${worker.foreignQueuedOwner.acquisitionId}, liveness=${worker.foreignQueuedOwnerLiveness ?? "unknown"}`,
+        ]
+      : []),
+    `- failures: retry-wait=${worker.retryWaitCount}, terminal=${worker.failedCount}`,
+    ...(worker.currentUpdateId !== undefined
+      ? [`- current update id: ${worker.currentUpdateId}`]
+      : []),
+    ...(worker.nextRetryUpdateId !== undefined
+      ? [
+          `- next retry: update=${worker.nextRetryUpdateId}, attempt=${worker.nextRetryAttemptCount ?? "unknown"}, class=${worker.nextRetryFailureClass ?? "unknown"}${worker.nextRetryAtMs !== undefined ? ` at ${new Date(worker.nextRetryAtMs).toISOString()}` : ""}`,
+        ]
+      : []),
+    ...(worker.failedUpdateId !== undefined
+      ? [
+          `- terminal update: id=${worker.failedUpdateId}, failure=${worker.failedFailureId ?? "unknown"}, attempts=${worker.failedAttemptCount ?? "unknown"}, class=${worker.failedClass ?? "unknown"}${worker.terminalFailureAtMs !== undefined ? ` at ${new Date(worker.terminalFailureAtMs).toISOString()}` : ""}`,
+          ...(worker.failedSummary
+            ? [`- terminal summary: ${worker.failedSummary}`]
+            : []),
+        ]
+      : []),
+    ...(worker.oldestAdmittedAtMs !== undefined
+      ? [
+          `- oldest admitted: ${new Date(worker.oldestAdmittedAtMs).toISOString()}`,
+        ]
+      : []),
+    ...(worker.blockedReason
+      ? [`- blocked reason: ${worker.blockedReason}`]
+      : []),
+    ...(worker.lastCompletedUpdateId !== undefined
+      ? [
+          `- last completed: ${worker.lastCompletedUpdateId}${worker.lastCompletedAtMs !== undefined ? ` at ${new Date(worker.lastCompletedAtMs).toISOString()}` : ""}`,
+        ]
+      : []),
+    ...(worker.lastFailurePhase
+      ? [
+          `- last failure: ${worker.lastFailurePhase}${worker.lastFailureAtMs !== undefined ? ` at ${new Date(worker.lastFailureAtMs).toISOString()}` : ""}`,
+        ]
+      : []),
+  ];
+}
+
 function buildTelegramBridgeCompactStatusLines(
   state: TelegramBridgeStatusLineState,
 ): string[] {
@@ -1101,7 +1324,12 @@ function buildTelegramBridgeCompactStatusLines(
     ...(state.lockState ? [`- owner: ${state.lockState}`] : []),
     "",
     "health:",
-    `- polling: ${state.pollingActive ? "running" : "stopped"}`,
+    `- polling: ${formatTelegramPollingLifecycle(state)}`,
+    ...(state.inboundWorker
+      ? [
+          `- inbound worker: ${formatTelegramInboundWorkerState(state.inboundWorker)}`,
+        ]
+      : []),
     `- state: ${executionState}`,
     queueLine,
     ...(state.activeToolExecutions > 0
@@ -1153,6 +1381,9 @@ export function buildTelegramBridgeDiagnosticStatusLines(
         ]
       : []),
     ...(state.busRole ? [`- bus role: ${state.busRole}`] : []),
+    ...(state.busProtocol
+      ? [`- bus${formatTelegramBusProtocolIdentity(state.busProtocol)}`]
+      : []),
     ...(state.busLifecyclePhase
       ? [`- bus lifecycle: ${state.busLifecyclePhase}`]
       : []),
@@ -1162,9 +1393,17 @@ export function buildTelegramBridgeDiagnosticStatusLines(
     ...(state.lockState ? [`- owner: ${state.lockState}`] : []),
     "",
     "polling:",
-    `- state: ${state.pollingActive ? "running" : "stopped"}`,
+    `- state: ${formatTelegramPollingLifecycle(state)}`,
+    ...buildTelegramPollingDiagnosticLines(state.polling),
     `- last update id: ${state.lastUpdateId ?? "none"}`,
     "",
+    ...(state.inboundWorker
+      ? [
+          "inbound worker:",
+          ...buildTelegramInboundWorkerDiagnosticLines(state.inboundWorker),
+          "",
+        ]
+      : []),
     "execution:",
     `- active turn: ${state.activeSourceMessageIds?.join(",") || "no"}`,
     `- pending dispatch: ${state.pendingDispatch ? "yes" : "no"}`,

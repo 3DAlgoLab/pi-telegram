@@ -186,6 +186,18 @@ export interface TelegramConfigStore {
   persist: (config?: TelegramConfig) => Promise<void>;
 }
 
+export function createTelegramConfigBotIdGetter(
+  store: Pick<TelegramConfigStore, "get">,
+): () => number | undefined {
+  return () => store.get().botId;
+}
+
+export function createTelegramActiveProfileKeyGetter(
+  store: Pick<TelegramConfigStore, "getActiveProfileName">,
+): () => string {
+  return () => store.getActiveProfileName() ?? TELEGRAM_DEFAULT_PROFILE_NAME;
+}
+
 export interface TelegramConfigStoreOptions {
   initialConfig?: TelegramConfig;
   agentDir?: string;
@@ -1053,6 +1065,7 @@ export interface TelegramUserPairingDeps<TContext> {
   setAllowedUserId: (userId: number) => void;
   persistConfig: () => Promise<void>;
   updateStatus: (ctx: TContext) => void;
+  assertExecutionCurrent?: () => void;
 }
 
 export interface TelegramUserPairingRuntimeDeps<TContext> {
@@ -1063,7 +1076,11 @@ export interface TelegramUserPairingRuntimeDeps<TContext> {
 }
 
 export interface TelegramUserPairingRuntime<TContext> {
-  pairIfNeeded: (userId: number, ctx: TContext) => Promise<boolean>;
+  pairIfNeeded: (
+    userId: number,
+    ctx: TContext,
+    assertExecutionCurrent?: () => void,
+  ) => Promise<boolean>;
 }
 
 export function getTelegramAuthorizationState(
@@ -1096,8 +1113,11 @@ export async function pairTelegramUserIfNeeded<TContext>(
     deps.allowedUserId,
   );
   if (authorization.kind !== "pair") return false;
+  deps.assertExecutionCurrent?.();
   deps.setAllowedUserId(authorization.userId);
+  deps.assertExecutionCurrent?.();
   await deps.persistConfig();
+  deps.assertExecutionCurrent?.();
   try {
     deps.updateStatus(deps.ctx);
   } catch (error) {
@@ -1110,13 +1130,14 @@ export function createTelegramUserPairingRuntime<TContext>(
   deps: TelegramUserPairingRuntimeDeps<TContext>,
 ): TelegramUserPairingRuntime<TContext> {
   return {
-    pairIfNeeded: (userId, ctx) =>
+    pairIfNeeded: (userId, ctx, assertExecutionCurrent) =>
       pairTelegramUserIfNeeded(userId, {
         allowedUserId: deps.getAllowedUserId(),
         ctx,
         setAllowedUserId: deps.setAllowedUserId,
         persistConfig: deps.persistConfig,
         updateStatus: deps.updateStatus,
+        assertExecutionCurrent,
       }),
   };
 }

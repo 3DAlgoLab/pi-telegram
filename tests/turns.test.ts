@@ -16,11 +16,11 @@ import {
   createTelegramPromptTurnRuntimeBuilder,
   createTelegramQueuedPromptEditRuntime,
   formatTelegramTurnStatusSummary,
-  getTelegramVoiceReplyMode,
   truncateTelegramQueueSummary,
   updateQueuedTelegramPromptTurnText,
   updateTelegramPromptTurnText,
 } from "../lib/turns.ts";
+import { getTelegramVoiceReplyMode } from "../lib/voice.ts";
 
 test("Turn helpers truncate queue summaries predictably", () => {
   assert.equal(
@@ -237,6 +237,58 @@ test("Turn runtime builder extracts text, downloads files, and allocates order",
     (turn.content[0] as { type: "text"; text: string }).text,
     /\[attachments\] \/tmp\n- \/report\.txt/,
   );
+});
+
+test("Turn runtime builder rechecks execution authority after file download", async () => {
+  let current = true;
+  let handlerCalls = 0;
+  const message = {
+    message_id: 11,
+    chat: { id: 5 },
+    document: { file_id: "doc-1", file_name: "report.txt" },
+  };
+  const buildTurn = createTelegramPromptTurnRuntimeBuilder({
+    allocateQueueOrder: () => 1,
+    downloadFile: async () => {
+      current = false;
+      return "/tmp/report.txt";
+    },
+    processAttachments: async () => {
+      handlerCalls += 1;
+      return { rawText: "", promptFiles: [] };
+    },
+    assertExecutionCurrent() {
+      if (!current) throw new DOMException("Aborted", "AbortError");
+    },
+  });
+
+  await assert.rejects(buildTurn([message]), /Abort/u);
+  assert.equal(handlerCalls, 0);
+});
+
+test("Turn runtime builder rechecks execution authority after inbound handlers", async () => {
+  let current = true;
+  let orderAllocations = 0;
+  const buildTurn = createTelegramPromptTurnRuntimeBuilder({
+    allocateQueueOrder: () => {
+      orderAllocations += 1;
+      return 1;
+    },
+    downloadFile: async (_fileId, fileName) => `/tmp/${fileName}`,
+    processAttachments: async (_files, rawText) => {
+      current = false;
+      return { rawText, promptFiles: [] };
+    },
+    assertExecutionCurrent() {
+      if (!current) throw new DOMException("Aborted", "AbortError");
+    },
+  });
+
+  await assert.rejects(
+    buildTurn([{ message_id: 12, chat: { id: 5 }, text: "stale" }]),
+    /Abort/u,
+  );
+  assert.equal(orderAllocations, 0);
 });
 
 test("Turn runtime builder injects Telegram reply context into prompt turns", async () => {
@@ -555,6 +607,75 @@ test("Turn runtime omits voice context when reply mode is only the implicit defa
   assert.doesNotMatch(
     (turn.content[0] as { type: "text"; text: string }).text,
     /\[voice\]/,
+  );
+});
+
+test("Turn builder keeps grouped and folded source update receipts distinct", async () => {
+  const historyTurn = await buildTelegramPromptTurnRuntime({
+    telegramPrefix: "[telegram]",
+    messages: [
+      {
+        message_id: 10,
+        pi_telegram_source_update_id: 101,
+        chat: { id: 5 },
+      },
+    ],
+    queueOrder: 1,
+    rawText: "older",
+    files: [],
+    inferImageMimeType: () => undefined,
+    admissionScope: "profile-a:bot-a",
+  });
+  const currentTurn = await buildTelegramPromptTurnRuntime({
+    telegramPrefix: "[telegram]",
+    messages: [
+      {
+        message_id: 11,
+        pi_telegram_source_update_id: 102,
+        chat: { id: 5 },
+      },
+      {
+        message_id: 12,
+        pi_telegram_source_update_id: 103,
+        chat: { id: 5 },
+      },
+    ],
+    historyTurns: [historyTurn],
+    queueOrder: 2,
+    rawText: "current group",
+    files: [],
+    inferImageMimeType: () => undefined,
+    admissionScope: "profile-a:bot-a",
+  });
+
+  assert.equal(currentTurn.admissionReceipts?.length, 2);
+  assert.deepEqual(
+    currentTurn.admissionReceipts?.map((receipt) => receipt.sourceUpdateIds),
+    [[101], [102, 103]],
+  );
+  assert.notEqual(
+    currentTurn.admissionReceipts?.[0]?.receiptId,
+    currentTurn.admissionReceipts?.[1]?.receiptId,
+  );
+});
+
+test("Turn builder fails closed when journaled source ids lack receipt scope", async () => {
+  await assert.rejects(
+    buildTelegramPromptTurnRuntime({
+      telegramPrefix: "[telegram]",
+      messages: [
+        {
+          message_id: 10,
+          pi_telegram_source_update_id: 101,
+          chat: { id: 5 },
+        },
+      ],
+      queueOrder: 1,
+      rawText: "message",
+      files: [],
+      inferImageMimeType: () => undefined,
+    }),
+    /receipt scope is required/u,
   );
 });
 
