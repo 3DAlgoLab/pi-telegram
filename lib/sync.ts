@@ -477,17 +477,20 @@ export async function ensureTelegramLeaderThreadBinding(
   assertLeaderEpoch("start");
   await deps.topicTargetStore.load();
   assertLeaderEpoch("after-load");
-  const deletedTargetKeys = new Set(
-    deps.topicTargetStore
+  const unavailableTargetKeys = new Set([
+    ...deps.topicTargetStore
       .listSyncObservations()
       .filter((observation) => observation.syncStatus === "deleted")
       .map((observation) => getTelegramTargetKey(observation.target)),
-  );
+    ...deps.topicTargetStore
+      .listPendingCleanups()
+      .map((intent) => getTelegramTargetKey(intent.target)),
+  ]);
   const priorTargets = deps.topicTargetStore.list().filter((record) => {
     return (
       record.instanceId === deps.instanceId &&
       (record.status === "active" || record.status === "starting") &&
-      !deletedTargetKeys.has(getTelegramTargetKey(record.target))
+      !unavailableTargetKeys.has(getTelegramTargetKey(record.target))
     );
   });
   // Short-circuit: when the instance already has an active thread and we are not

@@ -1893,6 +1893,7 @@ test("Locked polling runtime refreshes ownership during slow startup", async () 
 test("Locked polling runtime checks ownership more often than it refreshes the lease", async () => {
   let ownsCalls = 0;
   let refreshCalls = 0;
+  let ownsCallsAtSecondRefresh = 0;
   const lock = {
     acquire: () => ({
       ok: true,
@@ -1916,6 +1917,7 @@ test("Locked polling runtime checks ownership more often than it refreshes the l
     },
     refresh: () => {
       refreshCalls += 1;
+      if (refreshCalls === 2) ownsCallsAtSecondRefresh = ownsCalls;
       return true;
     },
   };
@@ -1929,9 +1931,9 @@ test("Locked polling runtime checks ownership more often than it refreshes the l
     updateStatus: () => undefined,
   });
   assert.equal((await runtime.start({ cwd: "/repo" })).ok, true);
-  await waitForCondition(() => ownsCalls >= 4 && refreshCalls >= 2);
-  assert.ok(ownsCalls >= refreshCalls * 2);
+  await waitForCondition(() => refreshCalls >= 2);
   await runtime.stop();
+  assert.ok(ownsCallsAtSecondRefresh >= 4);
 });
 
 test("Locked polling runtime fails startup closed after ownership loss", async () => {

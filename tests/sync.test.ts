@@ -885,6 +885,15 @@ test("Leader thread sync does not reuse a target with confirmed deletion evidenc
   try {
     store.upsert(staleRecord);
     store.markStaleByTarget(staleRecord.target, "deleted");
+    store.upsertPendingCleanup({
+      id: "cleanup:leader-a:runtime-1:7:10",
+      owner: "leader",
+      instanceId: "leader-a",
+      runtimeGeneration: "runtime-1",
+      profileKey: "cwd:/repo",
+      target: staleRecord.target,
+      requestedAtMs: 1500,
+    });
     await store.persist();
 
     const result = await ensureTelegramLeaderThreadBinding({
