@@ -902,7 +902,7 @@ test("Update journal queue and completion interruption retain prior authority", 
       onPublicationBoundary(boundary, publicationPath) {
         if (
           boundary === "after-write-before-rename" &&
-          publicationPath.includes(".segments/")
+          /\.segments[\\/]/u.test(publicationPath)
         ) {
           throw new Error(`interrupted:${operation}`);
         }
@@ -2122,7 +2122,10 @@ test("Update journal dead-owner recovery requires exact negative liveness proof"
         sessionGeneration: 2,
       },
     });
-    assert.equal(retained.status, "owner-alive");
+    assert.equal(
+      retained.status,
+      process.platform === "win32" ? "owner-unverifiable" : "owner-alive",
+    );
     assert.deepEqual(
       defaultProofStore.read().entries[0]?.queueOwner,
       currentBirthOwner,

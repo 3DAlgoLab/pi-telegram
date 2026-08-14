@@ -7,6 +7,7 @@ import { execFile } from "node:child_process";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -14,7 +15,8 @@ import test from "node:test";
 import { createTelegramUpdateJournalStore } from "../lib/journal.ts";
 
 const execFileAsync = promisify(execFile);
-const scriptPath = new URL("../scripts/check-downgrade.mjs", import.meta.url);
+const scriptUrl = new URL("../scripts/check-downgrade.mjs", import.meta.url);
+const scriptPath = fileURLToPath(scriptUrl);
 const identity = { tokenSha256: "a".repeat(64) };
 
 function entry(updateId: number) {
@@ -59,7 +61,7 @@ async function runCheck(
 ) {
   return execFileAsync(
     process.execPath,
-    [scriptPath.pathname, ...(options.useArgument === false ? [] : [agentDir])],
+    [scriptPath, ...(options.useArgument === false ? [] : [agentDir])],
     {
       env:
         options.env ??
@@ -176,7 +178,7 @@ test("Downgrade check auto-detects an OMP invocation", async () => {
   );
   await writeFile(
     ompScriptPath,
-    `import ${JSON.stringify(scriptPath.href)};\n`,
+    `import ${JSON.stringify(scriptUrl.href)};\n`,
   );
   try {
     await expectBlocked(

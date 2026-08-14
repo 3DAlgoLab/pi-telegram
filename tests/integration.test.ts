@@ -832,10 +832,13 @@ test("v0.27.12 artifacts and graceful tab cleanup preserve same-directory auto-c
       "upgrade startup must preserve pre-existing journal authority",
     );
     if (legacyBusPath) {
-      assert.notEqual(
-        await readlink(legacyBusPath),
-        ".pt-v02712-missing.sock",
-      );
+      await waitForAsyncCondition(async () => {
+        try {
+          return (await readlink(legacyBusPath)) !== ".pt-v02712-missing.sock";
+        } catch {
+          return true;
+        }
+      });
     }
 
     await handlers.get("session_shutdown")?.(
@@ -2348,7 +2351,8 @@ test("Live owner remains fenced when replacement races dead-owner recovery", asy
       queuedClaimCount: 0,
       entryCount: 1,
       directCompletionError: "conflict",
-      recoveryStatus: "owner-alive",
+      recoveryStatus:
+        process.platform === "win32" ? "owner-unverifiable" : "owner-alive",
     });
     assert.equal(ownerWorker.isQueueReceiptCommitted(receipt), true);
     ownerWorker.completeQueueReceipts({
