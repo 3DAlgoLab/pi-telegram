@@ -470,6 +470,42 @@ function getRuntimeTelegramApiMethod(input: string | URL | Request): string {
   return url.split("/").at(-1) ?? "";
 }
 
+async function getRuntimeIntegrationDiagnostics(
+  methods: Array<{ method: string; body?: Record<string, unknown> }>,
+): Promise<string> {
+  const agentDir = await ensureRuntimeAgentDir();
+  const runtimeDir = join(agentDir, "tmp", "telegram");
+  const readOptional = async (path: string) => {
+    try {
+      return await readFile(path, "utf8");
+    } catch (error) {
+      return `<unavailable: ${error instanceof Error ? error.message : String(error)}>`;
+    }
+  };
+  const [state, logs, ownersText] = await Promise.all([
+    readOptional(join(runtimeDir, "state.json")),
+    readOptional(join(runtimeDir, "logs.jsonl")),
+    readOptional(join(runtimeDir, "owners.json")),
+  ]);
+  let owner: Record<string, unknown> | string = ownersText;
+  try {
+    const parsed = JSON.parse(ownersText) as Record<string, Record<string, unknown>>;
+    const current = parsed.default;
+    owner = current
+      ? {
+          pid: current.pid,
+          cwd: current.cwd,
+          acquiredAtMs: current.acquiredAtMs,
+          heartbeatAtMs: current.heartbeatAtMs,
+          leaderEpoch: current.leaderEpoch,
+        }
+      : {};
+  } catch {
+    /* preserve unreadable owner evidence */
+  }
+  return JSON.stringify({ methods, owner, state, logs }, null, 2);
+}
+
 function getRuntimeTelegramApiText(
   body: Record<string, unknown> | undefined,
 ): string {
@@ -832,13 +868,19 @@ test("v0.27.12 artifacts and graceful tab cleanup preserve same-directory auto-c
       "upgrade startup must preserve pre-existing journal authority",
     );
     if (legacyBusPath) {
-      await waitForAsyncCondition(async () => {
-        try {
-          return (await readlink(legacyBusPath)) !== ".pt-v02712-missing.sock";
-        } catch {
-          return true;
-        }
-      }, 20_000);
+      try {
+        await waitForAsyncCondition(async () => {
+          try {
+            return (await readlink(legacyBusPath)) !== ".pt-v02712-missing.sock";
+          } catch {
+            return true;
+          }
+        }, 20_000);
+      } catch (error) {
+        throw new Error(
+          `${error instanceof Error ? error.message : String(error)}\n${await getRuntimeIntegrationDiagnostics(methods)}`,
+        );
+      }
     }
 
     await handlers.get("session_shutdown")?.(
@@ -857,12 +899,18 @@ test("v0.27.12 artifacts and graceful tab cleanup preserve same-directory auto-c
       cwd: "/repo/graceful-leader",
     });
     await handlers.get("session_start")?.({}, restartedCtx);
-    await waitForCondition(
-      () =>
-        methods.filter((entry) => entry.method === "createForumTopic").length >=
-        2,
-      20_000,
-    );
+    try {
+      await waitForCondition(
+        () =>
+          methods.filter((entry) => entry.method === "createForumTopic").length >=
+          2,
+        20_000,
+      );
+    } catch (error) {
+      throw new Error(
+        `${error instanceof Error ? error.message : String(error)}\n${await getRuntimeIntegrationDiagnostics(methods)}`,
+      );
+    }
     await handlers.get("session_shutdown")?.(
       { type: "session_shutdown", reason: "quit" },
       restartedCtx,
