@@ -2,38 +2,6 @@
 
 _This file owns unresolved project work only. Completed behavior belongs in `CHANGELOG.md`; durable contracts belong in `AGENTS.md` and `/docs`._
 
-## P0 — 0.28.0 Cross-Platform Queue Ownership
-
-Baseline `468a7ca20cb168e89cebae6473b1f0ceebb508fc` implements durable queue-owner identity, exact owner-fenced settlement, explicit handoff, and dead-owner recovery. Its default process-birth fallback is not a valid death proof on Windows: a live owner can be misclassified as dead because the persisted and reconstructed fallback generations differ.
-
-Do not tag or publish `0.28.0` until queued semantic authority remains singular on every supported platform.
-
-Tri-state liveness and deterministic coverage preserve queued authority for live or unverifiable PIDs, permit recovery only for an absent PID or mismatched stable Linux/macOS birth proof, and cover terminated owners, PID reuse, inaccessible metadata, live Windows retention without replay/settlement, concurrent registration/recovery, and exact original-owner settlement after transport movement. Remaining external evidence:
-
-- [ ] Run the real cross-process queue-owner and handoff integration tests on hosted Windows, not only mocked platform branches.
-Done when: no live or unverifiable process can lose a queued receipt, and only proven owner death can return the complete receipt to pending execution.
-
-## P1 — 0.28.0 Hosted Validation
-
-The validation workflow runs only for pull requests and pushes to `main`. The final candidate must have GitHub-hosted evidence on its exact SHA.
-
-- [ ] Push the corrected candidate and open or update a pull request.
-- [ ] Run the Ubuntu, macOS, and Windows matrix on exact Node `22.19.0`.
-- [ ] Require every matrix job to pass:
-
-  - dependency installation;
-  - typecheck;
-  - full tests;
-  - package check;
-  - audit where configured.
-
-- [ ] Confirm the Windows job executes the real cross-process queue-owner liveness regression.
-- [ ] Confirm all check-runs belong to the exact candidate SHA.
-- [ ] Investigate flaky timer, process, named-pipe, filesystem, or process-birth failures rather than rerunning until green.
-- [ ] Keep the candidate unchanged after successful checks. Any source, test, package, or contract change invalidates the hosted evidence and requires a new matrix run.
-
-Done when: the exact release-candidate SHA has successful GitHub check-runs on Ubuntu, macOS, and Windows.
-
 ## P1 — 0.28.0 Live Runtime Evidence
 
 Run live evidence against the exact hosted-green candidate without deleting existing runtime state. Record concrete outcome and diagnostic evidence without including private bot tokens, user ids, chat ids, message ids, thread ids, or operator-specific labels.
