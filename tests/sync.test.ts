@@ -866,6 +866,47 @@ test("Leader thread sync gets next monotonic slot after D on reload", async () =
   }
 });
 
+test("Leader thread sync does not reuse a target with confirmed deletion evidence", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-leader-sync-deleted-"));
+  const store = createTelegramTopicTargetStore({
+    path: join(dir, "state.json"),
+    getNowMs: () => 2000,
+  });
+  const staleRecord = {
+    profileKey: "cwd:/repo",
+    target: { chatId: 7, threadId: 10 },
+    status: "active" as const,
+    createdAtMs: 1000,
+    updatedAtMs: 1000,
+    instanceId: "leader-a",
+    slot: "A",
+  };
+  const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
+  try {
+    store.upsert(staleRecord);
+    store.markStaleByTarget(staleRecord.target, "deleted");
+    await store.persist();
+
+    const result = await ensureTelegramLeaderThreadBinding({
+      getAllowedUserId: () => 7,
+      instanceId: "leader-a",
+      cwd: "/repo",
+      topicTargetStore: { ...store, list: () => [staleRecord] },
+      async callApi<TResponse>(method: string, body: Record<string, unknown>) {
+        calls.push({ method, body });
+        return { message_thread_id: 11 } as TResponse;
+      },
+      recordEvent() {},
+    });
+
+    assert.equal(result?.target.threadId, 11);
+    assert.equal(result?.reused, false);
+    assert.equal(calls[0]?.method, "createForumTopic");
+  } finally {
+    await rm(dir, { force: true, recursive: true });
+  }
+});
+
 test("Leader thread sync can force-refresh unnamed stale-prone leader bindings", async () => {
   const dir = await mkdtemp(join(tmpdir(), "pi-telegram-leader-sync-refresh-"));
   const store = createTelegramTopicTargetStore({

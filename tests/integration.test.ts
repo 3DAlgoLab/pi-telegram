@@ -611,7 +611,7 @@ async function stageRuntimeV02712Artifacts(): Promise<string | undefined> {
     "utf8",
   );
   if (process.platform === "win32") return undefined;
-  const busPath = join(telegramRuntimeDir, "bus.sock");
+  const busPath = Bus.getTelegramBusSocketPath(agentDir, process.platform);
   await rm(busPath, { force: true });
   await symlink(".pt-v02712-missing.sock", busPath);
   return busPath;

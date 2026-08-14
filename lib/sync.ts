@@ -4,7 +4,7 @@
  * Owns pure contracts for deciding when local Telegram mirror state should be refreshed without querying Telegram on every action
  */
 
-import type { TelegramTarget } from "./target.ts";
+import { getTelegramTargetKey, type TelegramTarget } from "./target.ts";
 import * as ThreadReconciler from "./thread-reconciler.ts";
 import {
   getTelegramTargetFromApiBody,
@@ -477,10 +477,17 @@ export async function ensureTelegramLeaderThreadBinding(
   assertLeaderEpoch("start");
   await deps.topicTargetStore.load();
   assertLeaderEpoch("after-load");
+  const deletedTargetKeys = new Set(
+    deps.topicTargetStore
+      .listSyncObservations()
+      .filter((observation) => observation.syncStatus === "deleted")
+      .map((observation) => getTelegramTargetKey(observation.target)),
+  );
   const priorTargets = deps.topicTargetStore.list().filter((record) => {
     return (
       record.instanceId === deps.instanceId &&
-      (record.status === "active" || record.status === "starting")
+      (record.status === "active" || record.status === "starting") &&
+      !deletedTargetKeys.has(getTelegramTargetKey(record.target))
     );
   });
   // Short-circuit: when the instance already has an active thread and we are not
