@@ -404,9 +404,6 @@ export function registerTelegramCommandsAndTools({
       sendMarkdownReply(chatId, undefined, markdown, options),
     recordRuntimeEvent,
   });
-  Prompts.registerTelegramHelpTool(pi, {
-    getActiveProfileName: configStore.getActiveProfileName,
-  });
   Commands.registerTelegramBridgeCommands(pi, {
     promptForConfig: async (ctx, profileName) => {
       const nextProfileName = profileName ?? undefined;

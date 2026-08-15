@@ -176,8 +176,8 @@ Buttons are built in and do not need a command template because they are pure Te
 The extension injects prompt guidance by context:
 
 - If no bot token is configured, no Telegram bridge suffix is injected.
-- For ordinary local/TUI prompts, the agent only sees compact direct-delivery guidance: use `telegram_attach` or `telegram_message` when the user asks to send something to Telegram, and otherwise answer locally as normal.
-- For Telegram-originated turns, the prompt carries only minimal mobile/reply/file guidance; agents can call `telegram_help()` for full voice/button/direct-delivery/Threaded Mode/formatting/debug details.
+- For ordinary local/TUI prompts, the compact routing note points to the bundled `telegram-bridge` Skill and forbids Telegram use unless explicitly requested.
+- For Telegram-originated turns, the compact note routes the agent to `telegram-bridge`, which owns voice/button/direct-delivery/Threaded Mode/formatting/debug guidance.
 - For Telegram-originated turns, write the full technical answer as normal Markdown.
 - Add `telegram_voice` with either a JSON object or double-quoted attributes when a Telegram-native voice message is useful. A companion summary is optional, no specific summary format is required.
 - Add `telegram_button` with either a JSON object or double-quoted attributes. Use `label` plus `prompt`, or `value` when they are identical; `selected_style` is optional. A button-only reply may omit parent text because the bridge supplies `☑️ **Choose an option:**` automatically.

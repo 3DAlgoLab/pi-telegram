@@ -39,6 +39,7 @@ import * as Replies from "./lib/replies.ts";
 import * as Routing from "./lib/routing.ts";
 import * as Runtime from "./lib/runtime.ts";
 import * as Sections from "./lib/sections.ts";
+import * as Skills from "./lib/skills.ts";
 import * as Status from "./lib/status.ts";
 import * as Sync from "./lib/sync.ts";
 import * as TelegramApi from "./lib/telegram-api.ts";
@@ -60,6 +61,7 @@ const telegramBusProtocolIdentity =
 // --- Extension Runtime ---
 
 export default function (pi: Pi.ExtensionAPI) {
+  Skills.registerTelegramSkillDiscovery(pi);
   const piRuntime = Pi.createExtensionApiRuntimePorts(pi);
   const {
     getActiveTools,
