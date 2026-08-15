@@ -12,8 +12,6 @@ import {
   createTelegramModelContextAvailabilityBinding,
   createTelegramModelContextAvailabilityRuntime,
   createTelegramProactiveBeforeAgentStartHook,
-  getTelegramHelpText,
-  registerTelegramHelpTool,
   TELEGRAM_ATTACH_PROMPT_GUIDELINES,
   TELEGRAM_ATTACH_PROMPT_SNIPPET,
 } from "../lib/prompts.ts";
@@ -60,6 +58,7 @@ test("Prompt helpers keep local prompts on compact safety guidance only", () => 
     createBeforeAgentStartEvent("local hello", "base"),
   ).systemPrompt;
   assert.match(result, /Telegram bridge available/);
+  assert.match(result, /`telegram-bridge` Skill/);
   assert.doesNotMatch(result, /telegram_help/);
   assert.doesNotMatch(result, /telegram_attach/);
   assert.doesNotMatch(result, /telegram_message/);
@@ -101,7 +100,8 @@ test("Prompt helpers add full Telegram-turn guidance for Telegram prompts", () =
     defaultSystemPrompt,
     /The current user message came from Telegram/,
   );
-  assert.match(defaultSystemPrompt, /telegram_help/);
+  assert.match(defaultSystemPrompt, /Load and follow the `telegram-bridge` Skill/);
+  assert.doesNotMatch(defaultSystemPrompt, /telegram_help/);
   assert.doesNotMatch(defaultSystemPrompt, /mobile Telegram/);
   assert.doesNotMatch(defaultSystemPrompt, /\$\.\.\.\$.*\$\$\.\.\.\$\$/);
   assert.doesNotMatch(defaultSystemPrompt, /37 visible cells/);
@@ -141,41 +141,6 @@ test("Prompt helpers add full Telegram-turn guidance for Telegram prompts", () =
   );
   assert.doesNotMatch(topicSystemPrompt, /unnamed fresh topic/);
   assert.doesNotMatch(topicSystemPrompt, /telegram_rename_thread/);
-});
-
-test("Prompt helpers expose detailed Telegram guidance through agent help tool", async () => {
-  const help = getTelegramHelpText();
-  assert.match(help, /Assistant-authored Telegram actions/);
-  assert.match(help, /\[voice\] delivery: automatic voice/);
-  assert.match(help, /hidden.*mirror.*always/);
-  assert.match(help, /telegram_voice: \{"value":"Short summary"/);
-  assert.match(help, /equivalent `text` or `value`/);
-  assert.match(help, /telegram_button: \{"label":"Continue"/);
-  assert.match(help, /telegram_button value="Continue"/);
-  assert.match(help, /colon after the action name is optional/);
-  assert.match(help, /inboundHandlers/);
-  assert.match(help, /speech-to-text/);
-  assert.match(help, /state\.json/);
-  assert.match(help, /logs\.jsonl/);
-  const namedHelp = getTelegramHelpText("work");
-  assert.match(namedHelp, /state\.work\.json/);
-  assert.match(namedHelp, /logs\.work\.jsonl/);
-
-  let tool:
-    { name?: string; execute: () => Promise<unknown> | unknown } | undefined;
-  registerTelegramHelpTool(
-    {
-      registerTool: (definition: { name?: string; execute: () => unknown }) => {
-        tool = definition;
-      },
-    } as never,
-    { getActiveProfileName: () => "work" },
-  );
-  assert.equal(tool?.name, "telegram_help");
-  assert.deepEqual(await tool?.execute(), {
-    content: [{ type: "text", text: namedHelp }],
-    details: {},
-  });
 });
 
 test("Prompt helpers leave local prompts private for proactive result push", async () => {
@@ -230,7 +195,7 @@ test("Model-context availability removes only active Telegram tools and restores
     "read",
     "telegram_attach",
     "foreign_tool",
-    "telegram_help",
+    "telegram_message",
   ];
   const memory = { suspended: false, toolNames: new Set<string>() };
   const runtime = createTelegramModelContextAvailabilityRuntime({
@@ -244,7 +209,7 @@ test("Model-context availability removes only active Telegram tools and restores
 
   runtime.reconcile();
   assert.deepEqual(activeTools, ["read", "foreign_tool"]);
-  assert.deepEqual([...memory.toolNames], ["telegram_attach", "telegram_help"]);
+  assert.deepEqual([...memory.toolNames], ["telegram_attach", "telegram_message"]);
 
   available = true;
   runtime.reconcile();
@@ -252,7 +217,7 @@ test("Model-context availability removes only active Telegram tools and restores
     "read",
     "foreign_tool",
     "telegram_attach",
-    "telegram_help",
+    "telegram_message",
   ]);
   assert.equal(memory.toolNames.size, 0);
   assert.equal(memory.suspended, false);
@@ -276,7 +241,6 @@ test("Model-context availability does not enable a Telegram tool disabled by the
 
   assert.deepEqual(activeTools, ["read", "telegram_message"]);
   assert.equal(activeTools.includes("telegram_attach"), false);
-  assert.equal(activeTools.includes("telegram_help"), false);
 });
 
 test("Model-context availability defers active-tool mutation during an in-flight request", () => {
@@ -317,12 +281,7 @@ test("Model-context availability preserves operator subset across Pi reload defa
   assert.deepEqual(activeTools, ["read"]);
   assert.deepEqual([...memory.toolNames], ["telegram_message"]);
 
-  activeTools = [
-    "read",
-    "telegram_attach",
-    "telegram_message",
-    "telegram_help",
-  ];
+  activeTools = ["read", "telegram_attach", "telegram_message"];
   createRuntime(() => false).reconcile();
   assert.deepEqual(activeTools, ["read"]);
   assert.deepEqual([...memory.toolNames], ["telegram_message"]);

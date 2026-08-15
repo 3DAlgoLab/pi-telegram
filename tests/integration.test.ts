@@ -3159,7 +3159,6 @@ test("Extension runtime keeps proactive local result disabled even with Telegram
       "foreign_tool",
       "telegram_attach",
       "telegram_message",
-      "telegram_help",
     ]);
     await flushMicrotasks(20);
     await handlers.get("agent_end")?.(

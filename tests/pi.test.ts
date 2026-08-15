@@ -102,7 +102,7 @@ test("Pi API runtime ports bind methods without losing receiver context", async 
   assert.equal(runtime.getThinkingLevel(), "high");
   runtime.setThinkingLevel("low");
   assert.deepEqual(runtime.getActiveTools(), ["read"]);
-  runtime.setActiveTools(["read", "telegram_help"]);
+  runtime.setActiveTools(["read", "telegram_attach"]);
   assert.equal(await runtime.setModel(createHarnessModel("gpt-5")), true);
   assert.deepEqual(api.events, [
     "send:hello:followUp",
@@ -111,7 +111,7 @@ test("Pi API runtime ports bind methods without losing receiver context", async 
     "get-thinking",
     "thinking:low",
     "get-tools",
-    "set-tools:read,telegram_help",
+    "set-tools:read,telegram_attach",
     "model:gpt-5",
   ]);
 });

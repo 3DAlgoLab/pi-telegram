@@ -257,7 +257,7 @@ Durable inbound admission is a **process-crash recovery** guarantee. Atomic priv
 
 Telegram is a companion surface around a live Pi runtime, not a second runtime. It can compact the current session, but it cannot create, resume, fork, browse, or switch sessions until Pi exposes safe public extension APIs for those operations.
 
-A Telegram prompt is a normal model turn in the active Pi session and therefore inherits that session's active post-compaction context; the bridge does not make token cost proportional only to the new mobile message. Current releases keep per-turn guidance small and transient, with detailed bridge instructions available on demand through `telegram_help` instead of persisted in every user turn. Disconnecting removes pi-telegram's model tools and prompt guidance from later requests until direct ownership or follower registration returns, without changing other active Pi tools. Pi session JSONL contains model history; profile-scoped pi-telegram `logs*.jsonl` contains redacted operational events and is never model context.
+A Telegram prompt is a normal model turn in the active Pi session and therefore inherits that session's active post-compaction context; the bridge does not make token cost proportional only to the new mobile message. The bundled `telegram-bridge` Skill owns agent operation and `button-console` provides optional generated-button CLI navigation. Disconnecting removes pi-telegram's delivery tools and transient routing guidance from later requests until direct ownership or follower registration returns, without changing other active Pi tools. Pi session JSONL contains model history; profile-scoped pi-telegram `logs*.jsonl` contains redacted operational events and is never model context.
 
 ## Documentation Map
 

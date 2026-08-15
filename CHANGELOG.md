@@ -2,6 +2,11 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.29.0: Skill-First Agent Operation
+
+- `Bundled Skills`: Added discoverable `telegram-bridge` and `button-console` Skills through package metadata and source-checkout resource discovery. Stable turn, delivery, action, Threaded Mode, formatting, handler, and diagnosis guidance now lives in the bridge Skill, while Button Console provides optional evidence-backed CLI navigation.
+- `Model Context Contraction`: Removed the redundant `telegram_help` model tool and its repeated guidance implementation. Compact authority-aware prompts route agents to the bundled Skill, while disconnect/recovery now suppresses and restores only the two delivery tools without affecting foreign tools.
+
 ## 0.28.0: Durable Inbound And Protocol Reconstruction
 
 - `Owned Polling Request`: Only `getUpdates` gets an automatic budget: Telegram long-poll timeout plus 10 seconds. Poller abort settles requests and API retry waits; broad ordinary, media, and follower budgets were removed.
