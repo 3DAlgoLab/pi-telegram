@@ -19,7 +19,7 @@ test("Button reply planner strips telegram_button markup and registers actions",
     [
       "Visible answer.",
       "",
-      '<!-- telegram_button: {"label":"Run","prompt":"Run the workflow."} -->',
+      '<!-- telegram_button {"label":"Run","prompt":"Run the workflow."} -->',
       "",
       "Tail.",
     ].join("\n"),
@@ -38,15 +38,15 @@ test("Button reply planner strips telegram_button markup and registers actions",
   });
 });
 
-test("Button reply planner accepts JSON and attributes with optional separators", () => {
+test("Button reply planner accepts JSON and attributes with one action marker", () => {
   const actions: unknown[] = [];
   const plan = planTelegramButtonReply(
     [
       '<!-- telegram_button {"label":"JSON","prompt":"Run JSON."} -->',
-      '<!-- telegram_button: {"label":"Colon JSON","prompt":"Run colon JSON.","selected_style":"success"} -->',
-      '<!-- telegram_button: label="Attributes" prompt="Run attributes." -->',
+      '<!-- telegram_button {"label":"Styled JSON","prompt":"Run styled JSON.","selected_style":"success"} -->',
+      '<!-- telegram_button label="Attributes" prompt="Run attributes." -->',
       '<!-- telegram_button {"value":"JSON value"} -->',
-      '<!-- telegram_button: value="Attribute value" -->',
+      '<!-- telegram_button value="Attribute value" -->',
       '<!-- telegram_button {"value":"Fallback prompt","label":"Explicit label"} -->',
     ].join("\n"),
     {
@@ -60,8 +60,8 @@ test("Button reply planner accepts JSON and attributes with optional separators"
   assert.deepEqual(actions, [
     { text: "JSON", prompt: "Run JSON." },
     {
-      text: "Colon JSON",
-      prompt: "Run colon JSON.",
+      text: "Styled JSON",
+      prompt: "Run styled JSON.",
       selectedStyle: "success",
     },
     { text: "Attributes", prompt: "Run attributes." },
@@ -72,7 +72,7 @@ test("Button reply planner accepts JSON and attributes with optional separators"
   assert.deepEqual(plan.replyMarkup, {
     inline_keyboard: [
       [{ text: "JSON", callback_data: "btn:1" }],
-      [{ text: "Colon JSON", callback_data: "btn:2" }],
+      [{ text: "Styled JSON", callback_data: "btn:2" }],
       [{ text: "Attributes", callback_data: "btn:3" }],
       [{ text: "JSON value", callback_data: "btn:4" }],
       [{ text: "Attribute value", callback_data: "btn:5" }],
@@ -85,7 +85,7 @@ test("Button reply planner rejects legacy payload forms", () => {
   const actions: unknown[] = [];
   const plan = planTelegramButtonReply(
     [
-      "<!-- telegram_button: Continue -->",
+      '<!-- telegram_button: {"value":"Continue"} -->',
       '<!-- telegram_button label=Continue prompt="Continue." -->',
       "<!-- telegram_button label='Continue' prompt='Continue.' -->",
       '<!-- telegram_button label="Continue"\nContinue.\n-->',

@@ -135,12 +135,12 @@ Assistant replies can include hidden voice actions in either supported payload f
 ```md
 Full text answer stays here.
 
-<!-- telegram_voice: {"value":"Short spoken companion summary.","lang":"ru","rate":"+30%"} -->
+<!-- telegram_voice {"value":"Short spoken companion summary.","lang":"ru","rate":"+30%"} -->
 
 <!-- telegram_voice text="Short spoken companion summary." lang="ru" rate="+30%" -->
 ```
 
-The bridge strips the comment from Telegram text. On `agent_end`, it maps each `telegram_voice` action to a provider call, generates one file per action, and sends each file as an independent Telegram-native voice message. Equivalent `text` or `value` supplies the spoken payload, with explicit `text` taking precedence when both appear; `lang` and `rate` are optional. The colon after `telegram_voice` is optional for both JSON and attributes and never changes format detection. Use JSON for long or escaped text and encode line breaks inside JSON strings as `\n`. The opening marker must start at column zero on a top-level line outside fenced code, quotes, lists, and indented examples; otherwise it remains literal Markdown.
+The bridge strips the comment from Telegram text. On `agent_end`, it maps each `telegram_voice` action to a provider call, generates one file per action, and sends each file as an independent Telegram-native voice message. Equivalent `text` or `value` supplies the spoken payload, with explicit `text` taking precedence when both appear; `lang` and `rate` are optional. A colon after `telegram_voice` is rejected so both payload forms share one unambiguous action marker. Use JSON for long or escaped text and encode line breaks inside JSON strings as `\n`. The opening marker must start at column zero on a top-level line outside fenced code, quotes, lists, and indented examples; otherwise it remains literal Markdown.
 
 ## Buttons Markup
 
@@ -149,17 +149,17 @@ Assistant replies can include independent button actions in the same two payload
 ```md
 I can continue.
 
-<!-- telegram_button: {"label":"Continue","prompt":"Continue with the current plan.","selected_style":"primary"} -->
+<!-- telegram_button {"label":"Continue","prompt":"Continue with the current plan.","selected_style":"primary"} -->
 
 <!-- telegram_button label="Show risks" prompt="List the main risks first." selected_style="danger" -->
 
-<!-- telegram_button: {"value":"Done"} -->
+<!-- telegram_button {"value":"Done"} -->
 ```
 
 Rules:
 
 - JSON objects and double-quoted HTML-like attributes are the only accepted payload forms; shorthand, body, paired-comment, unquoted-attribute, and single-quoted-attribute forms are rejected.
-- The colon after `telegram_button` is optional for both forms and never changes format detection.
+- A colon after `telegram_button` is rejected so both payload forms share one unambiguous action marker.
 - Use `label` plus `prompt`, or the compact `value` key when both strings are identical. Explicit `label` or `prompt` takes precedence over its `value` fallback. Use JSON with `\n` escapes for multiline prompts.
 - The opening marker must start at column zero on a top-level line outside fenced code, quotes, lists, and indented examples; otherwise it remains literal Markdown.
 - Use one comment per button; this mirrors HTML's singular element model and avoids a nested button DSL.

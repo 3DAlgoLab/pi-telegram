@@ -43,7 +43,7 @@ Keep each fact in one authoritative layer:
 - `/lib/*.ts`: Flat, cohesive runtime domains; package-private unless re-exported through `/api`.
 - `/tests/*.test.ts`: Domain-mirrored suites; `tests/integration.test.ts` owns cross-domain runtime flows.
 - `/skills/telegram-bridge`: Stable agent operating protocol for Telegram turns, delivery, actions, Threaded Mode, and diagnosis.
-- `/skills/button-console`: Optional generated-button interface over truthful console evidence; it remains independent from the bridge skill.
+- `/skills/control-surface`: Optional agent-generated cybernetic control surface over truthful domain evidence, workflows, and choices; it remains independent from the bridge skill and owns no parallel state.
 - `/.agents/skills/telegram-bot`: Bot API lookup guidance and vendored `api.md`; keep the reference intact.
 - `/.agents/skills/domain-dag`: Repository architecture guidance and validator.
 

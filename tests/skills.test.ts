@@ -23,7 +23,7 @@ test("Telegram extension contributes both bundled skills", async () => {
   } as never);
 
   assert.deepEqual(resourceHook?.(), { skillPaths: [TELEGRAM_SKILLS_PATH] });
-  const skillNames = ["telegram-bridge", "button-console"];
+  const skillNames = ["telegram-bridge", "control-surface"];
   for (const name of skillNames) {
     const source = await readFile(join(TELEGRAM_SKILLS_PATH, name, "SKILL.md"), "utf8");
     assert.match(source, new RegExp(`^name: ${name}$`, "m"));

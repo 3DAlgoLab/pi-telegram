@@ -2,6 +2,11 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.30.0: Generated Control Surfaces
+
+- `Generated Control Surface`: Replaced the CLI-bound Button Console with a transport-aware Control Surface Skill that proactively generates truthful contextual controls when they shorten feedback for workflows, stateful systems, navigation, Actor supervision, and decisions while preserving domain ownership, ordinary prompt authority, confirmation boundaries, and stateless regeneration.
+- `Action Markup`: Standardized `telegram_button` and `telegram_voice` on one colon-free action marker for both JSON and attribute payloads. Colon-prefixed forms are rejected instead of remaining a redundant compatibility syntax.
+
 ## 0.29.0: Skill-First Agent Operation
 
 - `Bundled Skills`: Added discoverable `telegram-bridge` and `button-console` Skills through package metadata and source-checkout resource discovery. Stable turn, delivery, action, Threaded Mode, formatting, handler, and diagnosis guidance now lives in the bridge Skill, while Button Console provides optional evidence-backed CLI navigation.
