@@ -51,7 +51,7 @@ Use `telegram_attach` outside Telegram turns only when the user explicitly reque
 Button forms:
 
 ```html
-<!-- telegram_button: {"label":"Continue","prompt":"Continue with the current plan."} -->
+<!-- telegram_button {"label":"Continue","prompt":"Continue with the current plan."} -->
 <!-- telegram_button value="Continue" -->
 ```
 
@@ -65,7 +65,7 @@ Button forms:
 Voice forms:
 
 ```html
-<!-- telegram_voice: {"text":"Short spoken message","lang":"en"} -->
+<!-- telegram_voice {"text":"Short spoken message","lang":"en"} -->
 <!-- telegram_voice text="Short spoken message" lang="en" -->
 ```
 

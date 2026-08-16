@@ -176,11 +176,11 @@ export function parseTelegramActionPayload(
 ): Record<string, unknown> | undefined {
   const parsed = parseTopLevelTelegramComment(comment, command);
   if (!parsed) return undefined;
+  if (parsed.head.trimStart().startsWith(":")) return undefined;
   const source = [parsed.head, parsed.body]
     .filter((part): part is string => part !== undefined)
     .join("\n")
-    .trim()
-    .replace(/^:\s*/, "");
+    .trim();
   if (!source) return undefined;
   if (source.startsWith("{")) {
     try {

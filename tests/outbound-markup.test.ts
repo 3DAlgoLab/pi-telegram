@@ -41,16 +41,16 @@ test("Markup stripping removes closed and partial top-level comments", () => {
   );
 });
 
-test("Voice reply planner accepts JSON and attributes with optional separators", () => {
+test("Voice reply planner accepts JSON and attributes with one action marker", () => {
   const plan = planTelegramVoiceReply(
     [
       "Visible answer.",
       "",
       '<!-- telegram_voice {"text":"JSON voice.","lang":"ru"} -->',
-      '<!-- telegram_voice: {"text":"Colon JSON voice.","rate":"+10%"} -->',
-      '<!-- telegram_voice: text="Attribute voice." lang="en" -->',
+      '<!-- telegram_voice {"text":"Rated JSON voice.","rate":"+10%"} -->',
+      '<!-- telegram_voice text="Attribute voice." lang="en" -->',
       '<!-- telegram_voice {"value":"JSON value voice."} -->',
-      '<!-- telegram_voice: value="Attribute value voice." -->',
+      '<!-- telegram_voice value="Attribute value voice." -->',
       '<!-- telegram_voice {"value":"Fallback voice.","text":"Explicit voice."} -->',
     ].join("\n"),
   );
@@ -58,7 +58,7 @@ test("Voice reply planner accepts JSON and attributes with optional separators",
   assert.equal(plan.markdown, "Visible answer.");
   assert.deepEqual(plan.voiceReplies, [
     { text: "JSON voice.", lang: "ru" },
-    { text: "Colon JSON voice.", rate: "+10%" },
+    { text: "Rated JSON voice.", rate: "+10%" },
     { text: "Attribute voice.", lang: "en" },
     { text: "JSON value voice." },
     { text: "Attribute value voice." },
@@ -69,7 +69,7 @@ test("Voice reply planner accepts JSON and attributes with optional separators",
 test("Voice reply planner rejects legacy payload forms", () => {
   const plan = planTelegramVoiceReply(
     [
-      "<!-- telegram_voice: Speak this. -->",
+      '<!-- telegram_voice: {"text":"Speak this."} -->',
       '<!-- telegram_voice text="Speak this." lang=ru -->',
       "<!-- telegram_voice text='Speak this.' -->",
       '<!-- telegram_voice lang="ru"\nSpeak this.\n-->',
@@ -89,7 +89,7 @@ test("Voice reply planner extracts multiple voice replies and cleans markdown", 
     [
       "Visible answer.",
       "",
-      '<!-- telegram_voice: {"text":"Первый ответ.","lang":"ru","rate":"+20%"} -->',
+      '<!-- telegram_voice {"text":"Первый ответ.","lang":"ru","rate":"+20%"} -->',
       "",
       '<!-- telegram_voice lang="en" text="Second answer." -->',
       "",

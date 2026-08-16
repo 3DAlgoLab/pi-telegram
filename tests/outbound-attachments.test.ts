@@ -357,7 +357,7 @@ test("Outbound message tool sends direct Telegram markdown with parsed buttons",
     canSendDirect: () => true,
     planMessage: (markdown) => ({
       markdown: markdown
-        .replace(/<!-- telegram_button: \{"value":"Continue"\} -->/, "")
+        .replace(/<!-- telegram_button \{"value":"Continue"\} -->/, "")
         .trim(),
       replyMarkup: {
         inline_keyboard: [[{ text: "Continue", callback_data: "button:1" }]],
@@ -374,7 +374,7 @@ test("Outbound message tool sends direct Telegram markdown with parsed buttons",
     },
   });
   await tools.get("telegram_message")?.execute("tool-call", {
-    text: '**hello**\n\n<!-- telegram_button: {"value":"Continue"} -->',
+    text: '**hello**\n\n<!-- telegram_button {"value":"Continue"} -->',
   });
   assert.deepEqual(sent, [
     {
