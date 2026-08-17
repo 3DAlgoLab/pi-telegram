@@ -118,9 +118,9 @@ Re-check mutable targets immediately before execution. Access denial never autho
 
 ## Prompt Buttons
 
-Use the transport's canonical prompt-button syntax. For pi-telegram, one top-level `telegram_button` comment accepts one JSON object, double-quoted attributes, or a JSON matrix. A top-level object becomes one full-width row; a nested array groups one to five objects into one compact horizontal row. Prefer one array comment for multiple controls instead of repeating the marker; `telegram_buttons` is a plural alias, not a different format. Use compact rows only when the controls form one coherent peer group such as Previous/Next, approval alternatives, or view modes; keep ordinary actions full-width.
+Use the transport's canonical prompt-button syntax. For pi-telegram, one top-level `telegram_button` comment accepts one JSON object, double-quoted attributes, a JSON matrix, or Compact Matrix Literal (CML). CML uses `{value}` or `{label|prompt}`, trims atom boundaries, preserves other printable text literally, and decodes only `\|`, `\}`, and `\\`; use JSON for multiline prompts, styles, or metadata. A top-level cell becomes one full-width row, while a nested row groups one or more controls horizontally without a parser-level width cap. Prefer one matrix comment for multiple controls instead of repeating the marker; `telegram_buttons` is a plural alias, not a different format. Use compact rows only when the controls form one coherent peer group such as Previous/Next, approval alternatives, or view modes; keep ordinary actions full-width.
 
-Treat the five-wide matrix as an interaction primitive when spatial position carries meaning and acting through the surface communicates better than prose. Five-wide rows are proven usable with short, distinct labels; use fewer columns or full-width rows when labels need explanation, wrap ambiguously, or lose meaning without prose. Preserve the ordinary admission test: proactively offer an interactive surface even when the user did not request buttons when it materially reduces effort or demonstrates an available capability, but do not manufacture decorative interaction.
+Treat a matrix as an interaction primitive when spatial position carries meaning and acting through the surface communicates better than prose. Five columns are proven usable with short, distinct labels and remain the default maximum. Six through eight columns may be used only for very short position-bearing labels whose grouping materially improves the interaction; regroup wider surfaces and use fewer columns or full-width rows when labels need explanation, wrap ambiguously, or lose meaning without prose. Preserve the ordinary admission test: proactively offer an interactive surface even when the user did not request buttons when it materially reduces effort or demonstrates an available capability, but do not manufacture decorative interaction.
 
 ### Interaction State And Prompt Compression
 
@@ -132,7 +132,7 @@ Treat the five-wide matrix as an interaction primitive when spatial position car
 
 ```html
 <!-- telegram_button {"label":"🔍 Inspect run","prompt":"Inspect Run run:example read-only, summarize its current status and latest material evidence, then regenerate relevant supervision controls."} -->
-<!-- telegram_button [{"label":"⬆️ Up","prompt":"/"},[{"value":"⬅️ Previous"},{"value":"➡️ Next"}],{"label":"📁 etc","prompt":"/etc"}] -->
+<!-- telegram_button [{⬆️ Up|/}[{⬅️ Previous}{➡️ Next}]{📁 etc|/etc}] -->
 ```
 
 Button prompts must:

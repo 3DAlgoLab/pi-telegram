@@ -57,9 +57,10 @@ Button forms:
 <!-- telegram_button value="Continue" -->
 <!-- telegram_button [{"label":"⬆️ Up","prompt":"/"},[{"value":"⬅️ Previous"},{"value":"➡️ Next"}],{"label":"📁 etc","prompt":"/etc"}] -->
 <!-- telegram_buttons [[{"value":"Approve"},{"value":"Reject"}]] -->
+<!-- telegram_button [{⬆️ Up|/}[{⬅️|page-1}{➡️|page-3}]{📁 etc|/etc}] -->
 ```
 
-- `telegram_button` accepts one JSON object, a JSON matrix, or double-quoted attributes; `telegram_buttons` is an exact plural alias. In a matrix, each top-level object becomes a full-width row and each nested array groups one to five buttons into one horizontal row. Prefer one array comment for multiple buttons. Keep the complete action in one top-level comment and encode JSON line breaks as `\n`.
+- `telegram_button` accepts one JSON object, a JSON matrix, Compact Matrix Literal (CML), or double-quoted attributes; `telegram_buttons` is an exact plural alias. CML uses `{value}` or `{label|prompt}`, trims atom boundaries, preserves other printable text literally, and decodes only `\|`, `\}`, and `\\`. In a matrix, each top-level cell becomes a full-width row and each nested row groups one or more buttons horizontally without a parser-level width cap. Prefer one matrix comment for multiple buttons, normally keep generated rows at five columns or fewer, and use six through eight only for short position-bearing labels. Keep the complete action in one top-level comment and encode multiline content with JSON `\n`.
 - Use `label` plus a self-contained `prompt`, or non-empty `value` when both are identical.
 - Optional `selected_style` is `primary` (default), `success`, or `danger`; style never suppresses prompt admission.
 - If button comments form the whole reply, the bridge supplies the standard choice heading.

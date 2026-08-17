@@ -123,20 +123,61 @@ test("Button reply planner expands JSON arrays, compact rows, and the telegram_b
   });
 });
 
-test("Button reply planner accepts the five-button compact-row boundary", () => {
+test("Button reply planner leaves compact-row width to the renderer profile", () => {
   let nextId = 0;
   const plan = planTelegramButtonReply(
-    '<!-- telegram_button [[{"value":"One"},{"value":"Two"},{"value":"Three"},{"value":"Four"},{"value":"Five"}]] -->',
+    '<!-- telegram_button [[{"value":"1"},{"value":"2"},{"value":"3"},{"value":"4"},{"value":"5"},{"value":"6"},{"value":"7"},{"value":"8"}]] -->',
     { registerAction: () => `btn:${++nextId}` },
   );
 
-  assert.deepEqual(plan.replyMarkup?.inline_keyboard, [[
-    { text: "One", callback_data: "btn:1" },
-    { text: "Two", callback_data: "btn:2" },
-    { text: "Three", callback_data: "btn:3" },
-    { text: "Four", callback_data: "btn:4" },
-    { text: "Five", callback_data: "btn:5" },
-  ]]);
+  assert.deepEqual(plan.replyMarkup?.inline_keyboard, [
+    [
+      { text: "1", callback_data: "btn:1" },
+      { text: "2", callback_data: "btn:2" },
+      { text: "3", callback_data: "btn:3" },
+      { text: "4", callback_data: "btn:4" },
+      { text: "5", callback_data: "btn:5" },
+      { text: "6", callback_data: "btn:6" },
+      { text: "7", callback_data: "btn:7" },
+      { text: "8", callback_data: "btn:8" },
+    ],
+  ]);
+});
+
+test("Button reply planner decodes compact matrix literals", () => {
+  const actions: unknown[] = [];
+  const plan = planTelegramButtonReply(
+    String.raw`<!-- telegram_button [{  Up  | / }[{1}{2}{3}{4}{5}{6}{7}{8}]{A {["x"], v1: \| B|C:\\Games\}}] -->`,
+    {
+      registerAction: (action) => {
+        actions.push(action);
+        return `btn:${actions.length}`;
+      },
+    },
+  );
+
+  assert.deepEqual(actions, [
+    { text: "Up", prompt: "/" },
+    { text: "1", prompt: "1" },
+    { text: "2", prompt: "2" },
+    { text: "3", prompt: "3" },
+    { text: "4", prompt: "4" },
+    { text: "5", prompt: "5" },
+    { text: "6", prompt: "6" },
+    { text: "7", prompt: "7" },
+    { text: "8", prompt: "8" },
+    { text: 'A {["x"], v1: | B', prompt: "C:\\Games}" },
+  ]);
+  assert.deepEqual(
+    plan.replyMarkup?.inline_keyboard.map((row) =>
+      row.map((button) => button.text),
+    ),
+    [
+      ["Up"],
+      ["1", "2", "3", "4", "5", "6", "7", "8"],
+      ['A {["x"], v1: | B'],
+    ],
+  );
 });
 
 test("Button reply planner ignores payloads outside the canonical action shape", () => {
@@ -146,7 +187,6 @@ test("Button reply planner ignores payloads outside the canonical action shape",
       '<!-- telegram_button [{"value":"Valid"},null] -->',
       '<!-- telegram_button [1,2] -->',
       '<!-- telegram_button [[]] -->',
-      '<!-- telegram_button [[{"value":"1"},{"value":"2"},{"value":"3"},{"value":"4"},{"value":"5"},{"value":"6"}]] -->',
       '<!-- telegram_button [[[{"value":"Nested too deeply"}]]] -->',
       '<!-- telegram_button {"label":"Missing prompt"} -->',
       '<!-- telegram_button label=Continue prompt="Continue." -->',
@@ -163,6 +203,42 @@ test("Button reply planner ignores payloads outside the canonical action shape",
   assert.equal(plan.markdown, "");
   assert.deepEqual(plan.replyMarkup, undefined);
   assert.deepEqual(actions, []);
+});
+
+test("Button reply planner rejects malformed compact matrix literals atomically", () => {
+  for (const payload of [
+    "{}",
+    "{   }",
+    "{x|}",
+    "{x|   }",
+    "{|x}",
+    "{x|y|z}",
+    String.raw`{x\q}`,
+    "{x\\",
+    "[]",
+    "[[]]",
+    "{x",
+    "[{x}",
+    "[{x}}]",
+    "[[[{deep}]]]",
+    "[{a},{b}]",
+    "{x|line\nbreak}",
+    "[{x}] trailing",
+  ]) {
+    const actions: unknown[] = [];
+    const plan = planTelegramButtonReply(
+      `<!-- telegram_button ${payload} -->`,
+      {
+        registerAction: (action) => {
+          actions.push(action);
+          return `btn:${actions.length}`;
+        },
+      },
+    );
+    assert.equal(plan.markdown, "");
+    assert.deepEqual(plan.replyMarkup, undefined);
+    assert.deepEqual(actions, []);
+  }
 });
 
 test("Button reply planner supplies visible text and stores selected style for a button-only reply", () => {

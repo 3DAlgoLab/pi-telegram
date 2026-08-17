@@ -31,14 +31,18 @@ test("Telegram extension contributes both bundled skills", async () => {
     assert.match(source, new RegExp(`^name: ${name}$`, "m"));
     assert.match(source, /^description: .+$/m);
   }
-  assert.match(sources.get("telegram-bridge") ?? "", /`generated-control-surface`/u);
-  assert.match(sources.get("telegram-bridge") ?? "", /one to five buttons/u);
-  assert.match(sources.get("generated-control-surface") ?? "", /without requiring an explicit user request/u);
-  assert.match(sources.get("generated-control-surface") ?? "", /one to five objects/u);
+  const bridge = sources.get("telegram-bridge") ?? "";
+  assert.match(bridge, /`generated-control-surface`/u);
+  assert.match(bridge, /Compact Matrix Literal \(CML\)/u);
+  assert.match(bridge, /without a parser-level width cap/u);
+  assert.match(bridge, /six through eight.*short position-bearing labels/u);
   const generatedSurface = sources.get("generated-control-surface") ?? "";
+  assert.match(generatedSurface, /without requiring an explicit user request/u);
+  assert.match(generatedSurface, /Compact Matrix Literal \(CML\)/u);
+  assert.match(generatedSurface, /one or more controls.*parser-level width cap/u);
   assert.match(
     generatedSurface,
-    /five-wide matrix as an interaction primitive.*short, distinct labels/su,
+    /Five columns.*default maximum.*Six through eight columns/su,
   );
   assert.match(
     generatedSurface,

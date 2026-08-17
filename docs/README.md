@@ -15,6 +15,7 @@ Living index of project documentation in `/docs`.
 - [command-templates.md](./command-templates.md) — Portable command-template standard core
 - [inbound.md](./inbound.md) — Local `pi-telegram` inbound text/media handler bus, programmatic inbound handlers, registered STT provider fallbacks, legacy `attachmentHandlers` compatibility, placeholders, and fallbacks
 - [outbound.md](./outbound.md) — Local `pi-telegram` outbound-handler config, text/voice/button behavior, single-artifact Rich results, voice synthesis provider fallback priority, artifact outputs, and callback routing
+- [compact-matrix-literal.md](./compact-matrix-literal.md) — Portable Compact Matrix Literal v1 standard for trimmed key-value cells, minimal escapes, bounded-depth rows, JSON coexistence, and renderer-owned width policy
 - [callback-namespaces.md](./callback-namespaces.md) — Shared Telegram `callback_data` namespace standard for layered extensions
 - [updates.md](./updates.md) — Update classification and runtime handler registry that lets layered extensions observe and consume Telegram updates without owning their own polling connection
 - [multi-instance-bus.md](./multi-instance-bus.md) — Optional multi-instance Telegram bus architecture: profile-scoped transport, leader/follower routing, thread targets, instance slots, manual follower registration, and recovery semantics

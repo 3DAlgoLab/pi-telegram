@@ -205,6 +205,122 @@ export function parseTelegramActionPayload(
   return parseCanonicalTelegramActionAttributes(payload.source);
 }
 
+const TELEGRAM_COMPACT_ACTION_CONTROL_PATTERN = /[\u0000-\u001f\u007f-\u009f]/u;
+
+function parseTelegramCompactActionPayloadRows(
+  source: string,
+): Record<string, unknown>[][] | undefined {
+  let offset = 0;
+  const isStructuralWhitespace = (character: string | undefined): boolean =>
+    character === " " ||
+    character === "\t" ||
+    character === "\r" ||
+    character === "\n";
+  const skipWhitespace = (): void => {
+    while (isStructuralWhitespace(source[offset])) offset += 1;
+  };
+  const normalizeAtom = (value: string): string | undefined => {
+    const normalized = value.trim();
+    return normalized && !TELEGRAM_COMPACT_ACTION_CONTROL_PATTERN.test(normalized)
+      ? normalized
+      : undefined;
+  };
+  const parseCell = (): Record<string, unknown> | undefined => {
+    if (source[offset] !== "{") return undefined;
+    offset += 1;
+    const keySource: string[] = [];
+    const valueSource: string[] = [];
+    let hasSeparator = false;
+    while (offset < source.length) {
+      const character = source[offset]!;
+      if (character === "\\") {
+        const escaped = source[offset + 1];
+        if (escaped !== "|" && escaped !== "}" && escaped !== "\\") {
+          return undefined;
+        }
+        if (hasSeparator) valueSource.push(escaped);
+        else keySource.push(escaped);
+        offset += 2;
+        continue;
+      }
+      if (character === "|") {
+        if (hasSeparator) return undefined;
+        hasSeparator = true;
+        offset += 1;
+        continue;
+      }
+      if (character === "}") {
+        offset += 1;
+        const key = normalizeAtom(keySource.join(""));
+        if (!key) return undefined;
+        if (!hasSeparator) return { value: key };
+        const value = normalizeAtom(valueSource.join(""));
+        return value ? { label: key, prompt: value } : undefined;
+      }
+      if (hasSeparator) valueSource.push(character);
+      else keySource.push(character);
+      offset += 1;
+    }
+    return undefined;
+  };
+  const parseRow = (): Record<string, unknown>[] | undefined => {
+    if (source[offset] !== "[") return undefined;
+    offset += 1;
+    const row: Record<string, unknown>[] = [];
+    while (offset < source.length) {
+      skipWhitespace();
+      if (source[offset] === "]") {
+        offset += 1;
+        return row.length > 0 ? row : undefined;
+      }
+      if (source[offset] !== "{") return undefined;
+      const cell = parseCell();
+      if (!cell) return undefined;
+      row.push(cell);
+    }
+    return undefined;
+  };
+  const parseMatrix = (): Record<string, unknown>[][] | undefined => {
+    if (source[offset] !== "[") return undefined;
+    offset += 1;
+    const rows: Record<string, unknown>[][] = [];
+    while (offset < source.length) {
+      skipWhitespace();
+      const character = source[offset];
+      if (character === "]") {
+        offset += 1;
+        return rows.length > 0 ? rows : undefined;
+      }
+      if (character === "{") {
+        const cell = parseCell();
+        if (!cell) return undefined;
+        rows.push([cell]);
+        continue;
+      }
+      if (character === "[") {
+        const row = parseRow();
+        if (!row) return undefined;
+        rows.push(row);
+        continue;
+      }
+      return undefined;
+    }
+    return undefined;
+  };
+
+  skipWhitespace();
+  let rows: Record<string, unknown>[][] | undefined;
+  if (source[offset] === "{") {
+    const cell = parseCell();
+    rows = cell ? [[cell]] : undefined;
+  } else {
+    rows = parseMatrix();
+  }
+  if (!rows) return undefined;
+  skipWhitespace();
+  return offset === source.length ? rows : undefined;
+}
+
 export function parseTelegramActionPayloadRows(
   comment: TelegramTopLevelHtmlComment,
   command: string,
@@ -225,7 +341,6 @@ export function parseTelegramActionPayloadRows(
         if (
           !Array.isArray(entry) ||
           entry.length === 0 ||
-          entry.length > 5 ||
           !entry.every(isTelegramActionPayload)
         ) {
           return undefined;
@@ -234,7 +349,7 @@ export function parseTelegramActionPayloadRows(
       }
       return rows;
     } catch {
-      return undefined;
+      return parseTelegramCompactActionPayloadRows(payload.source);
     }
   }
   if (payload.hasBody) return undefined;
