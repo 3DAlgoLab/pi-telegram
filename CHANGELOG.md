@@ -2,6 +2,11 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.35.2: Independent Surface Dimensions
+
+- `Horizontal Boundary`: Establishes eight controls as the Generated Control Surface phone-width UX maximum regardless of the parser's uncapped row grammar; nine or more controls must regroup, and six-to-eight remains limited to minimal position-bearing labels.
+- `Vertical Continuity`: Treats height independently from width so true spatial surfaces may preserve substantially more rows—including an `8×16` field—when coordinates and topology matter, while non-spatial button walls still yield to semantic grouping, progressive disclosure, or pagination.
+
 ## 0.35.1: Semantic Ragged Control Layouts
 
 - `Row Composition`: Teaches Generated Control Surface to model Telegram controls as an ordered ragged sequence of independently sized semantic rows rather than filling a rectangular matrix: compact rows hold genuine peers, singleton rows isolate independent actions, and symmetry is admitted only when equal relationships or real spatial topology provide evidence for it.
