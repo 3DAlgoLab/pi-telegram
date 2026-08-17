@@ -821,7 +821,10 @@ export function appendTelegramPromptTurnOnce<TContext = unknown>(
         isDuplicateTelegramPromptTurn(item, turn),
     );
   if (duplicate) return { items, appended: false };
-  return { items: [...items, turn], appended: true };
+  return {
+    items: [...items, turn].sort(compareTelegramQueueItems),
+    appended: true,
+  };
 }
 
 export function compareTelegramQueueItems<TContext = unknown>(

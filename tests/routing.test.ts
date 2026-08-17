@@ -603,7 +603,7 @@ function createRouteHarness(options: RouteHarnessOptions = {}) {
   return { buttonActionStore, events, routeRuntime, telegramQueueStore };
 }
 
-test("Routing admission returns exact queued outcomes for messages and callbacks", async () => {
+test("Routing admission returns exact outcomes and places priority callbacks first", async () => {
   const { routeRuntime, telegramQueueStore } = createRouteHarness();
   const handle = Updates.createTelegramUpdateAdmissionHandle<
     TestUpdate & { update_id: number },
@@ -667,7 +667,7 @@ test("Routing admission returns exact queued outcomes for messages and callbacks
       .getQueuedItems()
       .flatMap((item) => item.admissionReceipts ?? [])
       .map((receipt) => receipt.sourceUpdateIds),
-    [[71], [72]],
+    [[72], [71]],
   );
 });
 

@@ -354,15 +354,23 @@ test("Queue planning rejects invalid queue admission", () => {
   );
 });
 
-test("Queue prompt append-once deduplicates repeated callback prompts", () => {
+test("Queue prompt append-once prioritizes callbacks and deduplicates repeats", () => {
+  const defaultTurn = createQueueTestPromptTurn({
+    queueOrder: 1,
+    laneOrder: 1,
+    content: [{ type: "text", text: "queued first" }],
+    historyText: "queued first",
+  });
   const callbackTurn = createQueueTestPromptTurn({
+    queueOrder: 2,
     queueLane: "priority",
-    laneOrder: 0,
+    laneOrder: 2,
     content: [{ type: "text", text: "[callback] approve" }],
     historyText: "approve",
   });
-  const first = appendTelegramPromptTurnOnce([], callbackTurn);
+  const first = appendTelegramPromptTurnOnce([defaultTurn], callbackTurn);
   assert.equal(first.appended, true);
+  assert.deepEqual(first.items, [callbackTurn, defaultTurn]);
 
   const duplicate = appendTelegramPromptTurnOnce(first.items, {
     ...callbackTurn,
@@ -370,7 +378,7 @@ test("Queue prompt append-once deduplicates repeated callback prompts", () => {
     laneOrder: 99,
   });
   assert.equal(duplicate.appended, false);
-  assert.equal(duplicate.items.length, 1);
+  assert.equal(duplicate.items.length, 2);
 
   const distinct = appendTelegramPromptTurnOnce(first.items, {
     ...callbackTurn,
@@ -378,7 +386,7 @@ test("Queue prompt append-once deduplicates repeated callback prompts", () => {
     historyText: "reject",
   });
   assert.equal(distinct.appended, true);
-  assert.equal(distinct.items.length, 2);
+  assert.equal(distinct.items.length, 3);
 });
 
 test("Queue receipts are deterministic, canonical, and scope-bound", () => {
