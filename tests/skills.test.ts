@@ -32,7 +32,13 @@ test("Telegram extension contributes both bundled skills", async () => {
     assert.match(source, /^description: .+$/m);
   }
   assert.match(sources.get("telegram-bridge") ?? "", /`generated-control-surface`/u);
+  assert.match(sources.get("telegram-bridge") ?? "", /one to five buttons/u);
   assert.match(sources.get("generated-control-surface") ?? "", /without requiring an explicit user request/u);
+  assert.match(sources.get("generated-control-surface") ?? "", /one to five objects/u);
+  assert.match(
+    sources.get("generated-control-surface") ?? "",
+    /five-wide matrix as an interaction primitive.*runnable demonstrations/su,
+  );
 });
 
 test("Generated filesystem surfaces declare structural navigation around paginated entries", async () => {

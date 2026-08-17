@@ -123,10 +123,10 @@ test("Button reply planner expands JSON arrays, compact rows, and the telegram_b
   });
 });
 
-test("Button reply planner accepts the three-button compact-row boundary", () => {
+test("Button reply planner accepts the five-button compact-row boundary", () => {
   let nextId = 0;
   const plan = planTelegramButtonReply(
-    '<!-- telegram_button [[{"value":"One"},{"value":"Two"},{"value":"Three"}]] -->',
+    '<!-- telegram_button [[{"value":"One"},{"value":"Two"},{"value":"Three"},{"value":"Four"},{"value":"Five"}]] -->',
     { registerAction: () => `btn:${++nextId}` },
   );
 
@@ -134,6 +134,8 @@ test("Button reply planner accepts the three-button compact-row boundary", () =>
     { text: "One", callback_data: "btn:1" },
     { text: "Two", callback_data: "btn:2" },
     { text: "Three", callback_data: "btn:3" },
+    { text: "Four", callback_data: "btn:4" },
+    { text: "Five", callback_data: "btn:5" },
   ]]);
 });
 
@@ -143,7 +145,8 @@ test("Button reply planner ignores payloads outside the canonical action shape",
     [
       '<!-- telegram_button [{"value":"Valid"},null] -->',
       '<!-- telegram_button [1,2] -->',
-      '<!-- telegram_button [[{"value":"1"},{"value":"2"},{"value":"3"},{"value":"4"}]] -->',
+      '<!-- telegram_button [[]] -->',
+      '<!-- telegram_button [[{"value":"1"},{"value":"2"},{"value":"3"},{"value":"4"},{"value":"5"},{"value":"6"}]] -->',
       '<!-- telegram_button [[[{"value":"Nested too deeply"}]]] -->',
       '<!-- telegram_button {"label":"Missing prompt"} -->',
       '<!-- telegram_button label=Continue prompt="Continue." -->',

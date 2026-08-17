@@ -2,6 +2,12 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.34.0: Five-Wide Matrix Controls
+
+- `Button Matrix`: Expands compact nested JSON rows from one-to-three to one-to-five buttons for grids, keypads, palettes, games, and other position-bearing controls while preserving full-width top-level rows and existing object, attribute, flat-array, and plural-alias compatibility.
+- `Matrix Boundaries`: Keeps empty rows, rows of six or more buttons, malformed payloads, and deeper nesting fail closed before callback registration; published docs and bundled Skills now expose the five-button boundary.
+- `Interactive Surfaces`: Teaches Generated Control Surface to use five-wide position-bearing matrices for keypads, palettes, calendars, seat maps, directional controls, small games, and runnable demonstrations while keeping each continuation self-contained instead of inventing hidden application state.
+
 ## 0.33.2: Structured Filesystem Surfaces
 
 - `Filesystem Ordering`: Sorts generated directory surfaces by visible directories, hidden directories, visible files, then hidden files, with alphabetical ordering inside each category before fixed ten-entry pagination.

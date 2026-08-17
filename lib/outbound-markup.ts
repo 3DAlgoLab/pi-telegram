@@ -225,7 +225,7 @@ export function parseTelegramActionPayloadRows(
         if (
           !Array.isArray(entry) ||
           entry.length === 0 ||
-          entry.length > 3 ||
+          entry.length > 5 ||
           !entry.every(isTelegramActionPayload)
         ) {
           return undefined;
