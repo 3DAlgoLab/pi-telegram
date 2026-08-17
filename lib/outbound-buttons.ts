@@ -11,7 +11,7 @@ import type {
   TelegramInlineKeyboardMarkup,
 } from "./keyboard.ts";
 import {
-  parseTelegramActionPayloads,
+  parseTelegramActionPayloadRows,
   parseTopLevelTelegramComment,
   replaceTopLevelHtmlComments,
 } from "./outbound-markup.ts";
@@ -167,16 +167,15 @@ export function planTelegramButtonReply(
       parseTopLevelTelegramComment(comment, candidate),
     );
     if (!command) return comment.raw;
-    const payloads = parseTelegramActionPayloads(comment, command) ?? [];
-    for (const payload of payloads) {
-      const action = parseTelegramButtonAction(payload);
-      if (!action) continue;
-      keyboard.push([
-        {
-          text: action.text,
-          callback_data: deps.registerAction(action),
-        },
-      ]);
+    const payloadRows = parseTelegramActionPayloadRows(comment, command) ?? [];
+    for (const payloadRow of payloadRows) {
+      const row = payloadRow.flatMap((payload) => {
+        const action = parseTelegramButtonAction(payload);
+        return action
+          ? [{ text: action.text, callback_data: deps.registerAction(action) }]
+          : [];
+      });
+      if (row.length > 0) keyboard.push(row);
     }
     return "";
   });

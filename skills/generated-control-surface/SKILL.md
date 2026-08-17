@@ -116,11 +116,11 @@ Re-check mutable targets immediately before execution. Access denial never autho
 
 ## Prompt Buttons
 
-Use the transport's canonical prompt-button syntax. For pi-telegram, one top-level `telegram_button` comment accepts either one JSON object, double-quoted attributes, or a JSON array whose objects become separate button rows. Prefer one array comment for multiple controls instead of repeating the marker; `telegram_buttons` is a plural alias, not a different format.
+Use the transport's canonical prompt-button syntax. For pi-telegram, one top-level `telegram_button` comment accepts one JSON object, double-quoted attributes, or a JSON matrix. A top-level object becomes one full-width row; a nested array groups one to three objects into one compact horizontal row. Prefer one array comment for multiple controls instead of repeating the marker; `telegram_buttons` is a plural alias, not a different format. Use compact rows only when the controls form one coherent peer group such as Previous/Next, approval alternatives, or view modes; keep ordinary actions full-width.
 
 ```html
 <!-- telegram_button {"label":"🔍 Inspect run","prompt":"Inspect Run run:example read-only, summarize its current status and latest material evidence, then regenerate relevant supervision controls."} -->
-<!-- telegram_button [{"label":"📁 etc","prompt":"/etc"},{"label":"📁 home","prompt":"/home"}] -->
+<!-- telegram_button [{"label":"⬆️ Up","prompt":"/"},[{"value":"⬅️ Previous"},{"value":"➡️ Next"}],{"label":"📁 etc","prompt":"/etc"}] -->
 ```
 
 Button prompts must:
@@ -142,7 +142,14 @@ Use normal console programs as the capability owner. Check exit status and stder
 
 ### Filesystem
 
-Treat a user prompt that is exactly a plausible filesystem path—including `/`—as legitimate intent to render that location through a generated filesystem surface. Resolve and freshly inspect it before display. For directories, show safe names and types without reading file contents, paginate large listings, and offer useful Up, Previous, Next, and Refresh controls. A filesystem entry button may use the exact target path as its entire prompt because this Skill defines path-only prompts as navigation intent; use the entry name plus a semantic folder/file emoji as its label. Never preview credential stores, private keys, browser profiles, cookies, tokens, wallets, or other secret-bearing files, and never raise privileges merely to enumerate a path.
+Treat a user prompt that is exactly a plausible filesystem path—including `/`—as legitimate intent to render that location through a generated filesystem surface. Resolve and freshly inspect it before display. Directory surfaces use one stable navigation layout:
+
+1. Pin `⬆️ Up` as the first full-width row whenever the current path is not filesystem root; its entire prompt is the exact parent path. Omit Up at `/`.
+2. When page traversal exists, place `⬅️ Previous` and `➡️ Next` together in one compact row immediately after Up, omitting either unavailable direction. Page traversal re-inspects the directory and preserves a fixed 10-entry page size; moving Up opens the parent at page one.
+3. Render at most 10 alphabetically ordered entry buttons as full-width rows after structural navigation. Each label uses the entry name plus a semantic folder/file emoji, and its entire prompt may be the exact target path because this Skill defines path-only prompts as navigation intent.
+4. Keep visible text to a compact path and range summary such as `📁 /home/llb · 1–10 of 52`; do not duplicate entry names as a plain or monospaced directory listing. Omit Refresh by default because resubmitting the current path already requests fresh rendering.
+
+For pi-telegram, emit the complete filesystem control set—Up, compact page traversal, then current-page entries—in one `telegram_button` JSON matrix rather than repeating one hidden comment per button. If prompt buttons are unavailable or fail to render, preserve the same ordering and pagination as an ordinary numbered text fallback, not a monospaced inventory, so free-form path entry remains sufficient. Show a plain or monospaced directory listing instead only when the user explicitly requests it or durable user Knowledge establishes that presentation preference. Never preview credential stores, private keys, browser profiles, cookies, tokens, wallets, or other secret-bearing files, and never raise privileges merely to enumerate a path.
 
 ### Workflows And Actor Runs
 

@@ -155,18 +155,18 @@ I can continue.
 
 <!-- telegram_button {"value":"Done"} -->
 
-<!-- telegram_button [{"label":"📁 etc","prompt":"/etc"},{"label":"📁 home","prompt":"/home"}] -->
+<!-- telegram_button [{"label":"⬆️ Up","prompt":"/"},[{"value":"⬅️ Previous"},{"value":"➡️ Next"}],{"label":"📁 etc","prompt":"/etc"}] -->
 
-<!-- telegram_buttons [{"value":"Approve"},{"value":"Reject"}] -->
+<!-- telegram_buttons [[{"value":"Approve"},{"value":"Reject"}]] -->
 ```
 
 Rules:
 
-- `telegram_button` accepts a JSON object, a JSON array of button objects, or double-quoted HTML-like attributes; `telegram_buttons` is an exact plural alias. Shorthand, body, paired-comment, unquoted-attribute, and single-quoted-attribute forms are rejected.
+- `telegram_button` accepts a JSON object, JSON matrix, or double-quoted HTML-like attributes; `telegram_buttons` is an exact plural alias. Shorthand, body, paired-comment, unquoted-attribute, and single-quoted-attribute forms are rejected.
 - A colon after either button marker is rejected so every payload form shares one unambiguous action marker.
 - Use `label` plus `prompt`, or the compact `value` key when both strings are identical. Explicit `label` or `prompt` takes precedence over its `value` fallback. Use JSON with `\n` escapes for multiline prompts.
 - The opening marker must start at column zero on a top-level line outside fenced code, quotes, lists, and indented examples; otherwise it remains literal Markdown.
-- Prefer one JSON array comment for multiple buttons; each object becomes one inline-keyboard row in source order. Repeated singular comments remain valid.
+- Prefer one JSON array comment for multiple buttons. Each top-level object becomes one full-width inline-keyboard row in source order; a nested array groups one to three button objects into one horizontal row. Empty rows, rows above three buttons, and deeper nesting are rejected. Repeated singular comments remain valid.
 - Button actions are stored in memory with short `callback_data`; Telegram never sees the full prompt in the button payload.
 - After Telegram accepts a generated button callback as a queued prompt, the bridge changes that exact button to its configured selection style without changing agent-authored text or emoji. Set `selected_style` to `primary` (blue), `success` (green), or `danger` (red); omitted or invalid values fall back to `primary`. The style never suppresses queue admission. Other choices stay visually unchanged and remain available; the callback acknowledgement remains the fallback on clients that do not render button styles.
 - When generated button markup is the entire assistant reply, the bridge supplies the standard `☑️ **Choose an option:**` heading as visible message text so Telegram has a message to which it can attach the inline keyboard.
@@ -184,7 +184,7 @@ The extension injects prompt guidance by context:
 - For Telegram-originated turns, the compact note routes the agent to `telegram-bridge`, which owns voice/button/direct-delivery/Threaded Mode/formatting/debug guidance.
 - For Telegram-originated turns, write the full technical answer as normal Markdown.
 - Add `telegram_voice` with either a JSON object or double-quoted attributes when a Telegram-native voice message is useful. A companion summary is optional, no specific summary format is required.
-- Add `telegram_button` with a JSON object, a JSON array of button objects, or double-quoted attributes; `telegram_buttons` is an alias. Prefer one array for multiple controls. Use `label` plus `prompt`, or `value` when they are identical; `selected_style` is optional. A button-only reply may omit parent text because the bridge supplies `☑️ **Choose an option:**` automatically.
+- Add `telegram_button` with a JSON object, JSON matrix, or double-quoted attributes; `telegram_buttons` is an alias. Prefer one array for multiple controls. Use `label` plus `prompt`, or `value` when they are identical; `selected_style` is optional. A button-only reply may omit parent text because the bridge supplies `☑️ **Choose an option:**` automatically.
 - For ordinary Telegram-turn replies, do not call transport tools for voice or buttons; the bridge owns delivery, while registered voice synthesis providers own TTS and OGG/Opus conversion. For explicit local/TUI direct sends, `telegram_message` may include top-level `telegram_button` comments in its Markdown text because those buttons are attached to that text message.
 - Prefer meaningful visible parent text when it adds context; for a button-only answer, rely on the bridge's automatic `☑️ **Choose an option:**` fallback rather than manufacturing duplicate text.
 

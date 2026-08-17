@@ -1189,7 +1189,7 @@ export async function handleTelegramNextCommand(deps: {
 }): Promise<void> {
   deps.clearPendingModelSwitch();
   if (!deps.hasQueuedItems()) {
-    await deps.sendTextReply("<b>Queue is empty.</b>");
+    await deps.sendTextReply("**Queue is empty.**");
     return;
   }
   if (!deps.isIdle() && deps.hasAbortHandler()) {
