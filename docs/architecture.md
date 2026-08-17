@@ -352,7 +352,7 @@ The bridge does not mirror arbitrary `ctx.ui.confirm/input/select/custom` prompt
 
 ## Diagnostics And Operational Behavior
 
-Status rendering distinguishes connected, active, dispatching, queued, tool-running, model-switching, and compacting states. If a queue mutation removes the last waiting item while Telegram-owned work still has running tools, status remains active instead of degrading to connected.
+Status rendering distinguishes connected, active, dispatching, queued, tool-running, model-switching, and compacting states; the Telegram status menu gives compaction precedence over generic active or pending work. Observed automatic compaction sends the same start and completion notices as the manual command without duplicating notices for command-owned compaction. If a queue mutation removes the last waiting item while Telegram-owned work still has running tools, status remains active instead of degrading to connected.
 
 Queue reactions are reversible shortcut controls for waiting turns. The runtime reconciles each complete `MessageReactionUpdated.new_reaction` set: any removal reaction (`👎`, `👻`, `💔`, `💩`, `🗑`) suppresses the governed prompt without discarding its queue authority; otherwise any promotion reaction (`👍`, `⚡️`, `❤️`, `🕊`, `🔥`) moves it to priority; otherwise it returns to the default lane. Suppressed prompts remain visible in the queue menu, survive authenticated queue handoff, and do not block unrelated dispatch. Reaction changes first flush a matching delayed text or media group so the governed turn exists before mutation. Once Pi has consumed a prompt, reactions cannot retract it.
 

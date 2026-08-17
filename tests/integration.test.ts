@@ -4425,6 +4425,9 @@ test("Extension runtime blocks queued dispatch during observed auto-compaction",
       { signal: new AbortController().signal },
       ctx,
     );
+    await waitForCondition(() =>
+      runtimeEvents.includes("send:🗜 Compaction started."),
+    );
     await new Promise((resolve) => setTimeout(resolve, 80));
     assert.equal(
       runtimeEvents.includes("dispatch:[telegram] queued during active turn"),
@@ -4433,6 +4436,9 @@ test("Extension runtime blocks queued dispatch during observed auto-compaction",
     await handlers.get("session_compact")?.({}, ctx);
     await waitForCondition(() =>
       runtimeEvents.includes("dispatch:[telegram] queued during active turn"),
+    );
+    await waitForCondition(() =>
+      runtimeEvents.includes("send:✅ Compaction completed."),
     );
     await handlers.get("session_shutdown")?.({}, ctx);
   } finally {

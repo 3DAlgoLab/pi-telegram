@@ -923,7 +923,7 @@ test("Command target runtime binds chat reply targets to command ports", async (
     },
     sendTextReply: async (chatId, replyToMessageId, text, options) => {
       calls.push(
-        `reply:${chatId}:${replyToMessageId}:${text}:${options?.target?.threadId}`,
+        `reply:${chatId}:${replyToMessageId}:${text}:${options?.parseMode ?? "plain"}:${options?.target?.threadId}`,
       );
     },
   });
@@ -940,14 +940,14 @@ test("Command target runtime binds chat reply targets to command ports", async (
   await runtime.showStatus(message, "ctx");
   await runtime.openModelMenu(message, "ctx");
   await runtime.openSettingsMenu(message, "ctx");
-  await runtime.sendTextReply(message, "hello");
+  await runtime.sendTextReply(message, "hello", { parseMode: "HTML" });
   assert.deepEqual(calls, [
     "enqueue:7:11:ctx:status:⚡ status",
     "execute",
     "status:7:11:ctx:42",
     "model:7:11:ctx:42",
-    "reply:7:11:Settings menu is unavailable.:42",
-    "reply:7:11:hello:42",
+    "reply:7:11:Settings menu is unavailable.:plain:42",
+    "reply:7:11:hello:HTML:42",
   ]);
 });
 
@@ -1079,8 +1079,8 @@ test("Command helpers run stop command side effects", async () => {
   ]);
 });
 
-test("Next command uses native Markdown for an empty queue reply", async () => {
-  const replies: string[] = [];
+test("Next command requests HTML rendering for an empty queue reply", async () => {
+  const replies: Array<{ text: string; parseMode?: "HTML" }> = [];
   await handleTelegramNextCommand({
     hasAbortHandler: () => false,
     isIdle: () => true,
@@ -1090,13 +1090,14 @@ test("Next command uses native Markdown for an empty queue reply", async () => {
     dispatchNextQueuedTurn: () => {},
     clearFoldForDispatch: () => {},
     updateStatus: () => {},
-    sendTextReply: async (text) => {
-      replies.push(text);
+    sendTextReply: async (text, options) => {
+      replies.push({ text, parseMode: options?.parseMode });
     },
   });
 
-  assert.deepEqual(replies, ["**Queue is empty.**"]);
-  assert.doesNotMatch(replies[0] ?? "", /<\/?[a-z][^>]*>/iu);
+  assert.deepEqual(replies, [
+    { text: "<b>Queue is empty.</b>", parseMode: "HTML" },
+  ]);
 });
 
 test("Command helpers scope abort history preservation to Telegram-owned turns", async () => {
