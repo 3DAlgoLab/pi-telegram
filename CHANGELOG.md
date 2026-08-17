@@ -2,6 +2,11 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.33.2: Structured Filesystem Surfaces
+
+- `Filesystem Ordering`: Sorts generated directory surfaces by visible directories, hidden directories, visible files, then hidden files, with alphabetical ordering inside each category before fixed ten-entry pagination.
+- `Surface Metadata`: Reuses compact status-style key-value rows for filesystem path and range metadata, with bold labels and inline-code values instead of middle-dot section separators or duplicated entry listings.
+
 ## 0.33.1: Rendered Command Replies And Visible Compaction
 
 - `Command Rendering`: Restored the `/next` empty-queue emphasis by preserving its HTML source and forwarding `parseMode: "HTML"` through the command reply adapter, so command helpers select the renderer explicitly instead of leaking HTML or Markdown syntax as plain text.
