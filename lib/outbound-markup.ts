@@ -205,26 +205,41 @@ export function parseTelegramActionPayload(
   return parseCanonicalTelegramActionAttributes(payload.source);
 }
 
-export function parseTelegramActionPayloads(
+export function parseTelegramActionPayloadRows(
   comment: TelegramTopLevelHtmlComment,
   command: string,
-): Record<string, unknown>[] | undefined {
+): Record<string, unknown>[][] | undefined {
   const payload = getTelegramActionPayloadSource(comment, command);
   if (!payload) return undefined;
   if (payload.source.startsWith("[") || payload.source.startsWith("{")) {
     try {
       const value: unknown = JSON.parse(payload.source);
-      if (isTelegramActionPayload(value)) return [value];
-      return Array.isArray(value) && value.every(isTelegramActionPayload)
-        ? value
-        : undefined;
+      if (isTelegramActionPayload(value)) return [[value]];
+      if (!Array.isArray(value)) return undefined;
+      const rows: Record<string, unknown>[][] = [];
+      for (const entry of value) {
+        if (isTelegramActionPayload(entry)) {
+          rows.push([entry]);
+          continue;
+        }
+        if (
+          !Array.isArray(entry) ||
+          entry.length === 0 ||
+          entry.length > 3 ||
+          !entry.every(isTelegramActionPayload)
+        ) {
+          return undefined;
+        }
+        rows.push(entry);
+      }
+      return rows;
     } catch {
       return undefined;
     }
   }
   if (payload.hasBody) return undefined;
   const attributes = parseCanonicalTelegramActionAttributes(payload.source);
-  return attributes ? [attributes] : undefined;
+  return attributes ? [[attributes]] : undefined;
 }
 
 export function normalizeMarkdownAfterVoiceExtraction(

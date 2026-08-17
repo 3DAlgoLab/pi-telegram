@@ -38,6 +38,7 @@ import {
   handleTelegramCompactCommand,
   handleTelegramCompactConfirmationCallback,
   handleTelegramModelCommand,
+  handleTelegramNextCommand,
   handleTelegramStatusCommand,
   handleTelegramStopCommand,
   parseTelegramCommand,
@@ -1076,6 +1077,26 @@ test("Command helpers run stop command side effects", async () => {
     "status",
     "reply:Aborted current turn. Cleared 1 queued turn.",
   ]);
+});
+
+test("Next command uses native Markdown for an empty queue reply", async () => {
+  const replies: string[] = [];
+  await handleTelegramNextCommand({
+    hasAbortHandler: () => false,
+    isIdle: () => true,
+    hasQueuedItems: () => false,
+    clearPendingModelSwitch: () => {},
+    abortCurrentTurn: () => {},
+    dispatchNextQueuedTurn: () => {},
+    clearFoldForDispatch: () => {},
+    updateStatus: () => {},
+    sendTextReply: async (text) => {
+      replies.push(text);
+    },
+  });
+
+  assert.deepEqual(replies, ["**Queue is empty.**"]);
+  assert.doesNotMatch(replies[0] ?? "", /<\/?[a-z][^>]*>/iu);
 });
 
 test("Command helpers scope abort history preservation to Telegram-owned turns", async () => {

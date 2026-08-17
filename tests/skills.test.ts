@@ -35,6 +35,26 @@ test("Telegram extension contributes both bundled skills", async () => {
   assert.match(sources.get("generated-control-surface") ?? "", /without requiring an explicit user request/u);
 });
 
+test("Generated filesystem surfaces declare structural navigation around paginated entries", async () => {
+  const source = await readFile(
+    join(TELEGRAM_SKILLS_PATH, "generated-control-surface", "SKILL.md"),
+    "utf8",
+  );
+  const lfSource = source.replaceAll("\r\n", "\n");
+  for (const candidate of [lfSource, lfSource.replaceAll("\n", "\r\n")]) {
+    const section = candidate.match(/### Filesystem\r?\n([\s\S]*?)(?=\r?\n### )/u)?.[1] ?? "";
+    const rules = section.match(/^\d+\. .+$/gmu) ?? [];
+    assert.equal(rules.length, 4);
+    assert.match(rules[0] ?? "", /⬆️ Up.*`\/`/u);
+    assert.match(rules[1] ?? "", /⬅️ Previous.*➡️ Next/u);
+    assert.match(rules[2] ?? "", /\b10\b/u);
+    assert.match(rules[3] ?? "", /monospaced.*Refresh/u);
+    assert.match(section, /one `telegram_button` JSON matrix/u);
+    assert.match(section, /numbered text fallback/u);
+    assert.match(section, /user explicitly requests it or durable user Knowledge/u);
+  }
+});
+
 test("Package metadata publishes the bundled skill root", async () => {
   const packageRoot = dirname(TELEGRAM_SKILLS_PATH);
   const manifest = JSON.parse(

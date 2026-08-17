@@ -81,11 +81,11 @@ test("Button reply planner accepts JSON and attributes with one action marker", 
   });
 });
 
-test("Button reply planner expands JSON arrays and the telegram_buttons alias", () => {
+test("Button reply planner expands JSON arrays, compact rows, and the telegram_buttons alias", () => {
   const actions: unknown[] = [];
   const plan = planTelegramButtonReply(
     [
-      '<!-- telegram_button [{"label":"📁 etc","prompt":"/etc"},{"label":"📁 home","prompt":"/home","selected_style":"success"}] -->',
+      '<!-- telegram_button [{"label":"⬆️ Up","prompt":"/"},[{"value":"⬅️ Previous"},{"value":"➡️ Next"}],{"label":"📁 etc","prompt":"/etc"},{"label":"📁 home","prompt":"/home","selected_style":"success"}] -->',
       '<!-- telegram_buttons [{"value":"Next"},{"label":"Refresh","prompt":"/"}] -->',
       '<!-- telegram_buttons {"label":"Single alias","prompt":"One more."} -->',
     ].join("\n"),
@@ -98,6 +98,9 @@ test("Button reply planner expands JSON arrays and the telegram_buttons alias", 
   );
 
   assert.deepEqual(actions, [
+    { text: "⬆️ Up", prompt: "/" },
+    { text: "⬅️ Previous", prompt: "⬅️ Previous" },
+    { text: "➡️ Next", prompt: "➡️ Next" },
     { text: "📁 etc", prompt: "/etc" },
     { text: "📁 home", prompt: "/home", selectedStyle: "success" },
     { text: "Next", prompt: "Next" },
@@ -106,13 +109,32 @@ test("Button reply planner expands JSON arrays and the telegram_buttons alias", 
   ]);
   assert.deepEqual(plan.replyMarkup, {
     inline_keyboard: [
-      [{ text: "📁 etc", callback_data: "btn:1" }],
-      [{ text: "📁 home", callback_data: "btn:2" }],
-      [{ text: "Next", callback_data: "btn:3" }],
-      [{ text: "Refresh", callback_data: "btn:4" }],
-      [{ text: "Single alias", callback_data: "btn:5" }],
+      [{ text: "⬆️ Up", callback_data: "btn:1" }],
+      [
+        { text: "⬅️ Previous", callback_data: "btn:2" },
+        { text: "➡️ Next", callback_data: "btn:3" },
+      ],
+      [{ text: "📁 etc", callback_data: "btn:4" }],
+      [{ text: "📁 home", callback_data: "btn:5" }],
+      [{ text: "Next", callback_data: "btn:6" }],
+      [{ text: "Refresh", callback_data: "btn:7" }],
+      [{ text: "Single alias", callback_data: "btn:8" }],
     ],
   });
+});
+
+test("Button reply planner accepts the three-button compact-row boundary", () => {
+  let nextId = 0;
+  const plan = planTelegramButtonReply(
+    '<!-- telegram_button [[{"value":"One"},{"value":"Two"},{"value":"Three"}]] -->',
+    { registerAction: () => `btn:${++nextId}` },
+  );
+
+  assert.deepEqual(plan.replyMarkup?.inline_keyboard, [[
+    { text: "One", callback_data: "btn:1" },
+    { text: "Two", callback_data: "btn:2" },
+    { text: "Three", callback_data: "btn:3" },
+  ]]);
 });
 
 test("Button reply planner ignores payloads outside the canonical action shape", () => {
@@ -121,6 +143,8 @@ test("Button reply planner ignores payloads outside the canonical action shape",
     [
       '<!-- telegram_button [{"value":"Valid"},null] -->',
       '<!-- telegram_button [1,2] -->',
+      '<!-- telegram_button [[{"value":"1"},{"value":"2"},{"value":"3"},{"value":"4"}]] -->',
+      '<!-- telegram_button [[[{"value":"Nested too deeply"}]]] -->',
       '<!-- telegram_button {"label":"Missing prompt"} -->',
       '<!-- telegram_button label=Continue prompt="Continue." -->',
       '<!-- telegram_button label="Continue"\nContinue.\n-->',

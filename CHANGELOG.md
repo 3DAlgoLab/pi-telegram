@@ -2,6 +2,12 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.33.0: Matrix Controls And Pinned Filesystem Navigation
+
+- `Button Matrix`: Extended `telegram_button` and its plural alias from flat arrays to JSON matrices: top-level objects remain full-width rows, while nested arrays intentionally group one to three peer controls horizontally; empty, oversized, or deeper rows fail closed without changing existing object, attribute, or flat-array behavior.
+- `Filesystem Navigation`: Stabilized Generated Control Surface directory layout: parent traversal is pinned as the first full-width row outside root, available Previous/Next controls share the next compact row, ten-entry pages follow as full-width rows, one JSON-matrix action carries the surface, visible text avoids duplicate plain or monospaced inventories unless user preference overrides it, Refresh is omitted by default, and numbered fallback preserves navigation when buttons are unavailable.
+- `Command Rendering`: Replaced the `/next` empty-queue response's leaked HTML tag with native Rich Markdown so Telegram renders emphasis instead of displaying `<b>` literally.
+
 ## 0.32.0: Compact Button Arrays And Filesystem Surfaces
 
 - `Button Arrays`: Added JSON-array payloads to the canonical colon-free `telegram_button` action so one hidden comment can declare many ordered button rows; `telegram_buttons` is an exact plural alias, while existing single-object and double-quoted attribute forms remain valid.

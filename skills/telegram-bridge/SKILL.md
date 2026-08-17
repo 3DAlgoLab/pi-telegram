@@ -55,11 +55,11 @@ Button forms:
 ```html
 <!-- telegram_button {"label":"Continue","prompt":"Continue with the current plan."} -->
 <!-- telegram_button value="Continue" -->
-<!-- telegram_button [{"label":"📁 etc","prompt":"/etc"},{"label":"📁 home","prompt":"/home"}] -->
-<!-- telegram_buttons [{"value":"Approve"},{"value":"Reject"}] -->
+<!-- telegram_button [{"label":"⬆️ Up","prompt":"/"},[{"value":"⬅️ Previous"},{"value":"➡️ Next"}],{"label":"📁 etc","prompt":"/etc"}] -->
+<!-- telegram_buttons [[{"value":"Approve"},{"value":"Reject"}]] -->
 ```
 
-- `telegram_button` accepts one JSON object, a JSON array of button objects, or double-quoted attributes; `telegram_buttons` is an exact plural alias. Prefer one array comment for multiple buttons. Keep the complete action in one top-level comment and encode JSON line breaks as `\n`.
+- `telegram_button` accepts one JSON object, a JSON matrix, or double-quoted attributes; `telegram_buttons` is an exact plural alias. In a matrix, each top-level object becomes a full-width row and each nested array groups one to three buttons into one horizontal row. Prefer one array comment for multiple buttons. Keep the complete action in one top-level comment and encode JSON line breaks as `\n`.
 - Use `label` plus a self-contained `prompt`, or non-empty `value` when both are identical.
 - Optional `selected_style` is `primary` (default), `success`, or `danger`; style never suppresses prompt admission.
 - If button comments form the whole reply, the bridge supplies the standard choice heading.
