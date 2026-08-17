@@ -2,6 +2,12 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.35.1: Semantic Ragged Control Layouts
+
+- `Row Composition`: Teaches Generated Control Surface to model Telegram controls as an ordered ragged sequence of independently sized semantic rows rather than filling a rectangular matrix: compact rows hold genuine peers, singleton rows isolate independent actions, and symmetry is admitted only when equal relationships or real spatial topology provide evidence for it.
+- `Layout Catalog`: Adds an adaptable shape vocabulary for singleton, binary peer, asymmetric staged, navigation-plus-collection, repeated text-pair, and true rectangular surfaces; agents infer task relationships first and must not force work into a preset shape.
+- `Layout Hierarchy`: Limits word-, phrase-, and icon-plus-text controls to two columns and moves additional choices into more semantic rows; denser rows remain reserved for short position-bearing glyphs or codes. Row widths vary intentionally, preserve structural reading order, forbid uniformity padding, and use rectangular grids only when spatial topology carries real meaning.
+
 ## 0.35.0: Compact Matrix Literal
 
 - `Compact Wire Format`: Adds portable Compact Matrix Literal alongside JSON and attributes: `{value}` copies label to prompt, `{label|prompt}` separates them, top-level cells remain full-width, nested rows preserve horizontal grouping, and atom boundaries trim automatically.
