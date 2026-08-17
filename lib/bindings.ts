@@ -860,6 +860,21 @@ export function registerTelegramLifecycleRuntimeHooks({
       target: turn?.target,
     });
   };
+  let observedAutomaticCompaction = false;
+  const sendCompactionNotice = async (text: string): Promise<void> => {
+    const turn = activeTurnRuntime.get();
+    const target = turn?.target ?? proactivePushTargetGetter?.();
+    if (!target) return;
+    try {
+      await sendMarkdownReply(target.chatId, turn?.replyToMessageId, text, {
+        target,
+      });
+    } catch (error) {
+      recordRuntimeEvent("delivery", error, {
+        phase: "compaction-notice",
+      });
+    }
+  };
   const compactionObserver = Lifecycle.createTelegramCompactionObserverRuntime({
     isContextActive: isSessionContextActive,
     setCompactionInProgress: lifecycle.setCompactionInProgress,
@@ -870,7 +885,10 @@ export function registerTelegramLifecycleRuntimeHooks({
       deferredQueueDispatchRuntime.request,
     dispatchNextQueuedTelegramTurn,
     recordRuntimeEvent,
-    onCompactionAbandoned: activityRuntime.onCompactionAbandoned,
+    onCompactionAbandoned: () => {
+      observedAutomaticCompaction = false;
+      activityRuntime.onCompactionAbandoned();
+    },
   });
   const messageActivityTypingHooks =
     Lifecycle.createTelegramMessageActivityTypingHooks({
@@ -902,6 +920,7 @@ export function registerTelegramLifecycleRuntimeHooks({
       activityRuntime.onSessionShutdown();
       activityVerbosityRuntime?.reset();
       assistantOutputRuntime.stop();
+      observedAutomaticCompaction = false;
       compactionObserver.onSessionShutdown();
       if (event.reason === "quit" && disconnectOnQuit) {
         try {
@@ -916,15 +935,24 @@ export function registerTelegramLifecycleRuntimeHooks({
       }
       await sessionLifecycleRuntime.onSessionShutdown(event, ctx);
     },
-    onSessionBeforeCompact(event, ctx) {
+    async onSessionBeforeCompact(event, ctx) {
       if (!isSessionContextActive(ctx)) return;
+      const shouldNotify = !(lifecycle.isCompactionInProgress?.() ?? false);
+      if (shouldNotify) observedAutomaticCompaction = true;
       activityRuntime.onCompactionStart(Pi.getSessionCompactionReason(event));
       compactionObserver.onSessionBeforeCompact(event, ctx);
+      if (shouldNotify) {
+        await sendCompactionNotice(Commands.TELEGRAM_COMPACTION_STARTED_TEXT);
+      }
     },
-    onSessionCompact(event, ctx) {
+    async onSessionCompact(event, ctx) {
       if (!isSessionContextActive(ctx)) return;
       activityRuntime.onCompactionEnd(Pi.getSessionCompactionReason(event));
       compactionObserver.onSessionCompact(event, ctx);
+      if (observedAutomaticCompaction) {
+        observedAutomaticCompaction = false;
+        await sendCompactionNotice(Commands.TELEGRAM_COMPACTION_COMPLETED_TEXT);
+      }
     },
     async onAgentStart(event, ctx) {
       if (!isSessionContextActive(ctx)) return;

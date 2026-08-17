@@ -2,6 +2,11 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.33.1: Rendered Command Replies And Visible Compaction
+
+- `Command Rendering`: Restored the `/next` empty-queue emphasis by preserving its HTML source and forwarding `parseMode: "HTML"` through the command reply adapter, so command helpers select the renderer explicitly instead of leaking HTML or Markdown syntax as plain text.
+- `Compaction Visibility`: Reports `compacting` ahead of generic active or pending status and sends the same start/completion notices for observed automatic compaction as for manually requested compaction, while retaining queue blocking and deferred dispatch.
+
 ## 0.33.0: Matrix Controls And Pinned Filesystem Navigation
 
 - `Button Matrix`: Extended `telegram_button` and its plural alias from flat arrays to JSON matrices: top-level objects remain full-width rows, while nested arrays intentionally group one to three peer controls horizontally; empty, oversized, or deeper rows fail closed without changing existing object, attribute, or flat-array behavior.
