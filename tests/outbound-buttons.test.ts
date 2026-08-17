@@ -81,13 +81,48 @@ test("Button reply planner accepts JSON and attributes with one action marker", 
   });
 });
 
-test("Button reply planner rejects legacy payload forms", () => {
+test("Button reply planner expands JSON arrays and the telegram_buttons alias", () => {
   const actions: unknown[] = [];
   const plan = planTelegramButtonReply(
     [
-      '<!-- telegram_button: {"value":"Continue"} -->',
+      '<!-- telegram_button [{"label":"📁 etc","prompt":"/etc"},{"label":"📁 home","prompt":"/home","selected_style":"success"}] -->',
+      '<!-- telegram_buttons [{"value":"Next"},{"label":"Refresh","prompt":"/"}] -->',
+      '<!-- telegram_buttons {"label":"Single alias","prompt":"One more."} -->',
+    ].join("\n"),
+    {
+      registerAction: (action) => {
+        actions.push(action);
+        return `btn:${actions.length}`;
+      },
+    },
+  );
+
+  assert.deepEqual(actions, [
+    { text: "📁 etc", prompt: "/etc" },
+    { text: "📁 home", prompt: "/home", selectedStyle: "success" },
+    { text: "Next", prompt: "Next" },
+    { text: "Refresh", prompt: "/" },
+    { text: "Single alias", prompt: "One more." },
+  ]);
+  assert.deepEqual(plan.replyMarkup, {
+    inline_keyboard: [
+      [{ text: "📁 etc", callback_data: "btn:1" }],
+      [{ text: "📁 home", callback_data: "btn:2" }],
+      [{ text: "Next", callback_data: "btn:3" }],
+      [{ text: "Refresh", callback_data: "btn:4" }],
+      [{ text: "Single alias", callback_data: "btn:5" }],
+    ],
+  });
+});
+
+test("Button reply planner ignores payloads outside the canonical action shape", () => {
+  const actions: unknown[] = [];
+  const plan = planTelegramButtonReply(
+    [
+      '<!-- telegram_button [{"value":"Valid"},null] -->',
+      '<!-- telegram_button [1,2] -->',
+      '<!-- telegram_button {"label":"Missing prompt"} -->',
       '<!-- telegram_button label=Continue prompt="Continue." -->',
-      "<!-- telegram_button label='Continue' prompt='Continue.' -->",
       '<!-- telegram_button label="Continue"\nContinue.\n-->',
     ].join("\n"),
     {

@@ -2,6 +2,11 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.32.0: Compact Button Arrays And Filesystem Surfaces
+
+- `Button Arrays`: Added JSON-array payloads to the canonical colon-free `telegram_button` action so one hidden comment can declare many ordered button rows; `telegram_buttons` is an exact plural alias, while existing single-object and double-quoted attribute forms remain valid.
+- `Filesystem Surface`: Made bare filesystem paths—including `/`—legitimate Generated Control Surface intents. Directory surfaces resolve fresh metadata, paginate large listings, preserve secret boundaries, and may use exact path-only button prompts with compact semantic file/folder labels.
+
 ## 0.31.0: State-Derived Generated Control Surfaces
 
 - `Generated Control Surface`: Renamed the optional `control-surface` Skill to `generated-control-surface`, aligned its identity with the architectural primitive, and made Telegram routing evaluate it proactively when controls can materially shorten likely feedback without waiting for an explicit button request; decorative UI still resolves to zero controls.
