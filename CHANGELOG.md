@@ -2,6 +2,12 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.35.0: Compact Matrix Literal
+
+- `Compact Wire Format`: Adds portable Compact Matrix Literal alongside JSON and attributes: `{value}` copies label to prompt, `{label|prompt}` separates them, top-level cells remain full-width, nested rows preserve horizontal grouping, and atom boundaries trim automatically.
+- `Literal Fidelity`: Preserves non-structural printable Unicode—including brackets, quotes, commas, colons, paths, and spaces—while decoding only `\|`, `\}`, and `\\`; unknown/trailing escapes, empty values, repeated separators, controls, malformed delimiters, empty rows, and deeper nesting fail closed before callback registration.
+- `Renderer-Owned Width`: Removes the artificial parser-level row-width cap because Telegram documents none, while bundled Skills keep five columns as the proven default, admit six through eight only for very short position-bearing labels, and direct wider surfaces toward regrouping. A dedicated portable standard owns grammar, JSON-first routing, conformance, and versioning.
+
 ## 0.34.1: Compact Stateful Control Surfaces
 
 - `Prompt Compression`: Teaches Generated Control Surface to encode the smallest sufficient action delta—such as a coordinate, symbol, identifier, or short verb—when visible conversation establishes unambiguous state, while retaining stable identity when delivery or routing could separate action from context.
