@@ -80,6 +80,8 @@ A surface normally contains:
 
 Prefer 2–6 controls for feedback and decisions; navigation collections may use up to 12 when the additional entries remain scannable. Split larger sets by category or page instead of building a button wall. Do not add navigation controls when the surface is a one-step decision.
 
+Present compact metadata as stacked key-value rows that reuse status-surface grammar: a short bold label, a colon, and an inline-code value when the value is path-like, numeric, an identifier, or machine state. Prefer ``**Path:** `/home/llb` `` and ``**Entries:** `1–10 of 52` `` on separate lines over prose fragments joined by a middle dot or other decorative section separator.
+
 ## Truth Modes
 
 Name the basis of the surface when ambiguity matters:
@@ -146,8 +148,8 @@ Treat a user prompt that is exactly a plausible filesystem path—including `/`�
 
 1. Pin `⬆️ Up` as the first full-width row whenever the current path is not filesystem root; its entire prompt is the exact parent path. Omit Up at `/`.
 2. When page traversal exists, place `⬅️ Previous` and `➡️ Next` together in one compact row immediately after Up, omitting either unavailable direction. Page traversal re-inspects the directory and preserves a fixed 10-entry page size; moving Up opens the parent at page one.
-3. Render at most 10 alphabetically ordered entry buttons as full-width rows after structural navigation. Each label uses the entry name plus a semantic folder/file emoji, and its entire prompt may be the exact target path because this Skill defines path-only prompts as navigation intent.
-4. Keep visible text to a compact path and range summary such as `📁 /home/llb · 1–10 of 52`; do not duplicate entry names as a plain or monospaced directory listing. Omit Refresh by default because resubmitting the current path already requests fresh rendering.
+3. Sort entries by semantic category before pagination: visible directories, hidden directories, visible files, then hidden files; sort names alphabetically within each category. Render at most 10 resulting entry buttons as full-width rows after structural navigation. Each label uses the entry name plus a semantic folder/file emoji, and its entire prompt may be the exact target path because this Skill defines path-only prompts as navigation intent.
+4. Keep visible text to two compact status-style rows such as ``**Path:** `/home/llb` `` and ``**Entries:** `1–10 of 52` ``; do not join metadata with a middle dot and do not duplicate entry names as a plain or monospaced directory listing. Omit Refresh by default because resubmitting the current path already requests fresh rendering.
 
 For pi-telegram, emit the complete filesystem control set—Up, compact page traversal, then current-page entries—in one `telegram_button` JSON matrix rather than repeating one hidden comment per button. If prompt buttons are unavailable or fail to render, preserve the same ordering and pagination as an ordinary numbered text fallback, not a monospaced inventory, so free-form path entry remains sufficient. Show a plain or monospaced directory listing instead only when the user explicitly requests it or durable user Knowledge establishes that presentation preference. Never preview credential stores, private keys, browser profiles, cookies, tokens, wallets, or other secret-bearing files, and never raise privileges merely to enumerate a path.
 

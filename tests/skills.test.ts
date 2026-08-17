@@ -47,8 +47,14 @@ test("Generated filesystem surfaces declare structural navigation around paginat
     assert.equal(rules.length, 4);
     assert.match(rules[0] ?? "", /⬆️ Up.*`\/`/u);
     assert.match(rules[1] ?? "", /⬅️ Previous.*➡️ Next/u);
+    assert.match(
+      rules[2] ?? "",
+      /visible directories.*hidden directories.*visible files.*hidden files/u,
+    );
     assert.match(rules[2] ?? "", /\b10\b/u);
+    assert.match(rules[3] ?? "", /\*\*Path:\*\*.*\*\*Entries:\*\*/u);
     assert.match(rules[3] ?? "", /monospaced.*Refresh/u);
+    assert.doesNotMatch(rules[3] ?? "", /·/u);
     assert.match(section, /one `telegram_button` JSON matrix/u);
     assert.match(section, /numbered text fallback/u);
     assert.match(section, /user explicitly requests it or durable user Knowledge/u);
