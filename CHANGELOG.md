@@ -2,6 +2,10 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.30.1: Priority Button Queue Hotfix
+
+- `Priority Queue`: Assistant-authored button callbacks now enter the sorted priority lane ahead of already queued default prompts, aligning the visible lightning marker with actual dispatch order while preserving callback deduplication and FIFO ordering within each lane.
+
 ## 0.30.0: Generated Control Surfaces
 
 - `Generated Control Surface`: Replaced the CLI-bound Button Console with a transport-aware Control Surface Skill that proactively generates truthful contextual controls when they shorten feedback for workflows, stateful systems, navigation, Actor supervision, and decisions while preserving domain ownership, ordinary prompt authority, confirmation boundaries, and stateless regeneration.
