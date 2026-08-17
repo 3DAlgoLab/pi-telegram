@@ -23,12 +23,16 @@ test("Telegram extension contributes both bundled skills", async () => {
   } as never);
 
   assert.deepEqual(resourceHook?.(), { skillPaths: [TELEGRAM_SKILLS_PATH] });
-  const skillNames = ["telegram-bridge", "control-surface"];
+  const skillNames = ["telegram-bridge", "generated-control-surface"];
+  const sources = new Map<string, string>();
   for (const name of skillNames) {
     const source = await readFile(join(TELEGRAM_SKILLS_PATH, name, "SKILL.md"), "utf8");
+    sources.set(name, source);
     assert.match(source, new RegExp(`^name: ${name}$`, "m"));
     assert.match(source, /^description: .+$/m);
   }
+  assert.match(sources.get("telegram-bridge") ?? "", /`generated-control-surface`/u);
+  assert.match(sources.get("generated-control-surface") ?? "", /without requiring an explicit user request/u);
 });
 
 test("Package metadata publishes the bundled skill root", async () => {

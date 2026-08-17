@@ -1,24 +1,31 @@
 ---
-name: control-surface
-description: Generates contextual, evidence-backed prompt-button interfaces as transient control surfaces for workflows, tools, stateful systems, choices, navigation, and operator actions—not only terminals. Use when a user asks the agent to generate buttons or a contextual operating surface through Telegram or another prompt-button transport. Existing transport menus and callback interfaces remain with their runtime owners.
+name: generated-control-surface
+description: Proactively compiles current state, available capabilities, and user intent into contextual, evidence-backed, ephemeral prompt-button interfaces. Use on Telegram turns and other prompt-button transports whenever controls materially shorten likely feedback, without requiring an explicit user request, while omitting decorative UI and preserving domain ownership; fixed transport menus and callbacks remain with their runtime owners.
 ---
 
-# Control Surface
+# Generated Control Surface
 
-Generate a temporary, truthful interface that turns the agent's current understanding and available capabilities into useful controls. The agent remains the interpreter, authority boundary, and interface generator; buttons are contextual prompts, not a second application, hidden daemon, or direct grant of capability.
+Compile a temporary, truthful interface from current state, available capabilities, and user intent. The agent remains the interpreter and authority boundary; the generated surface remains an ephemeral renderer projection, not a second application, hidden daemon, state owner, or direct grant of capability.
 
-## Concept
+## Primitive
 
 ```text
-User intent + current evidence → compact state projection → contextual controls
+interface = f(state, capabilities, intent)
+
+current evidence + available acts + user intent
+→ compact state projection → contextual controls
 → next prompt → authorized act → fresh projection
 ```
 
-Each response is one generated control surface. Reinspect mutable reality after actions and regenerate the surface instead of maintaining a parallel UI model.
+This is late-bound UI rather than a fixed frontend for one backend. Each response is one generated control surface whose renderer may be Telegram, another prompt-button transport, or a numbered fallback. Reinspect mutable reality after actions and regenerate instead of maintaining a parallel UI model.
+
+The primitive belongs to the Surface plane: it projects State, exposes Agency capabilities, and preserves Constitution constraints without absorbing any of those owners. Its reusable competence lives in this Skill so quality depends less on rediscovering interface policy in each turn.
 
 ## Scope
 
-Use this Skill only to synthesize an agent-generated prompt-button surface. Operating or modifying an existing Telegram bridge menu, callback interface, or runtime-owned control stays with that subsystem and does not route here merely because it contains buttons.
+Use this Skill only to synthesize a state-derived prompt-button surface. Operating or modifying an existing Telegram bridge menu, callback interface, fixed frontend, or runtime-owned control stays with that subsystem and does not route here merely because it contains buttons.
+
+On Telegram turns, evaluate this Skill proactively rather than waiting for the user to ask for buttons. Load and apply it when a likely next decision, approval, navigation step, inspection, or bounded action can be made materially easier through controls; its correct output may still contain zero buttons when the admission test fails.
 
 A control surface may expose:
 

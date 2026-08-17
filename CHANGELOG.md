@@ -2,6 +2,11 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.31.0: State-Derived Generated Control Surfaces
+
+- `Generated Control Surface`: Renamed the optional `control-surface` Skill to `generated-control-surface`, aligned its identity with the architectural primitive, and made Telegram routing evaluate it proactively when controls can materially shorten likely feedback without waiting for an explicit button request; decorative UI still resolves to zero controls.
+- `Late-Bound Interface`: Defined generated surfaces as `interface = f(state, capabilities, intent)`: ephemeral renderer projections that expose domain-owned state and agency under constitutional constraints without absorbing parallel state. Telegram remains the first renderer rather than the capability boundary.
+
 ## 0.30.1: Priority Button Queue Hotfix
 
 - `Priority Queue`: Assistant-authored button callbacks now enter the sorted priority lane ahead of already queued default prompts, aligning the visible lightning marker with actual dispatch order while preserving callback deduplication and FIFO ordering within each lane.

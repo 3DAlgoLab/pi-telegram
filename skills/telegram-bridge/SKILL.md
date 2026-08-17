@@ -46,6 +46,8 @@ Use `telegram_attach` outside Telegram turns only when the user explicitly reque
 
 ## Assistant-Authored Actions
 
+On Telegram turns, proactively load `generated-control-surface` when a likely next decision or action may benefit from prompt buttons; do not wait for an explicit button request, and accept zero controls when its admission rules reject decorative or low-value UI.
+
 `telegram_button` and `telegram_voice` are hidden top-level HTML comments, not tools. Emit them at column zero, outside lists, quotes, code blocks, and indentation.
 
 Button forms:
