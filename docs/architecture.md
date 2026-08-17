@@ -327,7 +327,7 @@ Outbound files staged during an active Telegram turn are delivered after that tu
 Assistant-authored final-message actions use hidden top-level comments with colon-free markers; colon-prefixed payloads are rejected:
 
 - `telegram_voice` accepts a JSON object or double-quoted HTML-like attributes and creates voice reply artifacts through configured outbound handlers, programmatic voice handlers, or registered synthesis providers.
-- `telegram_button` accepts a JSON object, JSON matrix, or double-quoted attributes; `telegram_buttons` aliases the same parser. Each top-level matrix object creates one full-width row, while a nested array groups one to three buttons horizontally; every callback enqueues its configured prompt text as a normal Telegram prompt turn.
+- `telegram_button` accepts a JSON object, JSON matrix, or double-quoted attributes; `telegram_buttons` aliases the same parser. Each top-level matrix object creates one full-width row, while a nested array groups one to five buttons horizontally; every callback enqueues its configured prompt text as a normal Telegram prompt turn.
 
 Preview delivery strips top-level action comments before streaming draft Markdown. Comments inside code fences, quotes, lists, or indented examples stay literal.
 

@@ -118,7 +118,9 @@ Re-check mutable targets immediately before execution. Access denial never autho
 
 ## Prompt Buttons
 
-Use the transport's canonical prompt-button syntax. For pi-telegram, one top-level `telegram_button` comment accepts one JSON object, double-quoted attributes, or a JSON matrix. A top-level object becomes one full-width row; a nested array groups one to three objects into one compact horizontal row. Prefer one array comment for multiple controls instead of repeating the marker; `telegram_buttons` is a plural alias, not a different format. Use compact rows only when the controls form one coherent peer group such as Previous/Next, approval alternatives, or view modes; keep ordinary actions full-width.
+Use the transport's canonical prompt-button syntax. For pi-telegram, one top-level `telegram_button` comment accepts one JSON object, double-quoted attributes, or a JSON matrix. A top-level object becomes one full-width row; a nested array groups one to five objects into one compact horizontal row. Prefer one array comment for multiple controls instead of repeating the marker; `telegram_buttons` is a plural alias, not a different format. Use compact rows only when the controls form one coherent peer group such as Previous/Next, approval alternatives, or view modes; keep ordinary actions full-width.
+
+Treat the five-wide matrix as an interaction primitive when spatial position carries meaning. It may project compact keypads, palettes, calendars, seat maps, directional controls, small game boards, and runnable demonstrations that let the user learn a capability by acting rather than reading. Preserve the ordinary admission test: do not manufacture a demo when it would be decorative, and encode enough current state in each button prompt to continue truthfully without inventing a hidden application session.
 
 ```html
 <!-- telegram_button {"label":"🔍 Inspect run","prompt":"Inspect Run run:example read-only, summarize its current status and latest material evidence, then regenerate relevant supervision controls."} -->
