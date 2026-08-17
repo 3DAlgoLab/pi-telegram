@@ -42,7 +42,35 @@ test("Telegram extension contributes both bundled skills", async () => {
   assert.match(generatedSurface, /one or more controls.*parser-level width cap/u);
   assert.match(
     generatedSurface,
-    /Five columns.*default maximum.*Six through eight columns/su,
+    /ordered ragged sequence.*not as a rectangular matrix/su,
+  );
+  assert.match(
+    generatedSurface,
+    /Rectangular grids are one specialization.*genuinely spatial/su,
+  );
+  assert.match(generatedSurface, /genuine peers.*coherent toolbar/su);
+  assert.match(generatedSurface, /1 → 2 → 4 → 1 → 2/u);
+  assert.match(generatedSurface, /never pad a row.*no-op controls/su);
+  assert.match(
+    generatedSurface,
+    /at most two columns.*words, phrases.*more semantic rows/su,
+  );
+  assert.match(
+    generatedSurface,
+    /Three through five columns.*short symbols.*Six through eight/su,
+  );
+  assert.match(generatedSurface, /Never shorten necessary wording/u);
+  assert.match(
+    generatedSurface,
+    /symmetry as an evidence claim.*non-spatial task should be ragged by default/su,
+  );
+  assert.match(generatedSurface, /### Layout Catalog/u);
+  assert.match(generatedSurface, /`1 → 2 → N×1`/u);
+  assert.match(generatedSurface, /Repeated `2`.*Text-bearing choices/u);
+  assert.match(generatedSurface, /`R×C`.*genuine coordinates/u);
+  assert.match(
+    generatedSurface,
+    /Do not select a catalog shape first and force the task into it/u,
   );
   assert.match(
     generatedSurface,

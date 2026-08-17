@@ -118,9 +118,36 @@ Re-check mutable targets immediately before execution. Access denial never autho
 
 ## Prompt Buttons
 
-Use the transport's canonical prompt-button syntax. For pi-telegram, one top-level `telegram_button` comment accepts one JSON object, double-quoted attributes, a JSON matrix, or Compact Matrix Literal (CML). CML uses `{value}` or `{label|prompt}`, trims atom boundaries, preserves other printable text literally, and decodes only `\|`, `\}`, and `\\`; use JSON for multiline prompts, styles, or metadata. A top-level cell becomes one full-width row, while a nested row groups one or more controls horizontally without a parser-level width cap. Prefer one matrix comment for multiple controls instead of repeating the marker; `telegram_buttons` is a plural alias, not a different format. Use compact rows only when the controls form one coherent peer group such as Previous/Next, approval alternatives, or view modes; keep ordinary actions full-width.
+Use the transport's canonical prompt-button syntax. For pi-telegram, one top-level `telegram_button` comment accepts one JSON object, double-quoted attributes, a JSON matrix, or Compact Matrix Literal (CML). CML uses `{value}` or `{label|prompt}`, trims atom boundaries, preserves other printable text literally, and decodes only `\|`, `\}`, and `\\`; use JSON for multiline prompts, styles, or metadata. A top-level cell becomes one full-width row, while a nested row groups one or more controls horizontally without a parser-level width cap. Prefer one layout comment for multiple controls instead of repeating the marker; `telegram_buttons` is a plural alias, not a different format.
 
-Treat a matrix as an interaction primitive when spatial position carries meaning and acting through the surface communicates better than prose. Five columns are proven usable with short, distinct labels and remain the default maximum. Six through eight columns may be used only for very short position-bearing labels whose grouping materially improves the interaction; regroup wider surfaces and use fewer columns or full-width rows when labels need explanation, wrap ambiguously, or lose meaning without prose. Preserve the ordinary admission test: proactively offer an interactive surface even when the user did not request buttons when it materially reduces effort or demonstrates an available capability, but do not manufacture decorative interaction.
+### Semantic Row Composition
+
+Model the control surface as an ordered ragged sequence of independently sized rows, not as a rectangular matrix to fill. Rectangular grids are one specialization for genuinely spatial or coordinate-bearing state; most interfaces should vary row width according to hierarchy, grouping, label pressure, and action priority.
+
+- Put controls in one compact row only when they are genuine peers that answer the same local question or form one coherent toolbar/navigation group.
+- Use a singleton full-width row for a structurally independent, pinned, primary, summary, or high-consequence action when separation improves comprehension.
+- Vary row widths intentionally—for example `1 → 2 → 4 → 1 → 2`—and never pad a row with empty, duplicate, or no-op controls merely to produce uniform dimensions.
+- Preserve reading order across rows: orientation and structural navigation first, primary content or choices next, secondary controls afterward, and destructive actions visibly separated when present.
+- Use at most two columns when buttons carry words, phrases, icon-plus-text labels, or other text that must be read; move additional peer choices into more semantic rows rather than compressing four or more textual buttons across a phone-width line. Three through five columns are for short symbols, glyphs, coordinates, or compact codes whose position carries meaning. Six through eight may be used only for single-glyph or similarly minimal position-bearing labels whose grouping materially improves the interaction. Never shorten necessary wording merely to increase row density; regroup or use full-width rows when labels need explanation, wrap ambiguously, or lose meaning without prose.
+
+Treat symmetry as an evidence claim about the task. Equal rectangular rows imply equal relationships and stable spatial correspondence; do not make that claim merely because the renderer supports a grid. Infer the task's independent, peer, ordered, hierarchical, and spatial relationships first, then let those relationships determine row boundaries and widths. A non-spatial task should be ragged by default, and its asymmetry should remain visible when that best communicates hierarchy or action weight.
+
+### Layout Catalog
+
+Use this catalog as a shape vocabulary, not a fixed menu of demos:
+
+- `1`: One independent full-width action, destination, summary drill-down, or consequence boundary.
+- `2`: One binary or tightly coupled peer decision; neither control is visually subordinated.
+- `1 → 2`: One orienting or primary action followed by a local peer pair.
+- `2 → 1`: One peer mode/filter pair followed by an independent continuation or detail action.
+- `1 → 2 → N×1`: Pinned structural navigation, compact traversal, then a vertical collection of independently readable items.
+- `1 → 2 → 3 → 1`: Ragged staged control where context, local alternatives, denser short peers, and a separated terminal action have different semantic weight.
+- Repeated `2`: Text-bearing choices distributed down the screen instead of compressed across it.
+- `R×C`: A rectangular layout only when rows and columns map to genuine coordinates, repeated dimensions, or another stable spatial topology.
+
+Adapt a surface by identifying relationships, grouping only genuine peers, ordering groups by task hierarchy, applying label-pressure limits, and then choosing the least regular layout that remains immediately comprehensible. Do not select a catalog shape first and force the task into it.
+
+Preserve the ordinary admission test: proactively offer an interactive surface even when the user did not request buttons when it materially reduces effort or demonstrates an available capability, but do not manufacture decorative interaction.
 
 ### Interaction State And Prompt Compression
 
