@@ -116,10 +116,11 @@ Re-check mutable targets immediately before execution. Access denial never autho
 
 ## Prompt Buttons
 
-Use the transport's canonical prompt-button syntax. For pi-telegram, emit a top-level hidden comment:
+Use the transport's canonical prompt-button syntax. For pi-telegram, one top-level `telegram_button` comment accepts either one JSON object, double-quoted attributes, or a JSON array whose objects become separate button rows. Prefer one array comment for multiple controls instead of repeating the marker; `telegram_buttons` is a plural alias, not a different format.
 
 ```html
 <!-- telegram_button {"label":"🔍 Inspect run","prompt":"Inspect Run run:example read-only, summarize its current status and latest material evidence, then regenerate relevant supervision controls."} -->
+<!-- telegram_button [{"label":"📁 etc","prompt":"/etc"},{"label":"📁 home","prompt":"/home"}] -->
 ```
 
 Button prompts must:
@@ -141,7 +142,7 @@ Use normal console programs as the capability owner. Check exit status and stder
 
 ### Filesystem
 
-Resolve paths before listing. Directory navigation may show safe names and metadata without reading contents. Never preview credential stores, private keys, browser profiles, cookies, tokens, wallets, or other secret-bearing files. Use unambiguous paths in prompts and offer safe operations before mutations.
+Treat a user prompt that is exactly a plausible filesystem path—including `/`—as legitimate intent to render that location through a generated filesystem surface. Resolve and freshly inspect it before display. For directories, show safe names and types without reading file contents, paginate large listings, and offer useful Up, Previous, Next, and Refresh controls. A filesystem entry button may use the exact target path as its entire prompt because this Skill defines path-only prompts as navigation intent; use the entry name plus a semantic folder/file emoji as its label. Never preview credential stores, private keys, browser profiles, cookies, tokens, wallets, or other secret-bearing files, and never raise privileges merely to enumerate a path.
 
 ### Workflows And Actor Runs
 

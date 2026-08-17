@@ -170,30 +170,61 @@ function parseCanonicalTelegramActionAttributes(
   return Object.keys(attributes).length > 0 ? attributes : undefined;
 }
 
-export function parseTelegramActionPayload(
+function getTelegramActionPayloadSource(
   comment: TelegramTopLevelHtmlComment,
   command: string,
-): Record<string, unknown> | undefined {
+): { source: string; hasBody: boolean } | undefined {
   const parsed = parseTopLevelTelegramComment(comment, command);
-  if (!parsed) return undefined;
-  if (parsed.head.trimStart().startsWith(":")) return undefined;
+  if (!parsed || parsed.head.trimStart().startsWith(":")) return undefined;
   const source = [parsed.head, parsed.body]
     .filter((part): part is string => part !== undefined)
     .join("\n")
     .trim();
-  if (!source) return undefined;
-  if (source.startsWith("{")) {
+  return source ? { source, hasBody: parsed.body !== undefined } : undefined;
+}
+
+function isTelegramActionPayload(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+export function parseTelegramActionPayload(
+  comment: TelegramTopLevelHtmlComment,
+  command: string,
+): Record<string, unknown> | undefined {
+  const payload = getTelegramActionPayloadSource(comment, command);
+  if (!payload) return undefined;
+  if (payload.source.startsWith("{")) {
     try {
-      const value: unknown = JSON.parse(source);
-      return value !== null && typeof value === "object" && !Array.isArray(value)
-        ? (value as Record<string, unknown>)
+      const value: unknown = JSON.parse(payload.source);
+      return isTelegramActionPayload(value) ? value : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  if (payload.hasBody) return undefined;
+  return parseCanonicalTelegramActionAttributes(payload.source);
+}
+
+export function parseTelegramActionPayloads(
+  comment: TelegramTopLevelHtmlComment,
+  command: string,
+): Record<string, unknown>[] | undefined {
+  const payload = getTelegramActionPayloadSource(comment, command);
+  if (!payload) return undefined;
+  if (payload.source.startsWith("[") || payload.source.startsWith("{")) {
+    try {
+      const value: unknown = JSON.parse(payload.source);
+      if (isTelegramActionPayload(value)) return [value];
+      return Array.isArray(value) && value.every(isTelegramActionPayload)
+        ? value
         : undefined;
     } catch {
       return undefined;
     }
   }
-  if (parsed.body !== undefined) return undefined;
-  return parseCanonicalTelegramActionAttributes(source);
+  if (payload.hasBody) return undefined;
+  const attributes = parseCanonicalTelegramActionAttributes(payload.source);
+  return attributes ? [attributes] : undefined;
 }
 
 export function normalizeMarkdownAfterVoiceExtraction(

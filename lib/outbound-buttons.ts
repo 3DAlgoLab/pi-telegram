@@ -11,7 +11,7 @@ import type {
   TelegramInlineKeyboardMarkup,
 } from "./keyboard.ts";
 import {
-  parseTelegramActionPayload,
+  parseTelegramActionPayloads,
   parseTopLevelTelegramComment,
   replaceTopLevelHtmlComments,
 } from "./outbound-markup.ts";
@@ -163,11 +163,14 @@ export function planTelegramButtonReply(
 ): TelegramButtonReplyPlan {
   const keyboard: TelegramOutboundButtonMarkup["inline_keyboard"] = [];
   const stripped = replaceTopLevelHtmlComments(markdown, (comment) => {
-    const command = parseTopLevelTelegramComment(comment, "telegram_button");
+    const command = ["telegram_button", "telegram_buttons"].find((candidate) =>
+      parseTopLevelTelegramComment(comment, candidate),
+    );
     if (!command) return comment.raw;
-    const payload = parseTelegramActionPayload(comment, "telegram_button");
-    const action = payload ? parseTelegramButtonAction(payload) : undefined;
-    if (action) {
+    const payloads = parseTelegramActionPayloads(comment, command) ?? [];
+    for (const payload of payloads) {
+      const action = parseTelegramButtonAction(payload);
+      if (!action) continue;
       keyboard.push([
         {
           text: action.text,

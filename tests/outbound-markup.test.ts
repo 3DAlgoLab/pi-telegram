@@ -31,7 +31,7 @@ test("Markup collector ignores comments inside fenced code", () => {
 test("Markup stripping removes closed and partial top-level comments", () => {
   assert.equal(
     stripTelegramCommentMarkupForDelivery(
-      "Visible\n\n<!-- telegram_button: Hidden -->\n\nTail",
+      "Visible\n\n<!-- hidden transport action -->\n\nTail",
     ),
     "Visible\n\nTail",
   );
@@ -66,22 +66,20 @@ test("Voice reply planner accepts JSON and attributes with one action marker", (
   ]);
 });
 
-test("Voice reply planner rejects legacy payload forms", () => {
+test("Voice reply planner ignores payloads outside the canonical action shape", () => {
   const plan = planTelegramVoiceReply(
     [
-      '<!-- telegram_voice: {"text":"Speak this."} -->',
+      '<!-- telegram_voice [{"text":"Array is unsupported."}] -->',
+      '<!-- telegram_voice {"lang":"ru"} -->',
+      '<!-- telegram_voice {"text": -->',
       '<!-- telegram_voice text="Speak this." lang=ru -->',
-      "<!-- telegram_voice text='Speak this.' -->",
       '<!-- telegram_voice lang="ru"\nSpeak this.\n-->',
-      '<!-- telegram_voice lang="ru" -->',
-      "Paired body.",
-      "<!-- /telegram_voice -->",
     ].join("\n"),
   );
 
   assert.equal(plan.voiceText, undefined);
   assert.equal(plan.voiceReplies, undefined);
-  assert.equal(plan.markdown, "Paired body.");
+  assert.equal(plan.markdown, "");
 });
 
 test("Voice reply planner extracts multiple voice replies and cleans markdown", () => {

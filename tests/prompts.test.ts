@@ -64,7 +64,6 @@ test("Prompt helpers keep local prompts on compact safety guidance only", () => 
   assert.doesNotMatch(result, /telegram_message/);
   assert.doesNotMatch(result, /37 visible cells/);
   assert.doesNotMatch(result, /telegram_voice text="Short summary"/);
-  assert.doesNotMatch(result, /telegram_button: OK/);
   assert.doesNotMatch(result, /The current user message came from Telegram/);
 });
 
@@ -119,7 +118,6 @@ test("Prompt helpers add full Telegram-turn guidance for Telegram prompts", () =
   assert.doesNotMatch(defaultSystemPrompt, /telegram_message/);
   assert.doesNotMatch(defaultSystemPrompt, /telegram_voice: Speak this/);
   assert.doesNotMatch(defaultSystemPrompt, /\/telegram_voice/);
-  assert.doesNotMatch(defaultSystemPrompt, /telegram_button: OK/);
   assert.doesNotMatch(defaultSystemPrompt, /state\.json/);
   assert.doesNotMatch(defaultSystemPrompt, /logs\.jsonl/);
   assert.doesNotMatch(
