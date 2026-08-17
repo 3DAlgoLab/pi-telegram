@@ -41,7 +41,7 @@ Console programs are one capability source, not the defining boundary. Use the r
 
 - Generate controls from current evidence, an explicit contract, or clearly labeled conversational state.
 - Keep domain state with its real owner; never invent a shadow navigation tree, task database, or application session.
-- Make every button prompt self-contained: identify the target, intended result, relevant constraints, and freshness requirement.
+- Make every button prompt minimally sufficient for a truthful continuation: reuse unambiguous visible conversational context, but include stable target, state, constraint, or freshness identity whenever omission could change the action.
 - Treat a click as an ordinary user request subject to the same authority, validation, and safety rules as typed text.
 - Never infer permission for destructive, privileged, credential-bearing, external, or irreversible work merely because a button exists.
 - Do not encode secrets, hidden reasoning, credentials, private keys, tokens, cookies, wallet material, or sensitive content in labels or prompts.
@@ -120,7 +120,15 @@ Re-check mutable targets immediately before execution. Access denial never autho
 
 Use the transport's canonical prompt-button syntax. For pi-telegram, one top-level `telegram_button` comment accepts one JSON object, double-quoted attributes, or a JSON matrix. A top-level object becomes one full-width row; a nested array groups one to five objects into one compact horizontal row. Prefer one array comment for multiple controls instead of repeating the marker; `telegram_buttons` is a plural alias, not a different format. Use compact rows only when the controls form one coherent peer group such as Previous/Next, approval alternatives, or view modes; keep ordinary actions full-width.
 
-Treat the five-wide matrix as an interaction primitive when spatial position carries meaning. It may project compact keypads, palettes, calendars, seat maps, directional controls, small game boards, and runnable demonstrations that let the user learn a capability by acting rather than reading. Preserve the ordinary admission test: do not manufacture a demo when it would be decorative, and encode enough current state in each button prompt to continue truthfully without inventing a hidden application session.
+Treat the five-wide matrix as an interaction primitive when spatial position carries meaning and acting through the surface communicates better than prose. Five-wide rows are proven usable with short, distinct labels; use fewer columns or full-width rows when labels need explanation, wrap ambiguously, or lose meaning without prose. Preserve the ordinary admission test: proactively offer an interactive surface even when the user did not request buttons when it materially reduces effort or demonstrates an available capability, but do not manufacture decorative interaction.
+
+### Interaction State And Prompt Compression
+
+- Encode the smallest sufficient action delta in repeated controls. When the visible surface and immediately preceding conversation establish one unambiguous state, a coordinate, symbol, identifier, or short verb can be the entire prompt; do not duplicate the same board, form, or selection state into every button payload.
+- Keep compact prompts semantically closed over their context. If delivery may be delayed, reordered, routed elsewhere, or separated from the state projection, add a stable target or state identity rather than copying a large volatile snapshot.
+- Keep trivial interaction state in the visible conversation. When state becomes too large, long-lived, or error-prone for reliable conversational reconstruction, persist a small human-auditable Markdown state artifact at a deterministic task-owned path and render from it. The artifact belongs to the underlying task or domain, not to this Skill as shadow application state.
+- When transition rules are non-trivial or correctness-sensitive, use a small deterministic state-transition owner—script, module, tool, or existing domain API—that validates `current state + admitted action → next state`; let the model compile the surface from its result instead of informally simulating every transition. Do not create code or files for a trivial one-step interaction.
+- Treat repeated clicks against current state, not stale button appearance. If an action is already consumed or unavailable, keep state unchanged and say so briefly. Preserve an occupied or selected button when spatial layout matters, using its label or selected style as the visual state; omit unavailable controls when layout does not matter. Transport-level disabled buttons are optional, not assumed.
 
 ```html
 <!-- telegram_button {"label":"🔍 Inspect run","prompt":"Inspect Run run:example read-only, summarize its current status and latest material evidence, then regenerate relevant supervision controls."} -->
@@ -130,8 +138,8 @@ Treat the five-wide matrix as an interaction primitive when spatial position car
 Button prompts must:
 
 - Preserve the user's language.
-- Name exact targets where possible.
-- Express one coherent next intent.
+- Name exact targets when visible context does not make them unambiguous.
+- Express one coherent next intent with the shortest sufficient action delta.
 - Carry material safety and scope restrictions.
 - Request fresh inspection when state may have changed.
 - Avoid embedding volatile output that should be rediscovered.

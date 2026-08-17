@@ -2,6 +2,12 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.34.1: Compact Stateful Control Surfaces
+
+- `Prompt Compression`: Teaches Generated Control Surface to encode the smallest sufficient action delta—such as a coordinate, symbol, identifier, or short verb—when visible conversation establishes unambiguous state, while retaining stable identity when delivery or routing could separate action from context.
+- `Interaction State`: Keeps trivial state conversational, moves large or error-prone state to deterministic task-owned Markdown artifacts, delegates correctness-sensitive rules to small domain-owned transition implementations, and handles repeated clicks as current-state no-ops or selections without assuming transport-level disabled buttons.
+- `Five-Wide UX`: Treats five-column matrices as useful for position-bearing interaction only with short distinct labels, falls back to fewer columns when readability degrades, and proactively offers interactive surfaces when they materially reduce user effort rather than merely decorating a reply.
+
 ## 0.34.0: Five-Wide Matrix Controls
 
 - `Button Matrix`: Expands compact nested JSON rows from one-to-three to one-to-five buttons for grids, keypads, palettes, games, and other position-bearing controls while preserving full-width top-level rows and existing object, attribute, flat-array, and plural-alias compatibility.
