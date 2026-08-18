@@ -388,6 +388,31 @@ test("Outbound message tool sends direct Telegram markdown with parsed buttons",
   ]);
 });
 
+test("Outbound message tool errors start on a visually separated line", async () => {
+  const tools = new Map<string, RegisteredAnyTool>();
+  const api = {
+    registerTool: (definition: RegisteredAnyTool) => {
+      if (definition.name) tools.set(definition.name, definition);
+    },
+  } as unknown as ExtensionAPI;
+  registerTelegramOutboundMessageTool(api, {
+    getDefaultChatId: () => 7,
+    getActiveTurn: () => ({ chatId: 7 }),
+    canSendDirect: () => true,
+    planMessage: (markdown) => ({ markdown }),
+    sendMarkdownMessage: async () => 9,
+  });
+
+  const tool = tools.get("telegram_message");
+  assert.ok(tool);
+  await assert.rejects(
+    tool.execute("tool-call", { text: "hello" }),
+    (error: unknown) =>
+      error instanceof Error &&
+      /^\ntelegram_message cannot send directly/u.test(error.message),
+  );
+});
+
 test("Outbound message tool sends explicit thread target", async () => {
   const tools = new Map<string, RegisteredAnyTool>();
   const sent: Array<{ chatId: number; target?: unknown }> = [];
