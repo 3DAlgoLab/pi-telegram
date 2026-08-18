@@ -28,6 +28,8 @@ pi install git:github.com/llblab/pi-telegram
 
 The 0.21 extension platform requires Pi `0.80.6` or newer. Its Activity API uses the public `agent_settled` lifecycle event to keep retries/continuations under one activity identity and release that identity only after the run fully settles.
 
+Pi is the primary and only officially supported host. Narrow host-neutral adapters preserve ordered prompt blocks and normalize synchronous or asynchronous legacy/generic settings services for Pi-compatible hosts, but this is best-effort compatibility rather than an OMP support guarantee. Alternate-host shims must still reproduce required Pi lifecycle semantics—especially `agent_settled`—and their maintainers own ongoing validation.
+
 ## Quick Start
 
 ### 1. Create a Telegram bot

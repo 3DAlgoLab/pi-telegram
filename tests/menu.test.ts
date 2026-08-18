@@ -263,7 +263,7 @@ test("Menu state builder wires runtime to settings and model-registry ports", as
   const runtime = createTelegramModelMenuRuntime<typeof model>();
   const getModelMenuState = createTelegramModelMenuStateBuilder({
     runtime,
-    createSettingsManager: (cwd) => {
+    createSettingsManager: async (cwd) => {
       createdForCwd = cwd;
       return {
         reload: async () => {

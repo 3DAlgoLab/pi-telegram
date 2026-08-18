@@ -2,6 +2,10 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.36.4: Async Host Settings Compatibility
+
+- `Async Host Settings`: Normalizes synchronous or asynchronous settings construction plus legacy enabled-model methods or generic `get` / `set` services at the Pi adapter boundary before model-menu reads and scoped-model persistence, improving compatible-host interoperability without changing native Pi behavior or weakening required `agent_settled` semantics.
+
 ## 0.36.3: Ordered Prompt Compatibility
 
 - `Prompt Compatibility`: Preserves plain and ordered-block system prompts across Pi-compatible runtimes; Telegram guidance remains a distinct block when the host supplies blocks, while unavailable transport strips only Telegram tool metadata without collapsing unrelated prompt context.
