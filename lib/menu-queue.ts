@@ -192,7 +192,7 @@ function buildTelegramQueueItemSubmenuReplyMarkup(
           callback_data: `queue:skip-set:${chatId}:${replyToMessageId}:keep`,
         },
         {
-          text: isSkipped ? "🟡 Skip" : "⚫️ Skip",
+          text: isSkipped ? "🔴 Skip" : "⚫️ Skip",
           callback_data: `queue:skip-set:${chatId}:${replyToMessageId}:skip`,
         },
       ],

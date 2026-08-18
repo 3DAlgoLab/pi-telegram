@@ -41,6 +41,14 @@ test("Telegram extension contributes all bundled skills", async () => {
   assert.match(bridge, /without a parser-level width cap/u);
   assert.match(bridge, /six through eight.*short position-bearing labels/u);
   assert.match(bridge, /bundled `generative-apps` Skill/u);
+  assert.match(
+    bridge,
+    /maintained Generative App.*prefer binding or invoking.*one-shot prompt buttons/su,
+  );
+  assert.match(
+    bridge,
+    /routing breadcrumb.*not permission.*discover capability-specific apps.*hard-code their identities/su,
+  );
   assert.match(bridge, /before Pi queue admission/u);
   const generatedSurface = sources.get("generated-control-surface") ?? "";
   assert.match(generatedSurface, /without requiring an explicit user request/u);
@@ -103,6 +111,14 @@ test("Telegram extension contributes all bundled skills", async () => {
   assert.match(generatedSurface, /human-auditable Markdown state artifact/u);
   assert.match(generatedSurface, /current state \+ admitted action → next state/u);
   assert.match(generatedSurface, /complementary `generative-apps` Skill/u);
+  assert.match(
+    generatedSurface,
+    /logical button-matrix.*full JSON\/CML.*third button Skill/su,
+  );
+  assert.match(
+    generatedSurface,
+    /ordinary model-mediated prompt buttons beside deterministic bound methods/su,
+  );
   assert.match(generatedSurface, /latency, token, cost, reliability, or UX value/u);
   assert.match(generatedSurface, /repeated clicks against current state/u);
   assert.match(
@@ -118,6 +134,14 @@ test("Telegram extension contributes all bundled skills", async () => {
   assert.match(generativeApps, /Standalone deterministic application/u);
   assert.match(generativeApps, /View\/controller adapter/u);
   assert.match(generativeApps, /bound method.*ordinary prompt/su);
+  assert.match(
+    generativeApps,
+    /same logical button matrix.*full JSON\/CML notation.*no third button Skill/su,
+  );
+  assert.match(
+    generativeApps,
+    /Compile only the stable transitions.*model-mediated plane.*use `generated-control-surface` instead/su,
+  );
   assert.match(generativeApps, /transport-independent concept/u);
   assert.match(generativeApps, /`generated` \/ `generative` distinction is intentional/u);
   assert.match(generativeApps, /replace: true/u);

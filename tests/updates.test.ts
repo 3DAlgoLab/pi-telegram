@@ -944,8 +944,8 @@ test("Update runtime denies guest messages before pairing", async () => {
     applyQueuedTelegramTurnReactionByMessageId: () => true,
     pairTelegramUserIfNeeded: async () => false,
     answerCallbackQuery: async () => {},
-    answerGuestQuery: async (id, text) => {
-      events.push(`guest-deny:${id}:${text ?? ""}`);
+    answerGuestQuery: async (id, text, options) => {
+      events.push(`guest-deny:${id}:${text ?? ""}:${options?.parseMode ?? ""}`);
     },
     handleAuthorizedTelegramCallbackQuery: async () => {},
     sendTextReply: async () => 1,
@@ -965,7 +965,9 @@ test("Update runtime denies guest messages before pairing", async () => {
     },
     "ctx",
   );
-  assert.deepEqual(events, ["guest-deny:gq-unpaired:🚫 Access denied."]);
+  assert.deepEqual(events, [
+    "guest-deny:gq-unpaired:🚫 <b>Access denied.</b>:HTML",
+  ]);
 });
 
 test("Update runtime answers guest query with access denied for unauthorized users", async () => {
@@ -977,8 +979,8 @@ test("Update runtime answers guest query with access denied for unauthorized use
     applyQueuedTelegramTurnReactionByMessageId: () => true,
     pairTelegramUserIfNeeded: async () => false,
     answerCallbackQuery: async () => {},
-    answerGuestQuery: async (id, text) => {
-      events.push(`guest-deny:${id}:${text ?? ""}`);
+    answerGuestQuery: async (id, text, options) => {
+      events.push(`guest-deny:${id}:${text ?? ""}:${options?.parseMode ?? ""}`);
     },
     handleAuthorizedTelegramCallbackQuery: async () => {},
     sendTextReply: async () => 1,
@@ -998,7 +1000,9 @@ test("Update runtime answers guest query with access denied for unauthorized use
     },
     "ctx",
   );
-  assert.deepEqual(events, ["guest-deny:gq-deny:🚫 Access denied."]);
+  assert.deepEqual(events, [
+    "guest-deny:gq-deny:🚫 <b>Access denied.</b>:HTML",
+  ]);
 });
 
 test("Update runtime preserves both flags from complete reaction sets with removal precedence", async () => {
@@ -1953,7 +1957,7 @@ test("Update runtime forwards edited messages owned by another target instance",
   assert.deepEqual(events, ["forward-edit:instance-b:ctx:21"]);
 });
 
-test("Update runtime keeps unauthorized message replies in the source thread", async () => {
+test("Update runtime keeps unauthorized HTML denials in the source thread", async () => {
   const events: string[] = [];
   await executeTelegramUpdatePlan(
     {
@@ -1979,7 +1983,7 @@ test("Update runtime keeps unauthorized message replies in the source thread", a
       handleAuthorizedTelegramCallbackQuery: async () => {},
       sendTextReply: async (chatId, replyToMessageId, text, options) => {
         events.push(
-          `reply:${chatId}:${replyToMessageId}:${text}:${options?.target?.chatId}:${options?.target?.threadId}`,
+          `reply:${chatId}:${replyToMessageId}:${text}:${options?.parseMode}:${options?.target?.chatId}:${options?.target?.threadId}`,
         );
         return undefined;
       },
@@ -1993,7 +1997,7 @@ test("Update runtime keeps unauthorized message replies in the source thread", a
   );
 
   assert.deepEqual(events, [
-    "reply:7:9:This bot is not authorized for your account.:7:44",
+    "reply:7:9:🚫 <b>Access denied.</b>:HTML:7:44",
   ]);
 });
 
@@ -2076,7 +2080,7 @@ test("Update runtime handles callback deny and message pair flows", async () => 
   );
   assert.deepEqual(events, [
     "pair:1",
-    "answer:cb:This bot is not authorized for your account.",
+    "answer:cb:🚫 Access denied.",
     "reply:7:9:Telegram bridge paired with this account.:7:44",
     "message",
   ]);
