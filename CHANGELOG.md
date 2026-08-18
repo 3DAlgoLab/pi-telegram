@@ -2,6 +2,10 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## Unreleased
+
+- `Prompt Compatibility`: Preserves plain, lazy, and ordered-block system prompts across Pi-compatible runtimes; Telegram guidance remains a distinct block when the host supplies blocks, while unavailable transport strips only Telegram tool metadata without collapsing unrelated prompt context.
+
 ## 0.35.2: Independent Surface Dimensions
 
 - `Horizontal Boundary`: Establishes eight controls as the Generated Control Surface phone-width UX maximum regardless of the parser's uncapped row grammar; nine or more controls must regroup, and six-to-eight remains limited to minimal position-bearing labels.

@@ -13,6 +13,7 @@ import {
   createTelegramModelContextAvailabilityRuntime,
   createTelegramProactiveBeforeAgentStartHook,
   TELEGRAM_ATTACH_PROMPT_GUIDELINES,
+  type TelegramSystemPrompt,
   TELEGRAM_ATTACH_PROMPT_SNIPPET,
 } from "../lib/prompts.ts";
 
@@ -22,7 +23,7 @@ type BeforeAgentStartHookEvent = Parameters<
 
 function createBeforeAgentStartEvent(
   prompt: string,
-  systemPrompt: string,
+  systemPrompt: TelegramSystemPrompt,
 ): BeforeAgentStartHookEvent {
   return { prompt, systemPrompt } as BeforeAgentStartHookEvent;
 }
@@ -53,10 +54,30 @@ test("Prompt helpers append context-aware system prompt suffixes", () => {
   );
 });
 
+test("Prompt helpers preserve ordered system prompt blocks", () => {
+  assert.deepEqual(
+    buildTelegramBridgeSystemPrompt({
+      prompt: "local hello",
+      systemPrompt: ["base", "project context"],
+      telegramPrefix: "[telegram]",
+      localSystemPromptSuffix: "\nlocal bridge available",
+      telegramTurnSystemPromptSuffix: "\ntelegram turn contract",
+    }),
+    {
+      systemPrompt: [
+        "base",
+        "project context",
+        "\nlocal bridge available",
+      ],
+    },
+  );
+});
+
 test("Prompt helpers keep local prompts on compact safety guidance only", () => {
   const result = createTelegramBeforeAgentStartHook()(
     createBeforeAgentStartEvent("local hello", "base"),
   ).systemPrompt;
+  assert.ok(typeof result === "string");
   assert.match(result, /Telegram bridge available/);
   assert.match(result, /`telegram-bridge` Skill/);
   assert.doesNotMatch(result, /telegram_help/);
@@ -95,6 +116,7 @@ test("Prompt helpers add full Telegram-turn guidance for Telegram prompts", () =
   const defaultSystemPrompt = createTelegramBeforeAgentStartHook()(
     createBeforeAgentStartEvent(" [telegram] hello", "base"),
   ).systemPrompt;
+  assert.ok(typeof defaultSystemPrompt === "string");
   assert.match(
     defaultSystemPrompt,
     /The current user message came from Telegram/,
@@ -133,6 +155,7 @@ test("Prompt helpers add full Telegram-turn guidance for Telegram prompts", () =
   const topicSystemPrompt = createTelegramBeforeAgentStartHook()(
     createBeforeAgentStartEvent(" [telegram|thread:C] hello", "base"),
   ).systemPrompt;
+  assert.ok(typeof topicSystemPrompt === "string");
   assert.match(
     topicSystemPrompt,
     /The current user message came from Telegram/,
@@ -157,6 +180,31 @@ test("Prompt helpers leave local prompts private for proactive result push", asy
   assert.deepEqual(result, { systemPrompt: "base\nlocal bridge available" });
 });
 
+test("Prompt helpers resolve lazy ordered system prompt blocks", async () => {
+  const hook = createTelegramProactiveBeforeAgentStartHook({
+    baseHook: createTelegramBeforeAgentStartHook({
+      telegramPrefix: "[telegram]",
+      localSystemPromptSuffix: "\nlocal bridge available",
+      telegramTurnSystemPromptSuffix: "\ntelegram turn contract",
+    }),
+    isAvailable: () => true,
+  });
+  const event = {
+    prompt: "local prompt",
+    systemPrompt: async () => ["base", "project context"],
+  } as Parameters<typeof hook>[0];
+
+  const result = await hook(event, "ctx");
+
+  assert.deepEqual(result, {
+    systemPrompt: [
+      "base",
+      "project context",
+      "\nlocal bridge available",
+    ],
+  });
+});
+
 test("Prompt helpers skip suffix injection when Telegram transport is unavailable", async () => {
   const hook = createTelegramProactiveBeforeAgentStartHook({
     baseHook: createTelegramBeforeAgentStartHook({
@@ -172,10 +220,32 @@ test("Prompt helpers skip suffix injection when Telegram transport is unavailabl
     ...TELEGRAM_ATTACH_PROMPT_GUIDELINES.map((line) => `- ${line}`),
   ].join("\n");
   const result = await hook(
-    createBeforeAgentStartEvent("[telegram] hello", stalePrompt),
+    {
+      prompt: "[telegram] hello",
+      systemPrompt: async () => stalePrompt,
+    } as Parameters<typeof hook>[0],
     "ctx",
   );
   assert.deepEqual(result, { systemPrompt: "base" });
+});
+
+test("Prompt helpers strip unavailable Telegram tools from each ordered block", async () => {
+  const hook = createTelegramProactiveBeforeAgentStartHook({
+    isAvailable: () => false,
+  });
+  const stalePrompt = [
+    `base\n- telegram_attach: ${TELEGRAM_ATTACH_PROMPT_SNIPPET}\ntail`,
+    "project context",
+  ];
+
+  const result = await hook(
+    createBeforeAgentStartEvent("[telegram] hello", stalePrompt),
+    "ctx",
+  );
+
+  assert.deepEqual(result, {
+    systemPrompt: ["base\ntail", "project context"],
+  });
 });
 
 test("Model-context availability binding safely delegates after late composition", () => {
