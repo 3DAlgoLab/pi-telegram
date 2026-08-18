@@ -54,7 +54,7 @@ Use emoji as stable semantic markers, not decoration. Emoji carry transportable 
 | `➡️` | Choose replacement target | Thread replace/restore target buttons that select which Pi instance should move to the current thread | Use inside the second replace/restore chooser, not for ordinary reroutes. |
 | `☑️` | Activate / choose this item | Model detail activation action, generated button-only choice heading | Positive selection cue; use `🟢 Active` for already-current state. |
 | `❌` | No / cancel | Confirmation cancel buttons | Use for safe cancellation, not destructive removal. |
-| `🗑` | Delete / suppress | Queue delete actions, destructive confirmations, suppression reaction | The explicit queue button deletes; the reaction reversibly suppresses a waiting turn. |
+| `🗑` | Delete / defer removal | Destructive confirmations and removal reaction | In the queue menu, reversible Keep/Skip selectors replace immediate deletion. |
 
 ### State Indicators And Button Grammars
 
@@ -68,7 +68,14 @@ Use emoji as stable semantic markers, not decoration. Emoji carry transportable 
 
 ### Queue Reaction Shortcuts
 
-Queue reactions are shortcut controls for waiting turns. Preserve their semantics across Telegram reactions, queue-menu rows, status previews, and tests.
+Queue reactions are shortcut controls for waiting turns. Preserve their semantics across Telegram reactions, queue-menu rows, status previews, and tests. Positive emoji control the Priority/Normal lane; negative emoji control Keep/Skip. These categories are independent, may coexist, and mutate only their own dimension. Crossing lanes appends the prompt at the destination FIFO tail; changing Keep/Skip or changing emoji within one category preserves lane position. Skip wins only when dispatch reaches the prompt.
+
+Queue item detail renders two independent selector rows:
+
+- `🟡 Priority` / `⚫️ Normal` or `⚫️ Priority` / `🟣 Normal` selects the lane.
+- `🟢 Keep` / `⚫️ Skip` or `⚫️ Keep` / `🟡 Skip` selects dispatch disposition.
+
+The menu may clear internal Skip but cannot remove a reaction created by the user through Telegram's Bot API.
 
 | Emoji | Meaning | Canonical surfaces | Notes |
 | --- | --- | --- | --- |
@@ -77,11 +84,11 @@ Queue reactions are shortcut controls for waiting turns. Preserve their semantic
 | `❤` / `❤️` | Promote to priority | Queue reaction shortcut | Normalize display consistently where code normalizes reactions. |
 | `🕊` / `🕊️` | Promote to priority | Queue reaction shortcut | Soft/peaceful promotion gesture. |
 | `🔥` | Promote to priority | Queue reaction shortcut | Urgent/hot promotion gesture. |
-| `👎` | Suppress waiting turn | Queue reaction shortcut and suppressed queue badge | Suppression is reversible and is not negative feedback to the agent. |
-| `👻` | Suppress waiting turn | Queue reaction shortcut and suppressed queue badge | Disappear/suppress metaphor. |
-| `💔` | Suppress waiting turn | Queue reaction shortcut and suppressed queue badge | Reversible cancel metaphor. |
-| `💩` | Suppress waiting turn | Queue reaction shortcut and suppressed queue badge | Reversible reject metaphor. |
-| `🗑` | Suppress or explicitly delete | Queue reaction shortcut, suppressed queue badge, and queue delete UI | The reaction is reversible suppression; only the explicit queue button is destructive. |
+| `👎` | Defer removal of waiting turn | Queue reaction shortcut and queue emoji marker | Reversible until the marked turn reaches dispatch; not negative feedback to the agent. |
+| `👻` | Defer removal of waiting turn | Queue reaction shortcut and queue emoji marker | Disappear/remove metaphor. |
+| `💔` | Defer removal of waiting turn | Queue reaction shortcut and queue emoji marker | Reversible cancel metaphor. |
+| `💩` | Defer removal of waiting turn | Queue reaction shortcut and queue emoji marker | Reversible reject metaphor. |
+| `🗑` | Defer removal | Queue reaction shortcut and queue emoji marker | Like Skip, the reaction remains reversible until dispatch reaches the marked turn. |
 
 ### Decorative Or Local-Example Emoji
 

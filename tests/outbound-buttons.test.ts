@@ -147,7 +147,7 @@ test("Button reply planner leaves compact-row width to the renderer profile", ()
 test("Button reply planner decodes compact matrix literals", () => {
   const actions: unknown[] = [];
   const plan = planTelegramButtonReply(
-    String.raw`<!-- telegram_button [{  Up  | / }[{1}{2}{3}{4}{5}{6}{7}{8}]{A {["x"], v1: \| B|C:\\Games\}}] -->`,
+    String.raw`<!-- telegram_button [{  Up  | / }[{1}{2}{3}{4}{5}{6}{7}{8}]{Stop|music-player::stop|danger}{A {["x"], v1: \| B|C:\\Games\}}] -->`,
     {
       registerAction: (action) => {
         actions.push(action);
@@ -166,6 +166,11 @@ test("Button reply planner decodes compact matrix literals", () => {
     { text: "6", prompt: "6" },
     { text: "7", prompt: "7" },
     { text: "8", prompt: "8" },
+    {
+      text: "Stop",
+      prompt: "music-player::stop",
+      selectedStyle: "danger",
+    },
     { text: 'A {["x"], v1: | B', prompt: "C:\\Games}" },
   ]);
   assert.deepEqual(
@@ -175,9 +180,28 @@ test("Button reply planner decodes compact matrix literals", () => {
     [
       ["Up"],
       ["1", "2", "3", "4", "5", "6", "7", "8"],
+      ["Stop"],
       ['A {["x"], v1: | B'],
     ],
   );
+});
+
+test("Compact button style accepts exactly the selected-style enum", () => {
+  for (const selectedStyle of ["primary", "success", "danger"] as const) {
+    const actions: unknown[] = [];
+    planTelegramButtonReply(
+      `<!-- telegram_button {Run|run-now|${selectedStyle}} -->`,
+      {
+        registerAction: (action) => {
+          actions.push(action);
+          return "tgbtn:styled";
+        },
+      },
+    );
+    assert.deepEqual(actions, [
+      { text: "Run", prompt: "run-now", selectedStyle },
+    ]);
+  }
 });
 
 test("Button reply planner ignores payloads outside the canonical action shape", () => {
@@ -212,7 +236,10 @@ test("Button reply planner rejects malformed compact matrix literals atomically"
     "{x|}",
     "{x|   }",
     "{|x}",
-    "{x|y|z}",
+    "{x|y|unknown}",
+    "{x|y|}",
+    "{x||danger}",
+    "{x|y|danger|extra}",
     String.raw`{x\q}`,
     "{x\\",
     "[]",
@@ -264,6 +291,23 @@ test("Button reply planner supplies visible text and stores selected style for a
   });
 });
 
+test("Button reply planner retains hidden Generative App revision binding in stored actions", () => {
+  const store = createTelegramButtonActionStore();
+  const plan = planTelegramButtonReply(
+    "<!-- telegram_button {Next|counter::increment} -->",
+    {
+      registerAction: store.register,
+      binding: { generation: "generation-a", app: "counter", revision: 4 },
+    },
+  );
+  const callbackData = plan.replyMarkup?.inline_keyboard[0]?.[0]?.callback_data;
+  assert.deepEqual(store.resolve(callbackData), {
+    binding: { generation: "generation-a", app: "counter", revision: 4 },
+    prompt: "counter::increment",
+    text: "Next",
+  });
+});
+
 test("Button action store resolves registered actions once and expires old entries", () => {
   const store = createTelegramButtonActionStore();
   const callbackData = store.register({
@@ -308,6 +352,77 @@ test("Button prompt turn preserves prompt text and queue metadata", () => {
   ]);
   assert.equal(turn.historyText, "Run this now.");
   assert.equal(turn.statusSummary, "Run");
+});
+
+test("Button callback handler keeps successful bound actions successful when old styling fails", async () => {
+  const answered: string[] = [];
+  const invoked: string[] = [];
+  const edited: unknown[] = [];
+  const handled = await handleTelegramButtonCallbackQuery(
+    {
+      id: "q-bound",
+      data: "tgbtn:bound",
+      message: {
+        message_id: 2,
+        chat: { id: 1 },
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "Next", callback_data: "tgbtn:bound" }],
+          ],
+        },
+      },
+    },
+    "ctx",
+    {
+      resolveAction: () => ({ text: "Next", prompt: "music::next" }),
+      answerCallbackQuery: async (_id, text) => {
+        answered.push(text ?? "");
+      },
+      invokeBoundAction: async (_query, action) => {
+        invoked.push(action.prompt);
+        return "new";
+      },
+      enqueueButtonPrompt: () => {
+        throw new Error("bound actions must not enter the model queue");
+      },
+      editMessageReplyMarkup: async (chatId, messageId, replyMarkup) => {
+        edited.push({ chatId, messageId, replyMarkup });
+        throw new Error("old message cannot be restyled");
+      },
+    },
+  );
+  assert.equal(handled, true);
+  assert.deepEqual(invoked, ["music::next"]);
+  assert.deepEqual(answered, ["Done."]);
+  assert.equal(edited.length, 1);
+});
+
+test("Button callback handler answers bound-action failures without queue fallback", async () => {
+  const answered: string[] = [];
+  await assert.rejects(
+    handleTelegramButtonCallbackQuery(
+      {
+        id: "q-bound-failed",
+        data: "tgbtn:bound-failed",
+        message: { message_id: 2, chat: { id: 1 } },
+      },
+      "ctx",
+      {
+        resolveAction: () => ({ text: "Broken", prompt: "music::broken" }),
+        answerCallbackQuery: async (_id, text) => {
+          answered.push(text ?? "");
+        },
+        invokeBoundAction: async () => {
+          throw new Error("app failed");
+        },
+        enqueueButtonPrompt: () => {
+          throw new Error("failed bound actions must not enter the model queue");
+        },
+      },
+    ),
+    /app failed/,
+  );
+  assert.deepEqual(answered, ["Generative App action failed."]);
 });
 
 test("Button callback handler enqueues owned actions, marks the selected button, and consumes expired buttons", async () => {

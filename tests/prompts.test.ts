@@ -192,6 +192,7 @@ test("Model-context availability removes only active Telegram tools and restores
   let activeTools = [
     "read",
     "telegram_attach",
+    "telegram_bind",
     "foreign_tool",
     "telegram_message",
   ];
@@ -207,7 +208,11 @@ test("Model-context availability removes only active Telegram tools and restores
 
   runtime.reconcile();
   assert.deepEqual(activeTools, ["read", "foreign_tool"]);
-  assert.deepEqual([...memory.toolNames], ["telegram_attach", "telegram_message"]);
+  assert.deepEqual([...memory.toolNames], [
+    "telegram_attach",
+    "telegram_bind",
+    "telegram_message",
+  ]);
 
   available = true;
   runtime.reconcile();
@@ -215,6 +220,7 @@ test("Model-context availability removes only active Telegram tools and restores
     "read",
     "foreign_tool",
     "telegram_attach",
+    "telegram_bind",
     "telegram_message",
   ]);
   assert.equal(memory.toolNames.size, 0);

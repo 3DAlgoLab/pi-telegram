@@ -1,10 +1,10 @@
 # Compact Matrix Literal
 
-> Status: Portable v1 standard implemented by the `pi-telegram` 0.35.0 release candidate.
+> Status: Portable v2 standard implemented by the unreleased `pi-telegram` control-surface parser.
 
 Compact Matrix Literal (CML) is a bounded-depth text format for ordered key-value cells arranged as singleton or compact rows. It optimizes repeated interactive controls where JSON field names, quotes, and commas dominate the payload.
 
-CML is transport-neutral. An embedding maps each decoded cell's `key` and `value` to its own domain. The `pi-telegram` profile maps `key` to button label and `value` to button prompt.
+CML is transport-neutral. An embedding maps each decoded cell's `key`, `value`, and optional `variant` to its own domain. The `pi-telegram` profile maps them to button label, prompt, and selected style.
 
 ## Goals
 
@@ -17,7 +17,7 @@ CML is transport-neutral. An embedding maps each decoded cell's `key` and `value
 
 ## Non-Goals
 
-- Replacing JSON for arbitrary objects, metadata, styles, or extensible schemas.
+- Replacing JSON for arbitrary objects, multiline values, non-positional metadata, or extensible schemas.
 - Defining callback ownership, application state, rendering policy, or transport behavior.
 - Recovering partial intent from malformed input.
 - Defining one universal visual row-width limit for every renderer.
@@ -27,7 +27,7 @@ CML is transport-neutral. An embedding maps each decoded cell's `key` and `value
 A decoded payload is an ordered non-empty list of non-empty rows:
 
 ```text
-Cell = { key: string, value: string }
+Cell = { key: string, value: string, variant?: string }
 Rows = Cell[][]
 ```
 
@@ -45,6 +45,13 @@ A cell with two atoms separates key and value with one unescaped vertical bar:
 {🟥|2,5} == { key: "🟥", value: "2,5" }
 ```
 
+A cell with three atoms adds one optional positional variant. The variant is valid only when the explicit value atom is present:
+
+```text
+{Stop|music-player::stop|danger}
+== { key: "Stop", value: "music-player::stop", variant: "danger" }
+```
+
 ## Grammar
 
 The normative structural grammar is:
@@ -56,6 +63,7 @@ element  := cell | row
 row      := "[" ws cell (ws cell)* ws "]"
 cell     := "{" atom "}"
           | "{" atom "|" atom "}"
+          | "{" atom "|" atom "|" atom "}"
 atom     := atom-unit+
 atom-unit := ordinary | "\\|" | "\\}" | "\\\\"
 ws       := *(SP | HTAB | CR | LF)
@@ -71,9 +79,10 @@ Examples:
 [{Up|/}[{Prev|page-1}{Next|page-3}]{etc|/etc}]
 [[{1}{2}{3}{4}{5}{6}{7}{8}]]
 {A \| B|C:\\Games\}}
+{Stop|music-player::stop|danger}
 ```
 
-These normalize respectively to one copied singleton cell, one key-value singleton cell, a mixed singleton/compact matrix, one eight-cell row, and `{ key: "A | B", value: "C:\\Games}" }`.
+These normalize respectively to one copied singleton cell, one key-value singleton cell, a mixed singleton/compact matrix, one eight-cell row, `{ key: "A | B", value: "C:\\Games}" }`, and one key-value cell with the `danger` variant.
 
 ## Atoms, Whitespace, And Escapes
 
@@ -95,7 +104,7 @@ Every other printable character is literal inside a cell, including:
 { [ ] " : , / emoji and ordinary spaces
 ```
 
-An opening `{` has no structural meaning after a cell has begun. Square brackets are structural only outside a cell. A second unescaped vertical bar is invalid. When multiline text or additional metadata is needed, the producer uses the embedding's JSON or other full-fidelity form.
+An opening `{` has no structural meaning after a cell has begun. Square brackets are structural only outside a cell. One or two unescaped vertical bars select the two- or three-atom form; a third is invalid. Every selected atom must remain non-empty after trimming. When multiline text or non-positional metadata is needed, the producer uses the embedding's JSON or other full-fidelity form.
 
 ## Width Policy
 
@@ -111,7 +120,7 @@ A conforming parser:
 2. Parses exactly one `payload` and rejects trailing non-whitespace input.
 3. Rejects empty atoms, empty matrices, empty rows, and nesting deeper than one row inside the top-level matrix.
 4. Rejects missing, extra, crossed, or mismatched delimiters.
-5. Rejects a second unescaped vertical bar in a cell.
+5. Accepts at most two unescaped vertical bars in a cell and rejects a third.
 6. Decodes only `\|`, `\}`, and `\\`; unknown or trailing escapes fail.
 7. Trims atom boundaries, then rejects empty values and remaining control characters.
 8. Returns no partial rows or cells after any failure.
@@ -140,8 +149,9 @@ For `telegram_button` and its exact `telegram_buttons` alias:
 - A nested row becomes one horizontal row.
 - `{value}` is equivalent to JSON `{"value":"value"}`.
 - `{label|prompt}` is equivalent to JSON `{"label":"label","prompt":"prompt"}`.
-- JSON and double-quoted attributes remain the full-fidelity forms.
-- `selected_style` and future metadata are not represented by CML v1.
+- `{label|prompt|selected_style}` is equivalent to JSON `{"label":"label","prompt":"prompt","selected_style":"selected_style"}`.
+- The third atom is accepted only when the prompt atom is present and its exact value is `primary`, `success`, or `danger`.
+- JSON and double-quoted attributes remain the full-fidelity forms for Generative App script output, multiline values, and other metadata.
 - Invalid CML is stripped with its enclosing recognized action comment and registers no callbacks, matching existing fail-closed action behavior.
 
 Example embedding:
@@ -158,7 +168,7 @@ A conformance suite covers properties rather than incident-specific strings.
 
 ### Accepted
 
-- Singular copied and key-value cells.
+- Singular copied, key-value, and key-value-variant cells.
 - Top-level singleton rows.
 - Nested rows at widths one, five, and eight.
 - Mixed singleton and compact rows.
@@ -173,7 +183,7 @@ A conformance suite covers properties rather than incident-specific strings.
 - Empty payload, matrix, row, key, or value.
 - Deeper nesting.
 - Missing or mismatched delimiters.
-- A second unescaped separator.
+- A third unescaped separator, an empty positional atom, or a profile-invalid variant.
 - Unknown or trailing escapes.
 - Internal control characters.
 - Commas between cells.
@@ -184,6 +194,6 @@ Every rejected case proves zero callback registration.
 
 ## Versioning
 
-This document defines CML v1. Compatible embeddings may impose documented host-level byte, cell-count, or width limits without changing the core grammar, but must preserve bounded-depth and fail-closed semantics.
+This document defines CML v2. The three-atom cell is the explicit syntactic discriminator from v1: v1 parsers reject it atomically, while v2 parsers cannot reinterpret a valid v1 cell. Compatible embeddings may impose documented host-level byte, cell-count, variant-enum, or width limits without changing the core grammar, but must preserve bounded-depth and fail-closed semantics.
 
-Future versions must not assign new meaning to input rejected by a security or ownership boundary without an explicit version discriminator. Metadata fields, styles, and deeper structures require a revised standard rather than permissive v1 parsing.
+Future versions must not assign new meaning to input rejected by a security or ownership boundary without an explicit syntactic discriminator. Non-positional metadata and deeper structures require a revised standard rather than permissive recovery.

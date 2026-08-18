@@ -895,7 +895,10 @@ test("Update runtime controller binds update and reaction ports", async () => {
     },
     "ctx",
   );
-  assert.deepEqual(events, ["reaction:ctx:9:priority", "message:ctx:10"]);
+  assert.deepEqual(events, [
+    "reaction:ctx:9:reaction-transition",
+    "message:ctx:10",
+  ]);
 });
 
 test("Update runtime routes guest messages through guest handler", async () => {
@@ -998,16 +1001,26 @@ test("Update runtime answers guest query with access denied for unauthorized use
   assert.deepEqual(events, ["guest-deny:gq-deny:🚫 Access denied."]);
 });
 
-test("Update runtime reconciles the complete reaction set with removal precedence", async () => {
+test("Update runtime preserves both flags from complete reaction sets with removal precedence", async () => {
   const events: string[] = [];
   const deps = {
     allowedUserId: 7,
     ctx: TEST_CONTEXT,
     applyQueuedTelegramTurnReactionByMessageId: (
       id: number,
-      disposition: { kind: string; emoji?: string },
+      disposition: {
+        kind: string;
+        emoji?: string;
+        priorityEmoji?: string | null;
+        suppressionEmoji?: string | null;
+      },
     ) => {
-      events.push(`apply:${id}:${disposition.kind}:${disposition.emoji ?? ""}`);
+      const detail = disposition.kind === "reaction-transition"
+        ? `p:${disposition.priorityEmoji === undefined ? "=" : disposition.priorityEmoji ?? "-"};s:${disposition.suppressionEmoji === undefined ? "=" : disposition.suppressionEmoji ?? "-"}`
+        : disposition.kind === "priority-suppressed"
+          ? `${disposition.priorityEmoji}+${disposition.suppressionEmoji}`
+          : disposition.emoji ?? "";
+      events.push(`apply:${id}:${disposition.kind}:${detail}`);
       return true;
     },
   };
@@ -1129,7 +1142,7 @@ test("Update runtime reconciles the complete reaction set with removal precedenc
       old_reaction: [],
       new_reaction: [
         { type: "emoji", emoji: "👍" },
-        { type: "emoji", emoji: "👎" },
+        { type: "emoji", emoji: "💩" },
       ],
     },
     deps,
@@ -1168,21 +1181,21 @@ test("Update runtime reconciles the complete reaction set with removal precedenc
     deps,
   );
   assert.deepEqual(events, [
-    "apply:10:priority:👍",
-    "apply:11:default:",
-    "apply:12:suppressed:👎",
-    "apply:13:priority:⚡",
-    "apply:14:priority:❤",
-    "apply:15:priority:🕊",
-    "apply:16:priority:🔥",
-    "apply:17:suppressed:👻",
-    "apply:18:suppressed:💔",
-    "apply:19:suppressed:💩",
-    "apply:20:suppressed:🗑",
-    "apply:21:suppressed:👎",
-    "apply:22:priority:👍",
-    "apply:23:default:",
-    "apply:24:priority:👍",
+    "apply:10:reaction-transition:p:👍;s:=",
+    "apply:11:reaction-transition:p:-;s:=",
+    "apply:12:reaction-transition:p:=;s:👎",
+    "apply:13:reaction-transition:p:⚡;s:=",
+    "apply:14:reaction-transition:p:❤;s:=",
+    "apply:15:reaction-transition:p:🕊;s:=",
+    "apply:16:reaction-transition:p:🔥;s:=",
+    "apply:17:reaction-transition:p:=;s:👻",
+    "apply:18:reaction-transition:p:=;s:💔",
+    "apply:19:reaction-transition:p:=;s:💩",
+    "apply:20:reaction-transition:p:=;s:🗑",
+    "apply:21:reaction-transition:p:👍;s:💩",
+    "apply:22:reaction-transition:p:=;s:-",
+    "apply:23:reaction-transition:p:=;s:-",
+    "apply:24:reaction-transition:p:👍;s:-",
   ]);
 });
 
@@ -1213,7 +1226,11 @@ test("Reaction reconciliation materializes pending groups before queue mutation"
       },
     },
   );
-  assert.deepEqual(events, ["media:30", "text:30", "apply:30:suppressed"]);
+  assert.deepEqual(events, [
+    "media:30",
+    "text:30",
+    "apply:30:reaction-transition",
+  ]);
 });
 
 test("Reaction reconciliation rechecks execution authority after group flush", async () => {
@@ -1291,7 +1308,7 @@ test("Update runtime handles authorized group reactions and ignores other users"
     deps,
   );
 
-  assert.deepEqual(events, ["apply:31:suppressed:-1001"]);
+  assert.deepEqual(events, ["apply:31:reaction-transition:-1001"]);
 });
 
 test("Update runtime retains foreign reactions when forwarding is unavailable", async () => {
