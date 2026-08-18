@@ -168,22 +168,23 @@ Examples:
 - `⚫️ Priority` / `🟣 Normal`
 - `1` / `🟣 2` / `3`
 
-## Vertical Option Lists
+## Option Lists
 
-Vertical option lists choose one value from a potentially longer list, for example model selection, thinking level, voice reply mode, or time injection mode.
+Option lists choose one value from a fixed set, for example model selection, thinking level, voice reply mode, or time injection mode.
 
 Rules:
 
-- Put each option on its own row.
+- Put each option on its own row when labels are long, the set may grow, or scanning benefits from full width.
+- A fixed set of short, ordered peer values may use compact rows of up to three buttons.
+- Keep a semantically distinct value such as thinking `off` on its own full-width row before grouped intensity values.
 - Mark only the current value with `🟢`.
 - Leave non-current values without emoji.
 - Use lowercase labels when the option is a value.
 
 Examples:
 
-- `hidden`
-- `🟢 mirror`
-- `always`
+- Vertical: `hidden`, `🟢 mirror`, `always`.
+- Thinking: full-width `off`, then `minimal` / `low` / `🟢 medium`, then `high` / `xhigh` / `max`.
 
 ## Generated Prompt Buttons
 

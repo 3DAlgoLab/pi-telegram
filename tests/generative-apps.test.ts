@@ -629,7 +629,8 @@ test("telegram_bind Tool exposes mutually exclusive install and invocation shape
     const script = await writeApp(root, "counter", statefulApp);
     registerTelegramBindTool(pi, { agentDir });
     assert.equal(tool?.name, "telegram_bind");
-    assert.equal(Array.isArray((tool?.parameters as { anyOf?: unknown[] }).anyOf), true);
+    assert.equal((tool?.parameters as { type?: unknown }).type, "object");
+    assert.equal("anyOf" in (tool?.parameters as object), false);
     const installed = await tool!.execute("call-1", {
       app: "counter",
       script,

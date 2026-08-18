@@ -2149,10 +2149,19 @@ test("Menu helpers build model, thinking, and status UI payloads", () => {
     thinkingMarkup.inline_keyboard[0]?.[0]?.callback_data,
     "menu:back",
   );
-  assert.equal(
-    thinkingMarkup.inline_keyboard.some((row) => row[0]?.text === "🟢 medium"),
-    true,
-  );
+  assert.deepEqual(thinkingMarkup.inline_keyboard.slice(1), [
+    [{ text: "off", callback_data: "thinking:set:off" }],
+    [
+      { text: "minimal", callback_data: "thinking:set:minimal" },
+      { text: "low", callback_data: "thinking:set:low" },
+      { text: "🟢 medium", callback_data: "thinking:set:medium" },
+    ],
+    [
+      { text: "high", callback_data: "thinking:set:high" },
+      { text: "xhigh", callback_data: "thinking:set:xhigh" },
+      { text: "max", callback_data: "thinking:set:max" },
+    ],
+  ]);
   const statusMarkup = buildStatusReplyMarkup(modelA, "medium", 3);
   const statusCallbackData = statusMarkup.inline_keyboard.flatMap((row) =>
     row.map((button) => button.callback_data),

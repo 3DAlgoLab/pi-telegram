@@ -86,7 +86,7 @@ Enable the optional capabilities the bridge needs in the [@BotFather](https://t.
 
 1. Enable guest mode so the bot can answer mentions and replies in chats where it is not a member.
 2. Enable private-chat Threaded Mode; when it is available, one live instance becomes the profile's leader and later visible Pi instances register as followers. Without it, the bridge stays in classic single-owner DM mode.
-3. Make the bot an administrator in any chat where the queue reaction shortcuts (👍 prioritize, 👎 suppress) should work. Reaction updates require admin rights, so the shortcuts silently do nothing in non-admin chats; private chats deliver reactions without admin rights.
+3. Make the bot an administrator in any chat where the queue reaction shortcuts should work. Reaction updates require admin rights, so the shortcuts silently do nothing in non-admin chats; private chats deliver reactions without admin rights.
 
 ## What It Feels Like
 
