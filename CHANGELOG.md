@@ -2,6 +2,10 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.36.5: Separated Tool Errors
+
+- `Separated Tool Errors`: Prefixes Telegram attachment and direct-message Tool failures with one normalized leading newline so Pi renders error evidence on a visually separated line beneath the Tool name without changing the underlying diagnostic text.
+
 ## 0.36.4: Async Host Settings Compatibility
 
 - `Async Host Settings`: Normalizes synchronous or asynchronous settings construction plus legacy enabled-model methods or generic `get` / `set` services at the Pi adapter boundary before model-menu reads and scoped-model persistence, improving compatible-host interoperability without changing native Pi behavior or weakening required `agent_settled` semantics.
