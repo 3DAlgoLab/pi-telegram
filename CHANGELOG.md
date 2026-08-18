@@ -2,6 +2,10 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## Unreleased
+
+- `Prompt Compatibility`: Preserves plain and ordered-block system prompts across Pi-compatible runtimes; Telegram guidance remains a distinct block when the host supplies blocks, while unavailable transport strips only Telegram tool metadata without collapsing unrelated prompt context.
+
 ## 0.36.2: Provider-Compatible Controls
 
 - `Provider-Compatible Bind Schema`: Exposes `telegram_bind` through one top-level JSON object schema while retaining runtime enforcement of mutually exclusive install and invocation forms, avoiding providers that reject top-level union schemas before any tool call can run.
