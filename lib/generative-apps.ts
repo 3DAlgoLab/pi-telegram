@@ -490,7 +490,7 @@ async function executeGenerativeAppWorker(options: {
       if (settled || terminationError) return;
       terminationError = error;
       worker.postMessage({ type: "abort" });
-      const forcedTermination = setTimeout(terminateAndFinish, 50);
+      const forcedTermination = setTimeout(terminateAndFinish, 250);
       forcedTermination.unref?.();
     };
     const abort = (): void => {
@@ -507,9 +507,14 @@ async function executeGenerativeAppWorker(options: {
     }, options.methodTimeoutMs);
     timeout.unref?.();
     options.execution?.signal.addEventListener("abort", abort, { once: true });
-    worker.once("message", (message: { error?: string; ok?: boolean; result?: unknown }) => {
+    worker.on("message", (message: {
+      error?: string;
+      ok?: boolean;
+      result?: unknown;
+      type?: string;
+    }) => {
       if (terminationError) {
-        terminateAndFinish();
+        if (message?.type === "abort-ack") terminateAndFinish();
       } else if (message?.ok === true) {
         finish(undefined, message.result);
         void worker.terminate();

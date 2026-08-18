@@ -186,6 +186,38 @@ test("Button reply planner decodes compact matrix literals", () => {
   );
 });
 
+test("Button reply planner preserves semantics across adaptive JSON and CML compression", () => {
+  const sources = [
+    '[[{"label":"Pause","prompt":"music::pause"},{"value":"Next"}],{"value":"Status"}]',
+    '[[{"label":"Pause","prompt":"music::pause"}{"value":"Next"}]{"value":"Status"}]',
+    '[[{"label":"Pause","prompt":"music::pause"},{Next}],{Status}]',
+    '[[{Pause|music::pause}{Next}]{Status}]',
+  ];
+  for (const source of sources) {
+    const actions: unknown[] = [];
+    const plan = planTelegramButtonReply(
+      `<!-- telegram_button ${source} -->`,
+      {
+        registerAction: (action) => {
+          actions.push(action);
+          return `btn:${actions.length}`;
+        },
+      },
+    );
+    assert.deepEqual(actions, [
+      { text: "Pause", prompt: "music::pause" },
+      { text: "Next", prompt: "Next" },
+      { text: "Status", prompt: "Status" },
+    ]);
+    assert.deepEqual(
+      plan.replyMarkup?.inline_keyboard.map((row) =>
+        row.map((button) => button.text),
+      ),
+      [["Pause", "Next"], ["Status"]],
+    );
+  }
+});
+
 test("Compact button style accepts exactly the selected-style enum", () => {
   for (const selectedStyle of ["primary", "success", "danger"] as const) {
     const actions: unknown[] = [];
@@ -213,6 +245,7 @@ test("Button reply planner ignores payloads outside the canonical action shape",
       '<!-- telegram_button [[]] -->',
       '<!-- telegram_button [[[{"value":"Nested too deeply"}]]] -->',
       '<!-- telegram_button {"label":"Missing prompt"} -->',
+      '<!-- telegram_button [{"value":"Valid"}{"label":"Missing prompt"}] -->',
       '<!-- telegram_button label=Continue prompt="Continue." -->',
       '<!-- telegram_button label="Continue"\nContinue.\n-->',
     ].join("\n"),
@@ -248,7 +281,9 @@ test("Button reply planner rejects malformed compact matrix literals atomically"
     "[{x}",
     "[{x}}]",
     "[[[{deep}]]]",
-    "[{a},{b}]",
+    "[,{a}]",
+    "[{a},,{b}]",
+    "[{a},]",
     "{x|line\nbreak}",
     "[{x}] trailing",
   ]) {

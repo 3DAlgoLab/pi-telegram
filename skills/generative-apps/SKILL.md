@@ -1,6 +1,6 @@
 ---
 name: generative-apps
-description: Design, author, review, install, replace, invoke, or debug reusable Generative Apps that combine generated button interfaces, deterministic bound methods, and optional model-mediated prompts. Use for standalone applications and bounded view/controller adapters rendered through pi-telegram.
+description: Design, author, review, install, replace, invoke, or debug reusable Generative Apps that combine generated button interfaces, deterministic bound methods, and optional model-mediated prompts. Use for standalone applications and bounded view/controller adapters rendered through pi-telegram; prefer Generated Control Surface when no reusable deterministic program is earned.
 ---
 
 # Generative Apps
@@ -28,6 +28,10 @@ Generative Apps complement `generated-control-surface`:
 Generated Control Surface → current context → model → one ephemeral surface
 Generative App             → model → reusable program → many evolving surfaces
 ```
+
+Both Skills use the same logical button matrix and `label + prompt` interaction model. The Telegram runtime owns its full JSON/CML notation and callback routing; this Skill owns reusable program judgment, while `generated-control-surface` owns ephemeral agent-authored composition. Shared rendering needs no third button Skill and does not collapse those responsibilities.
+
+An app may mix deterministic `app::method` controls and ordinary prompts in one view. Compile only the stable transitions that benefit from inference bypass; keep explanation, interpretation, teaching, and adaptation on the model-mediated plane. When no reusable state or deterministic loop earns a script, load and use `generated-control-surface` instead.
 
 The `generated` / `generative` distinction is intentional. Do not rename `generated-control-surface` to a competing generative term.
 

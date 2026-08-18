@@ -62,6 +62,7 @@ Use emoji as stable semantic markers, not decoration. Emoji carry transportable 
 | --- | --- | --- | --- |
 | `🟢` | Current/active/enabled `On` | Current option in vertical lists, active state rows, active `On` toggle | One strong current marker per option list. |
 | `🟡` | Active `Off` or elevated/filter state | Active `Off` toggle, Priority/Scoped active tab | Yellow means intentionally not-normal or off/default-caution, not error. |
+| `🔴` | Active destructive/deferred disposition | Active queue `Skip` selector | Red distinguishes a prompt that will be discarded at dispatch from reversible neutral or elevated state. |
 | `🟣` | Normal/default active tab | Normal priority tab, All/default scope tab, active page picker | Use for neutral active tabs. |
 | `⚫️` | Inactive placeholder | Inactive toggle values and inactive tabs | Keeps row width stable. |
 | `⬆️` | Navigate upward | `⬆️ Main menu`, `⬆️ Back` | Always first row in submenus. |
@@ -73,7 +74,7 @@ Queue reactions are shortcut controls for waiting turns. Preserve their semantic
 Queue item detail renders two independent selector rows:
 
 - `🟡 Priority` / `⚫️ Normal` or `⚫️ Priority` / `🟣 Normal` selects the lane.
-- `🟢 Keep` / `⚫️ Skip` or `⚫️ Keep` / `🟡 Skip` selects dispatch disposition.
+- `🟢 Keep` / `⚫️ Skip` or `⚫️ Keep` / `🔴 Skip` selects dispatch disposition.
 
 The menu may clear internal Skip but cannot remove a reaction created by the user through Telegram's Bot API.
 

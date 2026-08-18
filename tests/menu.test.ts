@@ -1960,7 +1960,7 @@ test("Queue item Keep and Skip selectors share deferred-removal state", async ()
   assert.equal(texts[0], "<b>1.</b> 👎\n<pre>[telegram] keep or skip</pre>");
   assert.deepEqual(markups[0]?.inline_keyboard[2], [
     { text: "⚫️ Keep", callback_data: "queue:skip-set:1:10:keep" },
-    { text: "🟡 Skip", callback_data: "queue:skip-set:1:10:skip" },
+    { text: "🔴 Skip", callback_data: "queue:skip-set:1:10:skip" },
   ]);
 
   assert.equal(await runtime.handleCallbackQuery(
@@ -1984,7 +1984,7 @@ test("Queue item Keep and Skip selectors share deferred-removal state", async ()
   ]);
   assert.deepEqual(markups[1]?.inline_keyboard[2], [
     { text: "⚫️ Keep", callback_data: "queue:skip-set:1:10:keep" },
-    { text: "🟡 Skip", callback_data: "queue:skip-set:1:10:skip" },
+    { text: "🔴 Skip", callback_data: "queue:skip-set:1:10:skip" },
   ]);
 
   assert.equal(await runtime.handleCallbackQuery(

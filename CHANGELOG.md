@@ -4,6 +4,16 @@
 
 ## Unreleased
 
+## 0.36.1: Adaptive Control Surfaces
+
+- `Adaptive Button Literal`: Replaces binary JSON-or-CML parsing with one strict-JSON-first matrix grammar over a shared button AST. Named JSON objects and positional CML cells may coexist in one matrix or row, commas are optional only between completed elements, every compression step preserves semantics, and malformed comments reject atomically without registering partial callbacks.
+- `Trusted Release Publication`: Makes tag releases depend on reusable full validation, exact tag/package/lock/changelog identity, npm Trusted Publisher provenance, idempotent existing-version checks, public package and tarball verification, and one workflow-owned GitHub Release path without npm tokens.
+- `Consistent Access Denial`: Centralizes unauthorized copy so Guest Mode and private messages render `🚫 Access denied.` with equivalent explicit bold emphasis through HTML-capable surfaces, while callback popups use the same emoji and plain copy without pretending to support rich text.
+- `Destructive Skip State`: Changes the active queue Skip selector from yellow to red and records the indicator in the UI registry, making deferred prompt removal visually distinct from Priority, Scoped, and other elevated but non-destructive states.
+- `Worker Cancellation Fence`: Makes Generative App workers acknowledge child-process abort handling before parent termination, with a bounded forced fallback for synchronously blocked methods, preventing Linux CI load from orphaning a cancelled process long enough to commit its delayed side effect.
+- `Capability App Routing`: Telegram interaction now prefers an already-advertised capability-owned Generative App for repeated controls before synthesizing one-shot prompt buttons, while the bridge remains generic and neither discovers capability-specific apps nor owns their state or identities.
+- `Hybrid Surface Breadcrumbs`: Generated Control Surface and Generative Apps now cross-route over one logical button matrix and shared JSON/CML runtime notation: ephemeral agent composition stays separate from reusable scripts, while one app view may combine deterministic bound methods with ordinary model-mediated prompts and no third button Skill is introduced.
+
 ## 0.36.0: Generative Apps
 
 - `Generative App Kernel`: Adds `telegram_bind` for canonical `.mjs` install/replace/invoke with mandatory `init`, strict JSON, bounded output/processes, transactional snapshots, repaired partial-tail recovery, non-symlink root/app/module/source containment, and worker-isolated terminable methods. Lifecycle cancellation stops child processes and fences state commit; failed staging or `init` preserves the installed app.

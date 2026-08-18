@@ -183,21 +183,20 @@ export function planTelegramButtonReply(
       parseTopLevelTelegramComment(comment, candidate),
     );
     if (!command) return comment.raw;
-    const payloadRows = parseTelegramActionPayloadRows(comment, command) ?? [];
-    for (const payloadRow of payloadRows) {
-      const row = payloadRow.flatMap((payload) => {
-        const action = parseTelegramButtonAction(payload);
-        return action
-          ? [{
-              text: action.text,
-              callback_data: deps.registerAction({
-                ...action,
-                ...(deps.binding ? { binding: deps.binding } : {}),
-              }),
-            }]
-          : [];
-      });
-      if (row.length > 0) keyboard.push(row);
+    const payloadRows = parseTelegramActionPayloadRows(comment, command);
+    if (!payloadRows) return "";
+    const actionRows = payloadRows.map((payloadRow) =>
+      payloadRow.map(parseTelegramButtonAction),
+    );
+    if (actionRows.some((row) => row.some((action) => !action))) return "";
+    for (const actionRow of actionRows) {
+      keyboard.push(actionRow.map((action) => ({
+        text: action!.text,
+        callback_data: deps.registerAction({
+          ...action!,
+          ...(deps.binding ? { binding: deps.binding } : {}),
+        }),
+      })));
     }
     return "";
   });

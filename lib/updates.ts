@@ -886,6 +886,19 @@ export type TelegramMessageOwnershipRecorder = (
   input: TelegramMessageOwnershipRecorderInput,
 ) => void;
 
+interface TelegramUnauthorizedReplyOptions {
+  parseMode?: "HTML";
+  target?: { chatId: number; threadId?: number };
+}
+
+const TELEGRAM_UNAUTHORIZED_DENIAL_COPY = "Access denied.";
+
+function formatTelegramUnauthorizedDenial(format: "plain" | "html"): string {
+  return format === "html"
+    ? `🚫 <b>${TELEGRAM_UNAUTHORIZED_DENIAL_COPY}</b>`
+    : `🚫 ${TELEGRAM_UNAUTHORIZED_DENIAL_COPY}`;
+}
+
 export interface TelegramUpdateRuntimeDeps<
   TContext = unknown,
   TReactionUpdate extends TelegramMessageReactionUpdated =
@@ -927,7 +940,11 @@ export interface TelegramUpdateRuntimeDeps<
     callbackQueryId: string,
     text?: string,
   ) => Promise<void>;
-  answerGuestQuery: (guestQueryId: string, text?: string) => Promise<void>;
+  answerGuestQuery: (
+    guestQueryId: string,
+    text?: string,
+    options?: Pick<TelegramUnauthorizedReplyOptions, "parseMode">,
+  ) => Promise<void>;
   handleAuthorizedTelegramCallbackQuery: (
     query: TCallbackQuery,
     ctx: TContext,
@@ -936,7 +953,7 @@ export interface TelegramUpdateRuntimeDeps<
     chatId: number,
     replyToMessageId: number,
     text: string,
-    options?: { target?: { chatId: number; threadId?: number } },
+    options?: TelegramUnauthorizedReplyOptions,
   ) => Promise<number | undefined>;
   handleAuthorizedTelegramMessage: (
     message: TMessage,
@@ -996,7 +1013,11 @@ export interface TelegramUpdateRuntimeControllerDeps<
     callbackQueryId: string,
     text?: string,
   ) => Promise<void>;
-  answerGuestQuery: (guestQueryId: string, text?: string) => Promise<void>;
+  answerGuestQuery: (
+    guestQueryId: string,
+    text?: string,
+    options?: Pick<TelegramUnauthorizedReplyOptions, "parseMode">,
+  ) => Promise<void>;
   handleAuthorizedTelegramCallbackQuery: (
     query: TCallbackQuery,
     ctx: TContext,
@@ -1005,7 +1026,7 @@ export interface TelegramUpdateRuntimeControllerDeps<
     chatId: number,
     replyToMessageId: number,
     text: string,
-    options?: { target?: { chatId: number; threadId?: number } },
+    options?: TelegramUnauthorizedReplyOptions,
   ) => Promise<number | undefined>;
   handleAuthorizedTelegramMessage: (
     message: TMessage,
@@ -1449,7 +1470,7 @@ export async function executeTelegramUpdatePlan<
           assertExecutionCurrent();
           await deps.answerCallbackQuery(
             callbackQueryId,
-            "This bot is not authorized for your account.",
+            formatTelegramUnauthorizedDenial("plain"),
           );
         }
         return;
@@ -1464,7 +1485,8 @@ export async function executeTelegramUpdatePlan<
         assertExecutionCurrent();
         await deps.answerGuestQuery(
           plan.guestMessage.guest_query_id,
-          "🚫 Access denied.",
+          formatTelegramUnauthorizedDenial("html"),
+          { parseMode: "HTML" },
         );
         return;
       }
@@ -1584,8 +1606,8 @@ export async function executeTelegramUpdatePlan<
         await deps.sendTextReply(
           replyTarget.chatId,
           replyTarget.messageId,
-          "This bot is not authorized for your account.",
-          { target: replyTarget },
+          formatTelegramUnauthorizedDenial("html"),
+          { parseMode: "HTML", target: replyTarget },
         );
       }
       return;
