@@ -133,24 +133,61 @@ export function getTelegramQueueReactionDisposition(
     emojis,
     TELEGRAM_REMOVAL_REACTION_EMOJIS,
   );
-  if (suppressionEmoji) return { kind: "suppressed", emoji: suppressionEmoji };
   const priorityEmoji = getTelegramReactionEmoji(
     emojis,
     TELEGRAM_PRIORITY_REACTION_EMOJIS,
   );
+  if (suppressionEmoji && priorityEmoji) {
+    return {
+      kind: "priority-suppressed",
+      priorityEmoji,
+      suppressionEmoji,
+    };
+  }
+  if (suppressionEmoji) return { kind: "suppressed", emoji: suppressionEmoji };
   if (priorityEmoji) return { kind: "priority", emoji: priorityEmoji };
   return { kind: "default" };
 }
 
-function areTelegramQueueReactionDispositionsEqual(
-  left: TelegramQueueReactionDisposition,
-  right: TelegramQueueReactionDisposition,
-): boolean {
-  return (
-    left.kind === right.kind &&
-    (left.kind === "default" ||
-      (right.kind !== "default" && left.emoji === right.emoji))
+function getTelegramQueueReactionTransition(
+  oldReactions: TelegramReactionType[],
+  newReactions: TelegramReactionType[],
+): TelegramQueueReactionDisposition | undefined {
+  const oldEmojis = collectTelegramReactionEmojis(oldReactions);
+  const newEmojis = collectTelegramReactionEmojis(newReactions);
+  const oldPriorityEmoji = getTelegramReactionEmoji(
+    oldEmojis,
+    TELEGRAM_PRIORITY_REACTION_EMOJIS,
   );
+  const newPriorityEmoji = getTelegramReactionEmoji(
+    newEmojis,
+    TELEGRAM_PRIORITY_REACTION_EMOJIS,
+  );
+  const oldSuppressionEmoji = getTelegramReactionEmoji(
+    oldEmojis,
+    TELEGRAM_REMOVAL_REACTION_EMOJIS,
+  );
+  const newSuppressionEmoji = getTelegramReactionEmoji(
+    newEmojis,
+    TELEGRAM_REMOVAL_REACTION_EMOJIS,
+  );
+  if (
+    oldPriorityEmoji === newPriorityEmoji &&
+    oldSuppressionEmoji === newSuppressionEmoji
+  ) {
+    return undefined;
+  }
+  const transition: Extract<
+    TelegramQueueReactionDisposition,
+    { kind: "reaction-transition" }
+  > = { kind: "reaction-transition" };
+  if (oldPriorityEmoji !== newPriorityEmoji) {
+    transition.priorityEmoji = newPriorityEmoji ?? null;
+  }
+  if (oldSuppressionEmoji !== newSuppressionEmoji) {
+    transition.suppressionEmoji = newSuppressionEmoji ?? null;
+  }
+  return transition;
 }
 
 export function extractDeletedTelegramMessageIds(
@@ -1299,17 +1336,11 @@ export async function handleAuthorizedTelegramReactionUpdate<TContext>(
     typeof reactionUpdate.chat.id === "number"
       ? { chatId: reactionUpdate.chat.id }
       : undefined;
-  const oldDisposition = getTelegramQueueReactionDisposition(
+  const reactionTransition = getTelegramQueueReactionTransition(
     reactionUpdate.old_reaction,
-  );
-  const newDisposition = getTelegramQueueReactionDisposition(
     reactionUpdate.new_reaction,
   );
-  if (
-    areTelegramQueueReactionDispositionsEqual(oldDisposition, newDisposition)
-  ) {
-    return;
-  }
+  if (!reactionTransition) return;
   deps.assertExecutionCurrent?.();
   await deps.flushPendingMediaGroupMessage?.(reactionUpdate.message_id);
   deps.assertExecutionCurrent?.();
@@ -1317,7 +1348,7 @@ export async function handleAuthorizedTelegramReactionUpdate<TContext>(
   deps.assertExecutionCurrent?.();
   deps.applyQueuedTelegramTurnReactionByMessageId(
     reactionUpdate.message_id,
-    newDisposition,
+    reactionTransition,
     deps.ctx,
     reactionScope,
   );

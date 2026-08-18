@@ -2,6 +2,19 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## Unreleased
+
+## 0.36.0: Generative Apps
+
+- `Generative App Kernel`: Adds `telegram_bind` for canonical `.mjs` install/replace/invoke with mandatory `init`, strict JSON, bounded output/processes, transactional snapshots, repaired partial-tail recovery, non-symlink root/app/module/source containment, and worker-isolated terminable methods. Lifecycle cancellation stops child processes and fences state commit; failed staging or `init` preserves the installed app.
+- `Inference Bypass`: Parses complete `app::method` and strict-JSON argument prompts after one-shot `tgbtn` resolution, invokes the installed app before Pi queue admission, plans returned Markdown/buttons through the current outbound surface, preserves native callbacks and ordinary prompts, marks successful controls, and fails malformed or unsuccessful bound actions without model fallback.
+- `Transition Fencing`: Serializes transitions with stable locks outside replaceable app directories, reclaims dead owners, reconciles current state from the last complete snapshot, and carries immutable installation generation plus revision on buttons. Replacement, stale callbacks, and lifecycle loss fail before method effects, state commit, or Telegram delivery.
+- `Compact Queue Controls`: Adds strict CML selected styles with atomic validation. Queue detail replaces Delete with independent Priority/Normal and Keep/Skip. Lane transitions append at the destination FIFO tail; Keep/Skip preserves position. Positive and negative reaction categories may coexist; Skip stays reversible, shows only its emoji, and wins at dispatch by dropping the marked head without inference and continuing.
+- `Generated Music Player`: Validates a capability-owned Generative App over the public Actor control surface while `pi-telegram` ships only the generic runtime. Live `ffplay` checks confirmed no-model-turn navigation, pause/play, seek, absolute volume, status, and stop with exact terminal Controls and no pending backlog. The app reports Actor availability and uses symmetric seven-button progress and volume scales.
+- `Dual Action Views`: Keeps fresh-message delivery as the simple default so prior interfaces and selected buttons remain visible, while `viewMode: "edit"` opts a method into replacing its callback message and keyboard. An explicit edit failure records diagnostics and sends one fresh view; automatic refresh remains a separate lifecycle slice.
+- `Direct Initial View`: During an active Telegram turn, `telegram_bind` plans and delivers successful output to the exact target, marks it displayed so the model does not repeat it, and supports `display: false`. Outside turns it returns exact output; delivery failure preserves the app result. Tool success, direct-display, and error text use one leading line break, and failed old-message restyling cannot turn a completed action into failure.
+- `Generative Apps Skill`: Adds an operating Skill for compiling repeated interaction into reusable standalone apps or bounded adapters with generated JSON button views. One surface may mix deterministic bound methods with ordinary model prompts; the Skill covers authorship, review, install/replace/invoke, stale actions, and validation while Generated Control Surface retains ephemeral model-mediated interfaces.
+
 ## 0.35.2: Independent Surface Dimensions
 
 - `Horizontal Boundary`: Establishes eight controls as the Generated Control Surface phone-width UX maximum regardless of the parser's uncapped row grammar; nine or more controls must regroup, and six-to-eight remains limited to minimal position-bearing labels.

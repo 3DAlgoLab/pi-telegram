@@ -228,9 +228,7 @@ function parseTelegramCompactActionPayloadRows(
   const parseCell = (): Record<string, unknown> | undefined => {
     if (source[offset] !== "{") return undefined;
     offset += 1;
-    const keySource: string[] = [];
-    const valueSource: string[] = [];
-    let hasSeparator = false;
+    const atomSources: string[][] = [[]];
     while (offset < source.length) {
       const character = source[offset]!;
       if (character === "\\") {
@@ -238,27 +236,33 @@ function parseTelegramCompactActionPayloadRows(
         if (escaped !== "|" && escaped !== "}" && escaped !== "\\") {
           return undefined;
         }
-        if (hasSeparator) valueSource.push(escaped);
-        else keySource.push(escaped);
+        atomSources.at(-1)!.push(escaped);
         offset += 2;
         continue;
       }
       if (character === "|") {
-        if (hasSeparator) return undefined;
-        hasSeparator = true;
+        if (atomSources.length >= 3) return undefined;
+        atomSources.push([]);
         offset += 1;
         continue;
       }
       if (character === "}") {
         offset += 1;
-        const key = normalizeAtom(keySource.join(""));
-        if (!key) return undefined;
-        if (!hasSeparator) return { value: key };
-        const value = normalizeAtom(valueSource.join(""));
-        return value ? { label: key, prompt: value } : undefined;
+        const atoms = atomSources.map((atom) =>
+          normalizeAtom(atom.join("")),
+        );
+        if (atoms.some((atom) => atom === undefined)) return undefined;
+        const [label, prompt, selectedStyle] = atoms as string[];
+        if (atoms.length === 1) return { value: label };
+        if (atoms.length === 2) return { label, prompt };
+        if (
+          selectedStyle !== "primary" &&
+          selectedStyle !== "success" &&
+          selectedStyle !== "danger"
+        ) return undefined;
+        return { label, prompt, selected_style: selectedStyle };
       }
-      if (hasSeparator) valueSource.push(character);
-      else keySource.push(character);
+      atomSources.at(-1)!.push(character);
       offset += 1;
     }
     return undefined;

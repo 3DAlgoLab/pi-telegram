@@ -33,6 +33,7 @@ export const TELEGRAM_MESSAGE_PROMPT_GUIDELINES = [
 
 const TELEGRAM_MODEL_CONTEXT_TOOL_NAMES = new Set([
   "telegram_attach",
+  "telegram_bind",
   "telegram_message",
 ]);
 const TELEGRAM_MODEL_CONTEXT_MEMORY_KEY = Symbol.for(
