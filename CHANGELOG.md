@@ -2,7 +2,7 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
-## Unreleased
+## 0.36.3: Ordered Prompt Compatibility
 
 - `Prompt Compatibility`: Preserves plain and ordered-block system prompts across Pi-compatible runtimes; Telegram guidance remains a distinct block when the host supplies blocks, while unavailable transport strips only Telegram tool metadata without collapsing unrelated prompt context.
 
