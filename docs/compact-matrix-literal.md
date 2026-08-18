@@ -1,85 +1,101 @@
-# Compact Matrix Literal
+# Adaptive Button Literal
 
-> Status: Portable v1 standard implemented by the `pi-telegram` 0.35.0 release candidate.
+> Status: Portable CML v3 standard implemented by the unreleased `pi-telegram` control-surface parser.
 
-Compact Matrix Literal (CML) is a bounded-depth text format for ordered key-value cells arranged as singleton or compact rows. It optimizes repeated interactive controls where JSON field names, quotes, and commas dominate the payload.
+Adaptive Button Literal is one bounded-depth matrix grammar over a shared button AST. It accepts strict JSON button objects, positional Compact Matrix Literal (CML) cells, or both in the same matrix and row. Commas between completed matrix or row elements are optional, so producers can progressively compress representation without changing runtime meaning.
 
-CML is transport-neutral. An embedding maps each decoded cell's `key` and `value` to its own domain. The `pi-telegram` profile maps `key` to button label and `value` to button prompt.
+```text
+full named JSON → comma-optional adjacency → mixed named/positional cells → compact CML
+```
+
+The compact form is not JSON: `{label|prompt|variant}` assigns meaning by position. The formats share semantics and topology, not syntax.
 
 ## Goals
 
-- Encode common key-value matrices with minimal punctuation.
-- Preserve ordered singleton and compact rows.
-- Preserve non-structural Unicode text literally.
-- Admit deterministic linear-time parsing without evaluation or recovery.
-- Remain deterministic beside an existing JSON form.
-- Fail closed on malformed or deeper structures.
-
-## Non-Goals
-
-- Replacing JSON for arbitrary objects, metadata, styles, or extensible schemas.
-- Defining callback ownership, application state, rendering policy, or transport behavior.
-- Recovering partial intent from malformed input.
-- Defining one universal visual row-width limit for every renderer.
+- Preserve one ordered button matrix across multiple representation densities.
+- Let producers compress individual cells without converting the whole surface.
+- Preserve valid strict JSON behavior unchanged.
+- Admit deterministic linear-time parsing without evaluation or partial recovery.
+- Keep rendering, callback ownership, and application state outside the notation.
 
 ## Data Model
 
-A decoded payload is an ordered non-empty list of non-empty rows:
+Every accepted payload normalizes to a non-empty ordered list of non-empty rows:
 
 ```text
-Cell = { key: string, value: string }
+Cell = { label?: string, prompt?: string, value?: string, selected_style?: string }
 Rows = Cell[][]
 ```
 
-A top-level cell normalizes to a singleton row. A nested row preserves its compact grouping.
+A top-level cell becomes a singleton row. A nested row preserves horizontal grouping.
 
-A cell with one atom copies its key into its value:
-
-```text
-{7} == { key: "7", value: "7" }
-```
-
-A cell with two atoms separates key and value with one unescaped vertical bar:
+These representations are semantically equivalent:
 
 ```text
-{🟥|2,5} == { key: "🟥", value: "2,5" }
+[[{"label":"Pause","prompt":"music::pause"},{"value":"Next"}],{"value":"Status"}]
+[[{"label":"Pause","prompt":"music::pause"}{"value":"Next"}]{"value":"Status"}]
+[[{"label":"Pause","prompt":"music::pause"},{Next}],{Status}]
+[[{Pause|music::pause}{Next}]{Status}]
 ```
 
-## Grammar
-
-The normative structural grammar is:
+Named JSON objects and positional cells may coexist within the same horizontal row:
 
 ```text
-payload  := cell | matrix
-matrix   := "[" ws element (ws element)* ws "]"
-element  := cell | row
-row      := "[" ws cell (ws cell)* ws "]"
-cell     := "{" atom "}"
-          | "{" atom "|" atom "}"
-atom     := atom-unit+
-atom-unit := ordinary | "\\|" | "\\}" | "\\\\"
-ws       := *(SP | HTAB | CR | LF)
+[[{"label":"Open","prompt":"/tmp"}{Back|/}]]
 ```
 
-`ordinary` is any printable Unicode scalar other than unescaped `|`, unescaped `}`, or `\`. No commas separate elements. A matrix and every nested row must contain at least one element. A row cannot contain another row.
+## Positional Cells
 
-Examples:
+A one-atom cell copies its value into label and prompt through the existing button contract:
 
 ```text
-{Continue}
-{Open|/tmp}
-[{Up|/}[{Prev|page-1}{Next|page-3}]{etc|/etc}]
-[[{1}{2}{3}{4}{5}{6}{7}{8}]]
-{A \| B|C:\\Games\}}
+{Next}
 ```
 
-These normalize respectively to one copied singleton cell, one key-value singleton cell, a mixed singleton/compact matrix, one eight-cell row, and `{ key: "A | B", value: "C:\\Games}" }`.
+A two-atom cell separates label and prompt:
+
+```text
+{Pause|music::pause}
+```
+
+A three-atom cell adds the selected style:
+
+```text
+{Stop|music::stop|danger}
+```
+
+The style atom is accepted only as `primary`, `success`, or `danger`.
+
+## Adaptive Grammar
+
+The structural grammar is:
+
+```text
+payload         := json-object | matrix | positional-cell
+matrix          := "[" ws element (boundary element)* ws "]"
+element         := cell | row
+row             := "[" ws cell (boundary cell)* ws "]"
+cell            := json-object | positional-cell
+boundary        := ws [","] ws
+positional-cell := "{" atom "}"
+                 | "{" atom "|" atom "}"
+                 | "{" atom "|" atom "|" atom "}"
+atom            := atom-unit+
+atom-unit       := ordinary | "\|" | "\}" | "\\"
+ws              := *(SP | HTAB | CR | LF)
+```
+
+`boundary` occurs only after one complete element and before another. It may contain one comma or no comma. Element delimiters make empty adjacency unambiguous. Leading, repeated, and trailing commas are invalid.
+
+A `json-object` is one complete strict JSON object. Its property commas, strings, escaping, nested values, and other internals remain ordinary strict JSON; comma optionality applies only between matrix or row elements.
+
+Rows cannot contain rows. The grammar never recurses beyond one row inside the top-level matrix.
 
 ## Atoms, Whitespace, And Escapes
 
-Leading and trailing whitespace in each decoded key and value is trimmed. Internal ordinary spaces are preserved. CR, LF, HTAB, C0 controls, DEL, and C1 controls that remain inside an atom after trimming are invalid.
+Leading and trailing whitespace in positional atoms is trimmed. Internal ordinary spaces are preserved. CR, LF, HTAB, C0 controls, DEL, and C1 controls remaining inside an atom after trimming are invalid.
 
-Only three escape sequences exist:
+Only three positional-cell escapes exist:
 
 ```text
 \|  → literal |
@@ -87,103 +103,74 @@ Only three escape sequences exist:
 \\  → literal \
 ```
 
-Unknown escapes and a trailing backslash are invalid. No character is silently dropped.
+Every other printable character is literal inside a positional cell, including commas, colons, quotes, square brackets, emoji, and ordinary spaces. A comma inside `{label|prompt}` is data; a comma after the closing `}` is an optional element separator.
 
-Every other printable character is literal inside a cell, including:
-
-```text
-{ [ ] " : , / emoji and ordinary spaces
-```
-
-An opening `{` has no structural meaning after a cell has begun. Square brackets are structural only outside a cell. A second unescaped vertical bar is invalid. When multiline text or additional metadata is needed, the producer uses the embedding's JSON or other full-fidelity form.
-
-## Width Policy
-
-CML Core does not impose a visual row-width maximum. Width is a renderer and interaction-policy concern, not a property of the key-value matrix wire format.
-
-An embedding may enforce a documented host limit. The `pi-telegram` parser does not add an artificial per-row width cap because Telegram Bot API does not document one and existing top-level matrices already admit host-bounded action counts. Its bundled Generated Control Surface Skill owns UX policy: five columns are the proven default for short position-bearing labels, six to eight may be used only when labels remain compact and readable, and wider surfaces should normally be regrouped.
-
-## Parsing Contract
+## Deterministic Parsing
 
 A conforming parser:
 
-1. Consumes Unicode text without executing, interpolating, or evaluating it.
-2. Parses exactly one `payload` and rejects trailing non-whitespace input.
-3. Rejects empty atoms, empty matrices, empty rows, and nesting deeper than one row inside the top-level matrix.
-4. Rejects missing, extra, crossed, or mismatched delimiters.
-5. Rejects a second unescaped vertical bar in a cell.
-6. Decodes only `\|`, `\}`, and `\\`; unknown or trailing escapes fail.
-7. Trims atom boundaries, then rejects empty values and remaining control characters.
-8. Returns no partial rows or cells after any failure.
-9. Runs in linear time over a host-bounded payload and does not recurse beyond the fixed grammar depth.
+1. Attempts strict JSON first for sources beginning with `{` or `[`. Successful JSON is validated only against the existing button matrix schema and never reinterpreted.
+2. If strict JSON parsing fails, parses the original source with the adaptive grammar.
+3. Tries one complete strict JSON object at each cell boundary before positional interpretation.
+4. Accepts at most one optional comma between completed matrix or row elements.
+5. Rejects leading, repeated, trailing, or property-level omitted commas.
+6. Rejects empty atoms, matrices, rows, and nesting deeper than one row.
+7. Decodes only `\|`, `\}`, and `\\` in positional cells.
+8. Consumes exactly one complete payload and rejects trailing content.
+9. Returns no partial rows or cells after any failure.
+10. Runs in linear time over a host-bounded payload with fixed grammar depth.
 
-Implementations may report diagnostics internally, but an invalid payload must not register or execute any action.
+Malformed JSON-looking input receives no generic recovery. It is accepted only if it independently forms a complete valid adaptive literal.
 
-## JSON Coexistence
+## Telegram Profile
 
-An embedding that already accepts JSON uses deterministic routing:
+For `telegram_button` and the exact `telegram_buttons` alias:
 
-1. Attempt strict JSON parsing first for payloads beginning with `{` or `[`.
-2. If JSON parsing succeeds, validate only against the embedding's JSON schema. A JSON shape failure must not fall back to CML.
-3. If JSON parsing fails, attempt CML from the original source.
-4. Accept CML only after complete grammar and embedding validation.
+- JSON `value` keeps its existing label/prompt fallback semantics.
+- Positional `{value}` is equivalent to JSON `{"value":"value"}`.
+- Positional `{label|prompt}` is equivalent to JSON `{"label":"label","prompt":"prompt"}`.
+- Positional `{label|prompt|selected_style}` is equivalent to the corresponding three-field JSON object.
+- Top-level cells become full-width rows.
+- Nested rows become horizontal keyboard rows.
+- Invalid payloads are stripped with their recognized action comment and register no callbacks.
 
-Valid JSON behavior therefore remains unchanged. A malformed JSON-looking source receives no tolerant recovery: it is accepted only when it independently forms a complete valid CML payload.
-
-## `pi-telegram` Profile
-
-For `telegram_button` and its exact `telegram_buttons` alias:
-
-- `Cell.key` becomes the visible button label.
-- `Cell.value` becomes the queued prompt.
-- A top-level cell becomes one full-width inline-keyboard row.
-- A nested row becomes one horizontal row.
-- `{value}` is equivalent to JSON `{"value":"value"}`.
-- `{label|prompt}` is equivalent to JSON `{"label":"label","prompt":"prompt"}`.
-- JSON and double-quoted attributes remain the full-fidelity forms.
-- `selected_style` and future metadata are not represented by CML v1.
-- Invalid CML is stripped with its enclosing recognized action comment and registers no callbacks, matching existing fail-closed action behavior.
-
-Example embedding:
+Example:
 
 ```html
-<!-- telegram_button [{⬆️ Up|/}[{⬅️|page-1}{➡️|page-3}]{📁 etc|/etc}] -->
+<!-- telegram_button [{⬆️ Up|/},[{⬅️|page-1}{➡️|page-3}],{"label":"📁 etc","prompt":"/etc"}] -->
 ```
 
-The enclosing HTML-comment transport still owns its own delimiter boundary; content containing the comment terminator cannot reach the CML parser and must use another supported delivery representation.
+The enclosing HTML-comment transport owns its own delimiter boundary. Content containing the comment terminator must use another supported representation.
 
-## Conformance Classes
+## Width Policy
 
-A conformance suite covers properties rather than incident-specific strings.
+The grammar imposes no visual row-width maximum. Renderer and interaction policy own width. The bundled Generated Control Surface Skill defaults to at most five short position-bearing controls per row, permits six to eight only when labels remain compact, and treats eight as the phone-width UX maximum.
 
-### Accepted
+## Conformance
 
-- Singular copied and key-value cells.
-- Top-level singleton rows.
-- Nested rows at widths one, five, and eight.
-- Mixed singleton and compact rows.
-- Unicode, punctuation, brackets, quotes, commas, colons, and internal spaces.
-- Trimmed atom boundaries.
-- Each defined escape sequence.
-- Structural whitespace between tokens.
-- Semantic equivalence with supported JSON cell forms.
+Accepted classes include:
 
-### Rejected
+- Strict JSON objects and matrices.
+- Positional singleton, two-atom, and styled cells.
+- Matrices and rows with commas, without commas, or a mixture of boundaries.
+- Named JSON and positional cells mixed in one matrix or row.
+- Literal commas inside positional atoms and strict JSON strings.
+- Unicode, defined escapes, structural whitespace, and rows at supported renderer widths.
+- Semantic equivalence across every progressive-compression step.
 
-- Empty payload, matrix, row, key, or value.
-- Deeper nesting.
-- Missing or mismatched delimiters.
-- A second unescaped separator.
-- Unknown or trailing escapes.
-- Internal control characters.
-- Commas between cells.
-- Trailing garbage.
-- JSON that parses but fails the JSON action schema.
+Rejected classes include:
+
+- Empty payloads, matrices, rows, labels, prompts, or style atoms.
+- Leading, repeated, or trailing element commas.
+- Missing commas between properties inside a JSON object.
+- Deeper row nesting.
+- Missing, crossed, or mismatched delimiters.
+- A third positional separator, unknown style, unknown escape, or trailing backslash.
+- Internal control characters and trailing garbage.
+- Valid JSON that fails the existing JSON action schema.
 
 Every rejected case proves zero callback registration.
 
 ## Versioning
 
-This document defines CML v1. Compatible embeddings may impose documented host-level byte, cell-count, or width limits without changing the core grammar, but must preserve bounded-depth and fail-closed semantics.
-
-Future versions must not assign new meaning to input rejected by a security or ownership boundary without an explicit version discriminator. Metadata fields, styles, and deeper structures require a revised standard rather than permissive v1 parsing.
+This document defines CML v3. V3 extends the v2 positional grammar with strict JSON object cells, mixed representation, and optional element-boundary commas. It does not make JSON object internals permissive and does not add deeper structures. Future versions must preserve strict-JSON-first routing, bounded depth, atomic rejection, and an explicit discriminator for any new meaning at a security or ownership boundary.

@@ -13,7 +13,7 @@ import {
   TELEGRAM_SKILLS_PATH,
 } from "../lib/skills.ts";
 
-test("Telegram extension contributes both bundled skills", async () => {
+test("Telegram extension contributes all bundled skills", async () => {
   let resourceHook: (() => { skillPaths: string[] }) | undefined;
   registerTelegramSkillDiscovery({
     on(name: string, hook: unknown) {
@@ -23,7 +23,7 @@ test("Telegram extension contributes both bundled skills", async () => {
   } as never);
 
   assert.deepEqual(resourceHook?.(), { skillPaths: [TELEGRAM_SKILLS_PATH] });
-  const skillNames = ["telegram-bridge", "generated-control-surface"];
+  const skillNames = ["telegram-bridge", "generated-control-surface", "generative-apps"];
   const sources = new Map<string, string>();
   for (const name of skillNames) {
     const source = await readFile(join(TELEGRAM_SKILLS_PATH, name, "SKILL.md"), "utf8");
@@ -34,11 +34,33 @@ test("Telegram extension contributes both bundled skills", async () => {
   const bridge = sources.get("telegram-bridge") ?? "";
   assert.match(bridge, /`generated-control-surface`/u);
   assert.match(bridge, /Compact Matrix Literal \(CML\)/u);
+  assert.match(
+    bridge,
+    /Prefer CML.*expanded JSON only.*concrete parse\/render failure fallback/su,
+  );
   assert.match(bridge, /without a parser-level width cap/u);
   assert.match(bridge, /six through eight.*short position-bearing labels/u);
+  assert.match(bridge, /bundled `generative-apps` Skill/u);
+  assert.match(
+    bridge,
+    /maintained Generative App.*prefer binding or invoking.*one-shot prompt buttons/su,
+  );
+  assert.match(
+    bridge,
+    /routing breadcrumb.*not permission.*discover capability-specific apps.*hard-code their identities/su,
+  );
+  assert.match(bridge, /before Pi queue admission/u);
   const generatedSurface = sources.get("generated-control-surface") ?? "";
   assert.match(generatedSurface, /without requiring an explicit user request/u);
+  assert.match(
+    generatedSurface,
+    /no semantic column headings.*first data row as the syntactic header.*Do not insert blank, dash-only, duplicate, or invented placeholder headings/su,
+  );
   assert.match(generatedSurface, /Compact Matrix Literal \(CML\)/u);
+  assert.match(
+    generatedSurface,
+    /Prefer CML.*expanded JSON only.*concrete CML parse\/render failure/su,
+  );
   assert.match(generatedSurface, /one or more controls.*parser-level width cap/u);
   assert.match(
     generatedSurface,
@@ -88,7 +110,55 @@ test("Telegram extension contributes both bundled skills", async () => {
   );
   assert.match(generatedSurface, /human-auditable Markdown state artifact/u);
   assert.match(generatedSurface, /current state \+ admitted action → next state/u);
+  assert.match(generatedSurface, /complementary `generative-apps` Skill/u);
+  assert.match(
+    generatedSurface,
+    /logical button-matrix.*full JSON\/CML.*third button Skill/su,
+  );
+  assert.match(
+    generatedSurface,
+    /ordinary model-mediated prompt buttons beside deterministic bound methods/su,
+  );
+  assert.match(generatedSurface, /latency, token, cost, reliability, or UX value/u);
   assert.match(generatedSurface, /repeated clicks against current state/u);
+  assert.match(
+    generatedSurface,
+    /Preserve tap-ahead.*source-then-destination.*do not regenerate the board, enumerate destinations, or duplicate controls/su,
+  );
+  assert.match(
+    generatedSurface,
+    /current state rather than rigid click parity.*selects or replaces the source.*not a selectable source becomes a destination attempt/su,
+  );
+  const generativeApps = sources.get("generative-apps") ?? "";
+  assert.match(generativeApps, /complement `generated-control-surface`/u);
+  assert.match(generativeApps, /Standalone deterministic application/u);
+  assert.match(generativeApps, /View\/controller adapter/u);
+  assert.match(generativeApps, /bound method.*ordinary prompt/su);
+  assert.match(
+    generativeApps,
+    /same logical button matrix.*full JSON\/CML notation.*no third button Skill/su,
+  );
+  assert.match(
+    generativeApps,
+    /Compile only the stable transitions.*model-mediated plane.*use `generated-control-surface` instead/su,
+  );
+  assert.match(generativeApps, /transport-independent concept/u);
+  assert.match(generativeApps, /`generated` \/ `generative` distinction is intentional/u);
+  assert.match(generativeApps, /replace: true/u);
+  assert.match(generativeApps, /generic remote terminals/u);
+  assert.match(generativeApps, /authoritative real owner/u);
+  assert.doesNotMatch(generativeApps, /states\.jsonl|worker-isolated|transition lock/u);
+
+  const generativeAppsDoc = await readFile(
+    join(dirname(TELEGRAM_SKILLS_PATH), "docs", "generative-apps.md"),
+    "utf8",
+  );
+  assert.match(generativeAppsDoc, /concrete Generative App runtime implemented by `pi-telegram`/u);
+  assert.match(generativeAppsDoc, /concept.*belong to the bundled.*Skill/su);
+  assert.match(generativeAppsDoc, /owns only `pi-telegram` implementation contracts/u);
+  assert.match(generativeAppsDoc, /states\.jsonl/u);
+  assert.match(generativeAppsDoc, /installation generation plus state revision/u);
+  assert.match(generativeAppsDoc, /worker-isolated/u);
 });
 
 test("Generated filesystem surfaces declare structural navigation around paginated entries", async () => {

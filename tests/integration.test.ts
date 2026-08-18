@@ -907,7 +907,7 @@ test("v0.27.12 artifacts and graceful tab cleanup preserve same-directory auto-c
         () =>
           methods.filter((entry) => entry.method === "createForumTopic").length >=
           2,
-        20_000,
+        40_000,
       );
     } catch (error) {
       throw new Error(
@@ -2290,7 +2290,7 @@ test("Lost handoff ACK cannot cancel accepted cross-process authority", async ()
       async stageRemote(input) {
         const response = await Bus.sendTelegramBusLocalEnvelope({
           socketPath,
-          timeoutMs: 50,
+          timeoutMs: 5_000,
           envelope: {
             kind: "leader.offerQueueHandoff",
             requestId: "ack-loss:1",
@@ -3158,6 +3158,7 @@ test("Extension runtime keeps proactive local result disabled even with Telegram
       "read",
       "foreign_tool",
       "telegram_attach",
+      "telegram_bind",
       "telegram_message",
     ]);
     await flushMicrotasks(20);

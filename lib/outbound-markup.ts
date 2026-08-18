@@ -207,7 +207,7 @@ export function parseTelegramActionPayload(
 
 const TELEGRAM_COMPACT_ACTION_CONTROL_PATTERN = /[\u0000-\u001f\u007f-\u009f]/u;
 
-function parseTelegramCompactActionPayloadRows(
+function parseTelegramAdaptiveActionPayloadRows(
   source: string,
 ): Record<string, unknown>[][] | undefined {
   let offset = 0;
@@ -219,18 +219,23 @@ function parseTelegramCompactActionPayloadRows(
   const skipWhitespace = (): void => {
     while (isStructuralWhitespace(source[offset])) offset += 1;
   };
+  const consumeOptionalSeparator = (): boolean => {
+    skipWhitespace();
+    if (source[offset] !== ",") return true;
+    offset += 1;
+    skipWhitespace();
+    return source[offset] !== "," && source[offset] !== "]";
+  };
   const normalizeAtom = (value: string): string | undefined => {
     const normalized = value.trim();
     return normalized && !TELEGRAM_COMPACT_ACTION_CONTROL_PATTERN.test(normalized)
       ? normalized
       : undefined;
   };
-  const parseCell = (): Record<string, unknown> | undefined => {
+  const parseCompactCell = (): Record<string, unknown> | undefined => {
     if (source[offset] !== "{") return undefined;
     offset += 1;
-    const keySource: string[] = [];
-    const valueSource: string[] = [];
-    let hasSeparator = false;
+    const atomSources: string[][] = [[]];
     while (offset < source.length) {
       const character = source[offset]!;
       if (character === "\\") {
@@ -238,30 +243,84 @@ function parseTelegramCompactActionPayloadRows(
         if (escaped !== "|" && escaped !== "}" && escaped !== "\\") {
           return undefined;
         }
-        if (hasSeparator) valueSource.push(escaped);
-        else keySource.push(escaped);
+        atomSources.at(-1)!.push(escaped);
         offset += 2;
         continue;
       }
       if (character === "|") {
-        if (hasSeparator) return undefined;
-        hasSeparator = true;
+        if (atomSources.length >= 3) return undefined;
+        atomSources.push([]);
         offset += 1;
         continue;
       }
       if (character === "}") {
         offset += 1;
-        const key = normalizeAtom(keySource.join(""));
-        if (!key) return undefined;
-        if (!hasSeparator) return { value: key };
-        const value = normalizeAtom(valueSource.join(""));
-        return value ? { label: key, prompt: value } : undefined;
+        const atoms = atomSources.map((atom) =>
+          normalizeAtom(atom.join("")),
+        );
+        if (atoms.some((atom) => atom === undefined)) return undefined;
+        const [label, prompt, selectedStyle] = atoms as string[];
+        if (atoms.length === 1) return { value: label };
+        if (atoms.length === 2) return { label, prompt };
+        if (
+          selectedStyle !== "primary" &&
+          selectedStyle !== "success" &&
+          selectedStyle !== "danger"
+        ) return undefined;
+        return { label, prompt, selected_style: selectedStyle };
       }
-      if (hasSeparator) valueSource.push(character);
-      else keySource.push(character);
+      atomSources.at(-1)!.push(character);
       offset += 1;
     }
     return undefined;
+  };
+  const parseJsonObjectCell = (): Record<string, unknown> | undefined => {
+    if (source[offset] !== "{") return undefined;
+    const start = offset;
+    const stack: string[] = [];
+    let inString = false;
+    let escaped = false;
+    for (let index = start; index < source.length; index += 1) {
+      const character = source[index]!;
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (character === "\\") escaped = true;
+        else if (character === '"') inString = false;
+        continue;
+      }
+      if (character === '"') {
+        inString = true;
+        continue;
+      }
+      if (character === "{" || character === "[") {
+        stack.push(character);
+        continue;
+      }
+      if (character !== "}" && character !== "]") continue;
+      const opening = stack.pop();
+      if (
+        (character === "}" && opening !== "{") ||
+        (character === "]" && opening !== "[")
+      ) return undefined;
+      if (stack.length > 0) continue;
+      const candidate = source.slice(start, index + 1);
+      try {
+        const value: unknown = JSON.parse(candidate);
+        if (!isTelegramActionPayload(value)) return undefined;
+        offset = index + 1;
+        return value;
+      } catch {
+        return undefined;
+      }
+    }
+    return undefined;
+  };
+  const parseCell = (): Record<string, unknown> | undefined => {
+    const start = offset;
+    const jsonCell = parseJsonObjectCell();
+    if (jsonCell) return jsonCell;
+    offset = start;
+    return parseCompactCell();
   };
   const parseRow = (): Record<string, unknown>[] | undefined => {
     if (source[offset] !== "[") return undefined;
@@ -277,6 +336,7 @@ function parseTelegramCompactActionPayloadRows(
       const cell = parseCell();
       if (!cell) return undefined;
       row.push(cell);
+      if (!consumeOptionalSeparator()) return undefined;
     }
     return undefined;
   };
@@ -295,15 +355,14 @@ function parseTelegramCompactActionPayloadRows(
         const cell = parseCell();
         if (!cell) return undefined;
         rows.push([cell]);
-        continue;
-      }
-      if (character === "[") {
+      } else if (character === "[") {
         const row = parseRow();
         if (!row) return undefined;
         rows.push(row);
-        continue;
+      } else {
+        return undefined;
       }
-      return undefined;
+      if (!consumeOptionalSeparator()) return undefined;
     }
     return undefined;
   };
@@ -349,7 +408,7 @@ export function parseTelegramActionPayloadRows(
       }
       return rows;
     } catch {
-      return parseTelegramCompactActionPayloadRows(payload.source);
+      return parseTelegramAdaptiveActionPayloadRows(payload.source);
     }
   }
   if (payload.hasBody) return undefined;

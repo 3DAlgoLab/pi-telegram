@@ -180,31 +180,6 @@ test("Prompt helpers leave local prompts private for proactive result push", asy
   assert.deepEqual(result, { systemPrompt: "base\nlocal bridge available" });
 });
 
-test("Prompt helpers resolve lazy ordered system prompt blocks", async () => {
-  const hook = createTelegramProactiveBeforeAgentStartHook({
-    baseHook: createTelegramBeforeAgentStartHook({
-      telegramPrefix: "[telegram]",
-      localSystemPromptSuffix: "\nlocal bridge available",
-      telegramTurnSystemPromptSuffix: "\ntelegram turn contract",
-    }),
-    isAvailable: () => true,
-  });
-  const event = {
-    prompt: "local prompt",
-    systemPrompt: async () => ["base", "project context"],
-  } as Parameters<typeof hook>[0];
-
-  const result = await hook(event, "ctx");
-
-  assert.deepEqual(result, {
-    systemPrompt: [
-      "base",
-      "project context",
-      "\nlocal bridge available",
-    ],
-  });
-});
-
 test("Prompt helpers skip suffix injection when Telegram transport is unavailable", async () => {
   const hook = createTelegramProactiveBeforeAgentStartHook({
     baseHook: createTelegramBeforeAgentStartHook({
@@ -220,10 +195,7 @@ test("Prompt helpers skip suffix injection when Telegram transport is unavailabl
     ...TELEGRAM_ATTACH_PROMPT_GUIDELINES.map((line) => `- ${line}`),
   ].join("\n");
   const result = await hook(
-    {
-      prompt: "[telegram] hello",
-      systemPrompt: async () => stalePrompt,
-    } as Parameters<typeof hook>[0],
+    createBeforeAgentStartEvent("[telegram] hello", stalePrompt),
     "ctx",
   );
   assert.deepEqual(result, { systemPrompt: "base" });
@@ -262,6 +234,7 @@ test("Model-context availability removes only active Telegram tools and restores
   let activeTools = [
     "read",
     "telegram_attach",
+    "telegram_bind",
     "foreign_tool",
     "telegram_message",
   ];
@@ -277,7 +250,11 @@ test("Model-context availability removes only active Telegram tools and restores
 
   runtime.reconcile();
   assert.deepEqual(activeTools, ["read", "foreign_tool"]);
-  assert.deepEqual([...memory.toolNames], ["telegram_attach", "telegram_message"]);
+  assert.deepEqual([...memory.toolNames], [
+    "telegram_attach",
+    "telegram_bind",
+    "telegram_message",
+  ]);
 
   available = true;
   runtime.reconcile();
@@ -285,6 +262,7 @@ test("Model-context availability removes only active Telegram tools and restores
     "read",
     "foreign_tool",
     "telegram_attach",
+    "telegram_bind",
     "telegram_message",
   ]);
   assert.equal(memory.toolNames.size, 0);

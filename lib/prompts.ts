@@ -42,6 +42,7 @@ const TELEGRAM_TOOL_METADATA_LINES = Object.fromEntries(
 
 const TELEGRAM_MODEL_CONTEXT_TOOL_NAMES = new Set([
   "telegram_attach",
+  "telegram_bind",
   "telegram_message",
 ]);
 const TELEGRAM_MODEL_CONTEXT_MEMORY_KEY = Symbol.for(
@@ -142,18 +143,7 @@ export function createTelegramModelContextAvailabilityRuntime(deps: {
 
 export type TelegramSystemPrompt = string | string[];
 
-type TelegramSystemPromptSource =
-  | TelegramSystemPrompt
-  | (() => unknown | Promise<unknown>);
-
 type TelegramBeforeAgentStartEvent = Omit<
-  BeforeAgentStartEvent,
-  "systemPrompt"
-> & {
-  systemPrompt: TelegramSystemPromptSource;
-};
-
-type ResolvedTelegramBeforeAgentStartEvent = Omit<
   BeforeAgentStartEvent,
   "systemPrompt"
 > & {
@@ -165,7 +155,7 @@ type TelegramBeforeAgentStartResult = {
 };
 
 type TelegramBeforeAgentStartHook = (
-  event: ResolvedTelegramBeforeAgentStartEvent,
+  event: TelegramBeforeAgentStartEvent,
 ) => TelegramBeforeAgentStartResult;
 
 export function buildTelegramBridgeSystemPrompt(options: {
@@ -233,21 +223,6 @@ function stripTelegramToolMetadataFromSystemPrompt(
     : stripTelegramToolMetadataFromString(systemPrompt);
 }
 
-async function resolveTelegramSystemPrompt(
-  source: TelegramSystemPromptSource,
-): Promise<TelegramSystemPrompt> {
-  const value = typeof source === "function" ? await source() : source;
-  if (
-    typeof value === "string" ||
-    (Array.isArray(value) && value.every((block) => typeof block === "string"))
-  ) {
-    return value;
-  }
-  throw new TypeError(
-    "before_agent_start systemPrompt must be a string, a string array, or a function returning either",
-  );
-}
-
 export interface TelegramProactivePromptHookDeps<TContext> {
   baseHook?: TelegramBeforeAgentStartHook;
   reconcileAvailability?: () => void;
@@ -263,15 +238,13 @@ export function createTelegramProactiveBeforeAgentStartHook<TContext>(
   const baseHook = deps.baseHook ?? createTelegramBeforeAgentStartHook();
   return async (event, ctx) => {
     deps.reconcileAvailability?.();
-    const systemPrompt = await resolveTelegramSystemPrompt(
-      event.systemPrompt,
-    );
-    const normalizedEvent = { ...event, systemPrompt };
     if (!deps.isAvailable(ctx)) {
       return {
-        systemPrompt: stripTelegramToolMetadataFromSystemPrompt(systemPrompt),
+        systemPrompt: stripTelegramToolMetadataFromSystemPrompt(
+          event.systemPrompt,
+        ),
       };
     }
-    return baseHook(normalizedEvent);
+    return baseHook(event);
   };
 }

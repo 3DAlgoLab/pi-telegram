@@ -1,6 +1,6 @@
 ---
 name: generated-control-surface
-description: Proactively compiles current state, available capabilities, and user intent into contextual, evidence-backed, ephemeral prompt-button interfaces. Use on Telegram turns and other prompt-button transports whenever controls materially shorten likely feedback, without requiring an explicit user request, while omitting decorative UI and preserving domain ownership; fixed transport menus and callbacks remain with their runtime owners.
+description: Proactively compiles current state, available capabilities, and user intent into contextual, evidence-backed, ephemeral prompt-button interfaces. Use on Telegram turns and other prompt-button transports whenever controls materially shorten likely feedback, without requiring an explicit user request; route reusable deterministic loops toward Generative Apps, omit decorative UI, and preserve domain ownership while fixed transport menus and callbacks remain with their runtime owners.
 ---
 
 # Generated Control Surface
@@ -23,7 +23,11 @@ The primitive belongs to the Surface plane: it projects State, exposes Agency ca
 
 ## Scope
 
-Use this Skill only to synthesize a state-derived prompt-button surface. Operating or modifying an existing Telegram bridge menu, callback interface, fixed frontend, or runtime-owned control stays with that subsystem and does not route here merely because it contains buttons.
+Use this Skill only to synthesize a state-derived prompt-button surface. Operating or modifying an existing Telegram bridge menu, callback interface, fixed frontend, runtime-owned control, or installed Generative App stays with that subsystem and does not route here merely because it contains buttons.
+
+This Skill and `generative-apps` share one logical button-matrix and `label + prompt` interaction model while retaining different execution owners. On Telegram, the bridge runtime owns the full JSON/CML action notation: this Skill emits an ephemeral surface from current context, while a Generative App returns reusable views through its script ABI. Shared rendering does not justify a third button Skill or move transport grammar into either interaction Skill.
+
+When a generated surface reveals repeated stable interaction with bounded state and deterministic transitions, load the complementary `generative-apps` Skill and consider compiling that loop. A Generative App may retain ordinary model-mediated prompt buttons beside deterministic bound methods, so only the stable actions need bypass inference. Conversely, keep one-off, interpretive, changing, and context-heavy interaction here when a reusable script would add no concrete latency, token, cost, reliability, or UX value.
 
 On Telegram turns, evaluate this Skill proactively rather than waiting for the user to ask for buttons. Load and apply it when a likely next decision, approval, navigation step, inspection, or bounded action can be made materially easier through controls; its correct output may still contain zero buttons when the admission test fails.
 
@@ -80,7 +84,9 @@ A surface normally contains:
 
 Prefer 2–6 controls for feedback and decisions; navigation collections may use up to 12 when the additional entries remain scannable. Split larger sets by category or page instead of building a button wall. Do not add navigation controls when the surface is a one-step decision.
 
-Present compact metadata as stacked key-value rows that reuse status-surface grammar: a short bold label, a colon, and an inline-code value when the value is path-like, numeric, an identifier, or machine state. Prefer ``**Path:** `/home/llb` `` and ``**Entries:** `1–10 of 52` `` on separate lines over prose fragments joined by a middle dot or other decorative section separator.
+When a logical grid has no semantic column headings but Markdown table syntax requires a header row, use the grid's first data row as the syntactic header and render each remaining row once beneath it. Do not insert blank, dash-only, duplicate, or invented placeholder headings: they add a false row to the projected topology. Use ordinary semantic headings when the data actually has named columns.
+
+Present compact metadata as stacked key-value rows that reuse status-surface grammar: a short bold label, a colon, and an inline-code value when the value is path-like, numeric, an identifier, or machine state. In Telegram Rich Markdown, use an actual Markdown list or blank paragraph boundaries so soft line breaks cannot collapse several fields into one visual line. Prefer ``- **Path:** `/home/llb` `` and ``- **Entries:** `1–10 of 52` `` over prose fragments joined by a middle dot or other decorative section separator.
 
 ## Truth Modes
 
@@ -118,7 +124,7 @@ Re-check mutable targets immediately before execution. Access denial never autho
 
 ## Prompt Buttons
 
-Use the transport's canonical prompt-button syntax. For pi-telegram, one top-level `telegram_button` comment accepts one JSON object, double-quoted attributes, a JSON matrix, or Compact Matrix Literal (CML). CML uses `{value}` or `{label|prompt}`, trims atom boundaries, preserves other printable text literally, and decodes only `\|`, `\}`, and `\\`; use JSON for multiline prompts, styles, or metadata. A top-level cell becomes one full-width row, while a nested row groups one or more controls horizontally without a parser-level width cap. Prefer one layout comment for multiple controls instead of repeating the marker; `telegram_buttons` is a plural alias, not a different format.
+Use the transport's canonical prompt-button syntax. For pi-telegram, one top-level `telegram_button` comment accepts one JSON object, double-quoted attributes, an adaptive JSON/CML matrix, or positional Compact Matrix Literal (CML). One matrix or row may mix named JSON objects with positional cells, and commas are optional only between completed elements while JSON object internals remain strict. CML uses `{value}`, `{label|prompt}`, or `{label|prompt|selected_style}`; the optional third atom requires an explicit prompt and accepts only `primary`, `success`, or `danger`. It trims atom boundaries, preserves other printable text literally, and decodes only `\|`, `\}`, and `\\`. Prefer CML whenever the model authors the control and it can express the required surface; fall back to expanded JSON only for multiline prompts, non-positional metadata, or a concrete CML parse/render failure, never merely from implementation habit. Deterministic Generative App scripts may return ordinary JSON because their source payload does not consume model-output tokens; author and operate those adapters through the `generative-apps` Skill rather than growing a parallel app workflow here. A top-level cell becomes one full-width row, while a nested row groups one or more controls horizontally without a parser-level width cap. Prefer one layout comment for multiple controls instead of repeating the marker; `telegram_buttons` is a plural alias, not a different format.
 
 ### Semantic Row Composition
 
@@ -158,6 +164,8 @@ Preserve the ordinary admission test: proactively offer an interactive surface e
 - Keep trivial interaction state in the visible conversation. When state becomes too large, long-lived, or error-prone for reliable conversational reconstruction, persist a small human-auditable Markdown state artifact at a deterministic task-owned path and render from it. The artifact belongs to the underlying task or domain, not to this Skill as shadow application state.
 - When transition rules are non-trivial or correctness-sensitive, use a small deterministic state-transition owner—script, module, tool, or existing domain API—that validates `current state + admitted action → next state`; let the model compile the surface from its result instead of informally simulating every transition. Do not create code or files for a trivial one-step interaction.
 - Treat repeated clicks against current state, not stale button appearance. If an action is already consumed or unavailable, keep state unchanged and say so briefly. Preserve an occupied or selected button when spatial layout matters, using its label or selected style as the visual state; omit unavailable controls when layout does not matter. Transport-level disabled buttons are optional, not assumed.
+- Preserve tap-ahead on transports where existing controls remain actionable and rapid clicks queue separate turns. In a source-then-destination interaction, persist the source selection but do not regenerate the board, enumerate destinations, or duplicate controls between the two prompts; emit at most a minimal acknowledgement and let the already visible surface carry the destination click. Regenerate after the completed transition, invalid input, or evidence that the transport cannot preserve the intermediate surface.
+- Resolve coordinate selection by current state rather than rigid click parity. Clicking any currently selectable source selects or replaces the source and then waits; acknowledge a replacement tersely without regenerating the surface. Only a click that is not a selectable source becomes a destination attempt when a source is already selected, at which point the domain owner validates the transition. Without a selected source, a non-source coordinate is a no-op.
 
 ```html
 <!-- telegram_button {"label":"🔍 Inspect run","prompt":"Inspect Run run:example read-only, summarize its current status and latest material evidence, then regenerate relevant supervision controls."} -->

@@ -40,6 +40,13 @@ export function createAgentStartDedupHook(
   };
 }
 
+type TelegramBeforeAgentStartEvent = Omit<
+  BeforeAgentStartEvent,
+  "systemPrompt"
+> & {
+  systemPrompt: string | string[];
+};
+
 export interface TelegramBeforeAgentStartResult {
   systemPrompt?: string | string[];
 }
@@ -72,7 +79,7 @@ export interface TelegramLifecycleRegistrationDeps {
     ctx: ExtensionContext,
   ) => Promise<void> | void;
   onBeforeAgentStart: (
-    event: BeforeAgentStartEvent,
+    event: TelegramBeforeAgentStartEvent,
     ctx: ExtensionContext,
   ) => TelegramBeforeAgentStartReturn;
   onModelSelect: (
@@ -586,7 +593,7 @@ export function registerTelegramLifecycleHooks(
   const registerBeforeAgentStart = pi.on.bind(pi) as unknown as (
     event: "before_agent_start",
     handler: (
-      event: BeforeAgentStartEvent,
+      event: TelegramBeforeAgentStartEvent,
       ctx: ExtensionContext,
     ) => TelegramBeforeAgentStartReturn,
   ) => void;

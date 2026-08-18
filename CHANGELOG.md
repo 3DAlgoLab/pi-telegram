@@ -4,7 +4,34 @@
 
 ## Unreleased
 
-- `Prompt Compatibility`: Preserves plain, lazy, and ordered-block system prompts across Pi-compatible runtimes; Telegram guidance remains a distinct block when the host supplies blocks, while unavailable transport strips only Telegram tool metadata without collapsing unrelated prompt context.
+- `Prompt Compatibility`: Preserves plain and ordered-block system prompts across Pi-compatible runtimes; Telegram guidance remains a distinct block when the host supplies blocks, while unavailable transport strips only Telegram tool metadata without collapsing unrelated prompt context.
+
+## 0.36.2: Provider-Compatible Controls
+
+- `Provider-Compatible Bind Schema`: Exposes `telegram_bind` through one top-level JSON object schema while retaining runtime enforcement of mutually exclusive install and invocation forms, avoiding providers that reject top-level union schemas before any tool call can run.
+- `Reaction Shortcut Naming`: Removes obsolete reaction-action labels from setup guidance now that queue reaction semantics use their current naming.
+- `Compact Thinking Picker`: Keeps `off` on a distinct full-width row and groups the six ordered reasoning intensities into two three-button rows, reducing menu height without changing thinking-level values or callbacks.
+
+## 0.36.1: Adaptive Control Surfaces
+
+- `Adaptive Button Literal`: Replaces binary JSON-or-CML parsing with one strict-JSON-first matrix grammar over a shared button AST. Named JSON objects and positional CML cells may coexist in one matrix or row, commas are optional only between completed elements, every compression step preserves semantics, and malformed comments reject atomically without registering partial callbacks.
+- `Trusted Release Publication`: Makes tag releases depend on reusable full validation, exact tag/package/lock/changelog identity, npm Trusted Publisher provenance, idempotent existing-version checks, public package and tarball verification, and one workflow-owned GitHub Release path without npm tokens.
+- `Consistent Access Denial`: Centralizes unauthorized copy so Guest Mode and private messages render `🚫 Access denied.` with equivalent explicit bold emphasis through HTML-capable surfaces, while callback popups use the same emoji and plain copy without pretending to support rich text.
+- `Destructive Skip State`: Changes the active queue Skip selector from yellow to red and records the indicator in the UI registry, making deferred prompt removal visually distinct from Priority, Scoped, and other elevated but non-destructive states.
+- `Worker Cancellation Fence`: Makes Generative App workers acknowledge child-process abort handling before parent termination, with a bounded forced fallback for synchronously blocked methods, preventing Linux CI load from orphaning a cancelled process long enough to commit its delayed side effect.
+- `Capability App Routing`: Telegram interaction now prefers an already-advertised capability-owned Generative App for repeated controls before synthesizing one-shot prompt buttons, while the bridge remains generic and neither discovers capability-specific apps nor owns their state or identities.
+- `Hybrid Surface Breadcrumbs`: Generated Control Surface and Generative Apps now cross-route over one logical button matrix and shared JSON/CML runtime notation: ephemeral agent composition stays separate from reusable scripts, while one app view may combine deterministic bound methods with ordinary model-mediated prompts and no third button Skill is introduced.
+
+## 0.36.0: Generative Apps
+
+- `Generative App Kernel`: Adds `telegram_bind` for canonical `.mjs` install/replace/invoke with mandatory `init`, strict JSON, bounded output/processes, transactional snapshots, repaired partial-tail recovery, non-symlink root/app/module/source containment, and worker-isolated terminable methods. Lifecycle cancellation stops child processes and fences state commit; failed staging or `init` preserves the installed app.
+- `Inference Bypass`: Parses complete `app::method` and strict-JSON argument prompts after one-shot `tgbtn` resolution, invokes the installed app before Pi queue admission, plans returned Markdown/buttons through the current outbound surface, preserves native callbacks and ordinary prompts, marks successful controls, and fails malformed or unsuccessful bound actions without model fallback.
+- `Transition Fencing`: Serializes transitions with stable locks outside replaceable app directories, reclaims dead owners, reconciles current state from the last complete snapshot, and carries immutable installation generation plus revision on buttons. Replacement, stale callbacks, and lifecycle loss fail before method effects, state commit, or Telegram delivery.
+- `Compact Queue Controls`: Adds strict CML selected styles with atomic validation. Queue detail replaces Delete with independent Priority/Normal and Keep/Skip. Lane transitions append at the destination FIFO tail; Keep/Skip preserves position. Positive and negative reaction categories may coexist; Skip stays reversible, shows only its emoji, and wins at dispatch by dropping the marked head without inference and continuing.
+- `Generated Music Player`: Validates a capability-owned Generative App over the public Actor control surface while `pi-telegram` ships only the generic runtime. Live `ffplay` checks confirmed no-model-turn navigation, pause/play, seek, absolute volume, status, and stop with exact terminal Controls and no pending backlog. The app reports Actor availability and uses symmetric seven-button progress and volume scales.
+- `Dual Action Views`: Keeps fresh-message delivery as the simple default so prior interfaces and selected buttons remain visible, while `viewMode: "edit"` opts a method into replacing its callback message and keyboard. An explicit edit failure records diagnostics and sends one fresh view; automatic refresh remains a separate lifecycle slice.
+- `Direct Initial View`: During an active Telegram turn, `telegram_bind` plans and delivers successful output to the exact target, marks it displayed so the model does not repeat it, and supports `display: false`. Outside turns it returns exact output; delivery failure preserves the app result. Tool success, direct-display, and error text use one leading line break, and failed old-message restyling cannot turn a completed action into failure.
+- `Generative Apps Skill`: Adds an operating Skill for compiling repeated interaction into reusable standalone apps or bounded adapters with generated JSON button views. One surface may mix deterministic bound methods with ordinary model prompts; the Skill covers authorship, review, install/replace/invoke, stale actions, and validation while Generated Control Surface retains ephemeral model-mediated interfaces.
 
 ## 0.35.2: Independent Surface Dimensions
 
