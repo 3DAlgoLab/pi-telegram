@@ -88,6 +88,16 @@ The repository uses a **Flat Domain DAG**:
 - `bindings` / `lifecycle` / `prompts` / `prompt-templates` / `pi`: Pi-facing command/tool/hook registration and cohesive cross-domain binding assembly, including queue mutation/dispatch/watchdog composition over admission and transport ports; session-generation fencing and start/shutdown sequencing across Queue, grouped input, Delivery, polling, capability monitor, follower refresh, and assistant-output projection; Telegram prompt guidance; prompt-template discovery/expansion; and centralized direct Pi SDK imports.
 - `command-templates`: shell-free command-template helpers, composition expansion, placeholder substitution, executable resolution, warnings, and retry/timeout semantics.
 
+### Host Compatibility Boundary
+
+Pi is the primary and only officially supported host. `pi-telegram` may still accept narrow, host-neutral representation differences at its existing Pi-facing boundary when they preserve native Pi behavior and do not create a second runtime policy layer:
+
+- `prompts` preserves either Pi's plain system-prompt string or an ordered block array supplied by a compatible host, appending Telegram guidance without collapsing host-owned blocks.
+- `pi` normalizes settings-manager construction that is either synchronous or asynchronous, then adapts either Pi's legacy enabled-model methods or a generic `get` / `set` settings service before model-menu reads and scoped-model persistence use it. Hosts without an explicit reload method rely on fresh asynchronous construction; durable writes still require `flush`.
+- `lifecycle` continues to require Pi's semantic `agent_settled` boundary. It does not infer terminal settlement from host-specific `agent_end`, retry, or stop events; a compatibility shim must reproduce that contract before it can safely support activity identity and unrecovered-error finalization.
+
+This boundary uses no host-name detection, host package dependency, prototype patching, hidden agent process, PTY, or terminal forwarding. Representation adapters are best-effort compatibility rather than an OMP support guarantee. Alternate hosts and community contributors own validation of their compatibility shims and must supply every lifecycle semantic that the bridge requires.
+
 ### Guarded Invariants
 
 Architecture invariant tests protect:
