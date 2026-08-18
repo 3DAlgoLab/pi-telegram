@@ -871,21 +871,14 @@ export function registerTelegramBindTool(
     label: "Telegram Bind",
     description:
       "Install, explicitly replace, or invoke one named method on a managed Generative App; successful output displays directly in the active Telegram turn unless display is false.",
-    parameters: Type.Union([
-      Type.Object({
-        app: Type.String(),
-        script: Type.String(),
-        replace: Type.Optional(Type.Boolean()),
-        display: Type.Optional(Type.Boolean()),
-        argument: Type.Optional(Type.Unknown()),
-      }, { additionalProperties: false }),
-      Type.Object({
-        app: Type.String(),
-        method: Type.String(),
-        display: Type.Optional(Type.Boolean()),
-        argument: Type.Optional(Type.Unknown()),
-      }, { additionalProperties: false }),
-    ]),
+    parameters: Type.Object({
+      app: Type.String(),
+      script: Type.Optional(Type.String()),
+      method: Type.Optional(Type.String()),
+      replace: Type.Optional(Type.Boolean()),
+      display: Type.Optional(Type.Boolean()),
+      argument: Type.Optional(Type.Unknown()),
+    }, { additionalProperties: false }),
     async execute(_toolCallId, params) {
       try {
         const result = await bindGenerativeApp({

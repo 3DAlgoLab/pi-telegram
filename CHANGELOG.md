@@ -2,7 +2,11 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
-## Unreleased
+## 0.36.2: Provider-Compatible Controls
+
+- `Provider-Compatible Bind Schema`: Exposes `telegram_bind` through one top-level JSON object schema while retaining runtime enforcement of mutually exclusive install and invocation forms, avoiding providers that reject top-level union schemas before any tool call can run.
+- `Reaction Shortcut Naming`: Removes obsolete reaction-action labels from setup guidance now that queue reaction semantics use their current naming.
+- `Compact Thinking Picker`: Keeps `off` on a distinct full-width row and groups the six ordered reasoning intensities into two three-button rows, reducing menu height without changing thinking-level values or callbacks.
 
 ## 0.36.1: Adaptive Control Surfaces
 
