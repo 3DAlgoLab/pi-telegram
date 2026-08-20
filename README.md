@@ -218,7 +218,7 @@ Inbound files land under `<agent-dir>/tmp/telegram` and default to a 50 MiB limi
 
 ### Voice And Media
 
-Voice notes, audio, images, PDFs, and other media can pass through configured inbound handlers, programmatic handlers, or registered STT providers. Outbound voice can use configured `outboundHandlers` or registered TTS providers; `pi-telegram` owns reply policy and Telegram transport, while providers own synthesis. Explicit `telegram_voice` actions accept either a JSON object or compact double-quoted attributes, with equivalent `text` and `value` payload keys and one colon-free action marker.
+Voice notes, audio, images, PDFs, and other media can pass through configured inbound handlers, programmatic handlers, or registered STT providers. Outbound voice can use configured `outboundHandlers` or registered TTS providers; `pi-telegram` owns reply policy and Telegram transport, while providers own synthesis. Configure provider-neutral local/API pipelines and ordered fallbacks through [`telegram.json` command templates](./docs/voice.md#choose-an-integration-path). The default `hidden` reply mode still supports intentional voice delivery through explicit `telegram_voice` actions; `mirror` and `always` add automatic voice policy. Explicit actions accept either a JSON object or compact double-quoted attributes, with equivalent `text` and `value` payload keys and one colon-free action marker.
 
 ### Buttons And Callbacks
 

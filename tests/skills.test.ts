@@ -47,7 +47,7 @@ test("Telegram extension contributes all bundled skills", async () => {
   );
   assert.match(
     bridge,
-    /routing breadcrumb.*not permission.*discover capability-specific apps.*hard-code their identities/su,
+    /routing guidance.*not permission.*discover capability-specific apps.*hard-code their identities/su,
   );
   assert.match(bridge, /before Pi queue admission/u);
   const generatedSurface = sources.get("generated-control-surface") ?? "";
