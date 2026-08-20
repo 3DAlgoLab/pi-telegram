@@ -2,6 +2,11 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.36.7: Context-Aware Proactive Controls
+
+- `Proactive Prompt Buttons`: Plans valid top-level `telegram_button` comments before local/autonomous assistant segments enter Rich or HTML proactive delivery, preserving the ordinary callback store and renderer path instead of silently hiding correct controls.
+- `Connection-Aware Agent Context`: Successful setup/connect and disconnect commands queue a hidden connection-state note for delivery with the next agent turn without triggering one. Connected system guidance and Telegram Skills now distinguish transport capability from user intent, reserving proactive Telegram controls for Telegram-originated turns or explicit requests.
+
 ## 0.36.6: Orphan Journal Guard
 
 - `Orphan Journal Guard`: Rejects a missing journal snapshot when immutable revision segments still exist, preventing later admission from replacing uncertain durable authority with a new revisionless snapshot while preserving snapshot-first compaction and fail-closed recovery.
