@@ -132,6 +132,22 @@ export default function (pi: Pi.ExtensionAPI) {
         getProfileName: configStore.getActiveProfileName,
         getBotToken: configStore.getBotToken,
         getBotId: getTelegramBotId,
+        onRecovery(event) {
+          recordRuntimeEvent(
+            "recovery",
+            event.kind === "repaired"
+              ? "Telegram update journal was repaired automatically."
+              : "Telegram update journal was reset after its damaged files were quarantined.",
+            {
+              phase: "journal-auto-recovery",
+              recoveryKind: event.kind,
+              journalPath: event.path,
+              revision: event.revision,
+              quarantinePath: event.quarantinePath,
+              reason: event.reason,
+            },
+          );
+        },
         getQueueRuntimeIdentity() {
           return {
             instanceId: telegramInstanceId,
