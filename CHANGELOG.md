@@ -2,6 +2,10 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.36.8: Durable Journal Recovery
+
+- `Durable Journal Recovery`: Restricts age cleanup to UUID-prefixed downloads, repairs missing or revisionless snapshots from validated segment evidence, and otherwise quarantines the snapshot plus segments before publishing a fresh journal, keeping `/telegram-connect` operational with informational recovery evidence instead of manual JSON repair.
+
 ## 0.36.7: Context-Aware Proactive Controls
 
 - `Proactive Prompt Buttons`: Plans valid top-level `telegram_button` comments before local/autonomous assistant segments enter Rich or HTML proactive delivery, preserving the ordinary callback store and renderer path instead of silently hiding correct controls.

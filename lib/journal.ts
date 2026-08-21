@@ -17,7 +17,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
 import {
@@ -349,6 +349,14 @@ export type TelegramUpdateJournalPublicationBoundary =
   | "before-write"
   | "after-write-before-rename";
 
+export interface TelegramUpdateJournalRecoveryEvent {
+  kind: "repaired" | "reset";
+  path: string;
+  revision?: number;
+  quarantinePath?: string;
+  reason: string;
+}
+
 export interface TelegramUpdateJournalStoreOptions {
   path: string;
   profileName?: string;
@@ -356,6 +364,7 @@ export interface TelegramUpdateJournalStoreOptions {
   maxEntries?: number;
   maxBytes?: number;
   getNowMs?: () => number;
+  onRecovery?: (event: TelegramUpdateJournalRecoveryEvent) => void;
   queueRuntimeIdentity?: TelegramUpdateJournalQueueRuntimeIdentity;
   getQueueProcessLiveness?: (
     owner: TelegramUpdateJournalQueueProcessIdentity,
@@ -1472,6 +1481,7 @@ export interface TelegramUpdateJournalRuntimeBindingResolverDeps {
   getBotId: () => number | undefined;
   getJournalPath: (profileName?: string) => string;
   getQueueRuntimeIdentity?: () => TelegramUpdateJournalQueueRuntimeIdentity;
+  onRecovery?: (event: TelegramUpdateJournalRecoveryEvent) => void;
 }
 
 export function createTelegramUpdateJournalRuntimeBindingResolver(
@@ -1506,6 +1516,7 @@ export function createTelegramUpdateJournalRuntimeBindingResolver(
         ...(deps.getQueueRuntimeIdentity
           ? { queueRuntimeIdentity: deps.getQueueRuntimeIdentity() }
           : {}),
+        ...(deps.onRecovery ? { onRecovery: deps.onRecovery } : {}),
       }),
     };
   };
@@ -1546,6 +1557,7 @@ export function createTelegramUpdateJournalBindingRuntime(deps: {
       ...(includeQueueRuntimeIdentity && deps.base.getQueueRuntimeIdentity
         ? { getQueueRuntimeIdentity: deps.base.getQueueRuntimeIdentity }
         : {}),
+      ...(deps.base.onRecovery ? { onRecovery: deps.base.onRecovery } : {}),
       getJournalPath(profileName) {
         return deps.getFollowerJournalPath(bindingKey, profileName);
       },
@@ -1601,6 +1613,13 @@ export function createTelegramUpdateJournalStore(
   );
   const getNowMs = options.getNowMs ?? Date.now;
   const onPublicationBoundary = options.onPublicationBoundary;
+  const notifyRecovery = (event: TelegramUpdateJournalRecoveryEvent): void => {
+    try {
+      options.onRecovery?.(event);
+    } catch {
+      // Recovery diagnostics must not break recovered journal authority.
+    }
+  };
   const getQueueProcessLiveness =
     options.getQueueProcessLiveness ?? getTelegramProcessLiveness;
 
@@ -1742,8 +1761,9 @@ export function createTelegramUpdateJournalStore(
     entries: [],
   });
 
-  const readCurrent = (): ReadTelegramUpdateJournalResult => {
+  const readCurrentStrict = (): ReadTelegramUpdateJournalResult => {
     let source: string;
+    let recoveringMissingSnapshot = false;
     try {
       const size = statSync(path).size;
       if (size > maxBytes) {
@@ -1775,15 +1795,14 @@ export function createTelegramUpdateJournalStore(
           );
         }
         if (orphanedSegmentNames.length > 0) {
-          throw createJournalError(
-            "invalid",
-            path,
-            `is missing while ${segmentDirectory} retains revision segments`,
-          );
+          recoveringMissingSnapshot = true;
+          source = serializeJournalFile(emptyFile());
+        } else {
+          return { file: emptyFile(), exists: false, serializedBytes: 0 };
         }
-        return { file: emptyFile(), exists: false, serializedBytes: 0 };
+      } else {
+        throw createJournalError("io", path, "could not be read", error);
       }
-      throw createJournalError("io", path, "could not be read", error);
     }
     let parsed: unknown;
     try {
@@ -1808,6 +1827,9 @@ export function createTelegramUpdateJournalStore(
     segmentNames.sort();
     let revision = file.revision ?? 0;
     let unappliedSegmentBytes = 0;
+    let orphanRecoverySawUpsert = false;
+    let orphanRecoverySawBaseRemoval = false;
+    let orphanRecoveryUnsafe = false;
     for (const name of segmentNames) {
       const nameRevision = Number(name.slice(0, 16));
       if (nameRevision <= revision) continue;
@@ -1871,11 +1893,16 @@ export function createTelegramUpdateJournalStore(
         file.entries.map((entry) => [entry.updateId, entry]),
       );
       for (const updateId of segment.removedUpdateIds) {
+        if (recoveringMissingSnapshot && !entriesById.has(updateId)) {
+          orphanRecoverySawBaseRemoval = true;
+          if (orphanRecoverySawUpsert) orphanRecoveryUnsafe = true;
+        }
         entriesById.delete(updateId);
       }
       for (const entry of segment.upsertedEntries) {
         entriesById.set(entry.updateId, entry);
       }
+      if (segment.upsertedEntries.length > 0) orphanRecoverySawUpsert = true;
       file = parseJournalFile(
         {
           version: TELEGRAM_UPDATE_JOURNAL_VERSION,
@@ -1935,8 +1962,164 @@ export function createTelegramUpdateJournalStore(
       }
       return { file, exists: true, serializedBytes: reboundBytes };
     }
+    if (recoveringMissingSnapshot) {
+      if (
+        orphanRecoveryUnsafe ||
+        !orphanRecoverySawBaseRemoval ||
+        file.entries.length > 0
+      ) {
+        throw createJournalError(
+          "invalid",
+          path,
+          `is missing while ${segmentDirectory} retains revision segments`,
+        );
+      }
+      const recovered = serializeJournalFile(file);
+      const recoveredBytes = assertCapacity(file, recovered);
+      writeJournalFile(path, recovered, onPublicationBoundary);
+      notifyRecovery({
+        kind: "repaired",
+        path,
+        revision: file.revision,
+        reason: "Recovered a missing snapshot from a complete empty segment history.",
+      });
+      return { file, exists: true, serializedBytes: recoveredBytes };
+    }
     const serializedBytes = assertCapacity(file);
     return { file, exists: true, serializedBytes };
+  };
+
+  const readCurrent = (): ReadTelegramUpdateJournalResult => {
+    try {
+      return readCurrentStrict();
+    } catch (error) {
+      if (
+        !(error instanceof TelegramUpdateJournalError) ||
+        error.code !== "invalid"
+      ) {
+        throw error;
+      }
+      let snapshotExists = false;
+      try {
+        statSync(path);
+        snapshotExists = true;
+      } catch (snapshotError) {
+        if ((snapshotError as { code?: unknown })?.code !== "ENOENT") throw error;
+      }
+      const segmentDirectory = getTelegramUpdateJournalSegmentDirectory(path);
+      let segmentNames: string[];
+      try {
+        segmentNames = readdirSync(segmentDirectory)
+          .filter((name) => /^\d{16}\.json$/u.test(name))
+          .sort();
+      } catch {
+        throw error;
+      }
+      if (segmentNames.length === 0) throw error;
+
+      if (snapshotExists) {
+        try {
+          const snapshot = parseJournalFile(
+            JSON.parse(readFileSync(path, "utf8")) as unknown,
+            path,
+          );
+          const firstSegmentPath = join(segmentDirectory, segmentNames[0]);
+          const firstSegment = parseJournalSegment(
+            JSON.parse(readFileSync(firstSegmentPath, "utf8")) as unknown,
+            firstSegmentPath,
+          );
+          if (
+            snapshot.revision === undefined &&
+            firstSegment.previousRevision > 0 &&
+            snapshot.profile === firstSegment.profile &&
+            identitiesMatch(snapshot.botIdentity, firstSegment.botIdentity)
+          ) {
+            writeJournalFile(
+              path,
+              serializeJournalFile({
+                ...snapshot,
+                revision: firstSegment.previousRevision,
+              }),
+              onPublicationBoundary,
+            );
+            const repaired = readCurrentStrict();
+            notifyRecovery({
+              kind: "repaired",
+              path,
+              revision: repaired.file.revision,
+              reason: `Recovered a revisionless snapshot from segment revision ${firstSegment.revision}.`,
+            });
+            return repaired;
+          }
+        } catch {
+          // Fall through to evidence-preserving quarantine and reset.
+        }
+      }
+
+      const recoveryDirectory = join(
+        dirname(path),
+        "recovery",
+        `${getNowMs()}-${process.pid}-${randomUUID()}`,
+      );
+      mkdirSync(recoveryDirectory, { recursive: true, mode: 0o700 });
+      const snapshotQuarantinePath = join(recoveryDirectory, basename(path));
+      const segmentQuarantinePath = join(
+        recoveryDirectory,
+        basename(segmentDirectory),
+      );
+      if (
+        snapshotExists &&
+        !renameTelegramPathWithRetry(path, snapshotQuarantinePath)
+      ) {
+        throw createJournalError(
+          "io",
+          path,
+          "could not quarantine an unrecoverable journal snapshot",
+          error,
+        );
+      }
+      if (!renameTelegramPathWithRetry(segmentDirectory, segmentQuarantinePath)) {
+        if (snapshotExists) {
+          renameTelegramPathWithRetry(snapshotQuarantinePath, path);
+        }
+        throw createJournalError(
+          "io",
+          segmentDirectory,
+          "could not quarantine an unrecoverable journal segment history",
+          error,
+        );
+      }
+      const reset = emptyFile();
+      const serialized = serializeJournalFile(reset);
+      const serializedBytes = assertCapacity(reset, serialized);
+      try {
+        writeJournalFile(path, serialized, onPublicationBoundary);
+      } catch (publicationError) {
+        const segmentsRestored = renameTelegramPathWithRetry(
+          segmentQuarantinePath,
+          segmentDirectory,
+        );
+        const snapshotRestored =
+          !snapshotExists ||
+          renameTelegramPathWithRetry(snapshotQuarantinePath, path);
+        if (!segmentsRestored || !snapshotRestored) {
+          throw createJournalError(
+            "io",
+            path,
+            "reset publication failed after journal evidence was quarantined",
+            publicationError,
+          );
+        }
+        throw publicationError;
+      }
+      notifyRecovery({
+        kind: "reset",
+        path,
+        quarantinePath: recoveryDirectory,
+        reason: error.message,
+      });
+      return { file: reset, exists: true, serializedBytes };
+    }
   };
 
   const runMutation = <T>(operation: () => T): T => {
