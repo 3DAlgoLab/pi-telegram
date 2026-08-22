@@ -2,6 +2,10 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.36.11: At-Most-Once Prompt Dispatch Hotfix
+
+- `At-Most-Once Prompt Dispatch`: Commits each exact durable Telegram receipt synchronously before Pi model admission and blocks dispatch when that commit fails, closing the session/process-replacement replay window that could deliver an already-processed old prompt again; the narrow commit-before-admission crash boundary now favors no duplicate over retry.
+
 ## 0.36.10: Transport-Fenced Typing Hotfix
 
 - `Typing Authority Fence`: Starts and continues Telegram typing activity only while the Pi instance has direct ownership or a live follower registration, stopping quietly when authority disappears so classic takeover cannot re-arm a stale loop or flood diagnostics with expected follower-registration errors.

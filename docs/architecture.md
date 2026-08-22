@@ -198,7 +198,7 @@ All inbound updates are gated by the configured authorized user id.
 5. Coalesce media groups, likely split long text, and one adjacent forward-plus-comment pair in either order when needed.
 6. Download files with size limits and partial-download cleanup, then run configured/programmatic inbound handlers.
 7. Build a prompt or control queue item carrying an exact durable receipt for every contributing update id.
-8. Remove journal authority only after prompt handoff, control settlement, or durable follower acknowledgement; execution failures remain durable until automatic replay succeeds.
+8. Remove local prompt journal authority synchronously immediately before `sendUserMessage`, so session/process replacement can lose an unstarted prompt at that narrow crash boundary but can never replay a prompt already admitted to Pi; controls and foreign forwarding retain their explicit settlement boundaries.
 9. Handle `edited_message` updates separately while the original turn is still queued and dispatch only when all safety gates are clear.
 
 #### Durable Admission And Recovery
@@ -286,7 +286,7 @@ Dispatch requires:
 
 A dispatched prompt remains queued until `agent_start` consumes it. This keeps the active Telegram turn bound for previews, attachments, aborts, and final replies. A low-level `agent_end` error also retains that active turn because Pi may retry automatically; a later successful `agent_end` delivers through the original target and metadata, while `agent_settled` proves that an unrecovered error can be finalized once before queue dispatch resumes.
 
-Post-agent-end queue dispatch uses a session-bound deferred dispatcher. It is activated on session start, clears timers on shutdown, and skips callbacks from older generations before touching `ExtensionContext`. Dispatch stays session-bound after polling ownership moves elsewhere. When a queued Telegram prompt is forwarded into Pi, it uses a normal `sendUserMessage(content)` turn after the bridge's idle/dispatch guards pass; it does not use Pi's `followUp` delivery option or inject terminal input.
+Post-agent-end queue dispatch uses a session-bound deferred dispatcher. It is activated on session start, clears timers on shutdown, and skips callbacks from older generations before touching `ExtensionContext`. Dispatch stays session-bound after polling ownership moves elsewhere. When a queued Telegram prompt is forwarded into Pi, the bridge synchronously commits its exact durable receipt before calling normal `sendUserMessage(content)`; failed receipt commitment blocks dispatch, while the unavoidable crash window between commitment and Pi admission favors at-most-once execution over replay. It does not use Pi's `followUp` delivery option or inject terminal input.
 
 One monotonic session generation also fences agent/tool/message events, compaction callbacks, preview state, scheduled final delivery, controls, and shutdown. Distinct Pi context objects observed within one session adopt that generation; contexts already observed under an older generation remain stale after replacement. Session start invalidates pending preview work, delayed finals check their captured context before delivery, and shutdown rechecks after asynchronous polling/preview boundaries with a bounded preview-clear wait.
 
