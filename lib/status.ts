@@ -321,7 +321,6 @@ export interface TelegramBridgeStatusConfig {
   botToken?: string;
   botUsername?: string;
   allowedUserId?: number;
-  lastUpdateId?: number;
 }
 
 export interface TelegramBridgeStatusRuntimeDeps<
@@ -337,6 +336,7 @@ export interface TelegramBridgeStatusRuntimeDeps<
   isPollingActive: () => boolean;
   getPollingState?: () => TelegramBridgePollingState;
   getInboundWorkerState?: () => TelegramBridgeInboundWorkerState | undefined;
+  getAcceptedThroughUpdateId?: () => number | undefined;
   getActiveSourceMessageIds: () => number[] | undefined;
   hasActiveTurn: () => boolean;
   hasDispatchPending: () => boolean;
@@ -717,7 +717,7 @@ export function createTelegramBridgeStatusRuntime<
         ...(deps.getInboundWorkerState
           ? { inboundWorker: deps.getInboundWorkerState() }
           : {}),
-        lastUpdateId: config.lastUpdateId,
+        lastUpdateId: deps.getAcceptedThroughUpdateId?.(),
         activeSourceMessageIds: deps.getActiveSourceMessageIds(),
         pendingDispatch: deps.hasDispatchPending(),
         compactionInProgress: deps.isCompactionInProgress(),
