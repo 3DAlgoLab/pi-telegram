@@ -2,6 +2,11 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.36.9: Telegram Status And Generated Controls Hotfix
+
+- `Classic Takeover Status`: Keeps a classic-mode client visibly `disconnected` after another Pi instance takes Telegram ownership, preventing stale transport-side activity errors from overriding the authoritative connection state.
+- `Generated Button Surfaces`: Makes vertical full-width controls the phone-readable default, earns multi-column rows only for compact labels or emoji-only spatial controls, encourages concise semantic labels, and requires safe 2–6 button controls whenever a Telegram reply asks a bounded blocking confirmation or choice instead of leaving an avoidable prose-only feedback step.
+
 ## 0.36.8: Durable Journal Recovery
 
 - `Durable Journal Recovery`: Restricts age cleanup to UUID-prefixed downloads, repairs missing or revisionless snapshots from validated segment evidence, and otherwise quarantines the snapshot plus segments before publishing a fresh journal, keeping `/telegram-connect` operational with informational recovery evidence instead of manual JSON repair.
