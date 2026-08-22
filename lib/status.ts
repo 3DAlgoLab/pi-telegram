@@ -871,9 +871,6 @@ export function buildTelegramStatusBarText(
   state: TelegramStatusBarState,
 ): string {
   const label = theme.fg("accent", getTelegramStatusBarLabel(state));
-  if (state.error) {
-    return `${label} ${theme.fg("error", "error")}`;
-  }
   const queued = state.queuedStatus
     ? theme.fg("success", state.queuedStatus)
     : "";
@@ -885,6 +882,9 @@ export function buildTelegramStatusBarText(
     return `${label} ${theme.fg("warning", "electing")}${queued}`;
   if (!state.pollingActive && state.busRole !== "follower")
     return `${theme.fg("accent", "telegram")} ${theme.fg("dim", "disconnected")}${queued}`;
+  if (state.error) {
+    return `${label} ${theme.fg("error", "error")}`;
+  }
   if (state.processing) {
     const processingStatus = state.queuedStatus
       ? "active"
