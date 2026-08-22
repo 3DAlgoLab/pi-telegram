@@ -465,6 +465,15 @@ export default function (pi: Pi.ExtensionAPI) {
       BusApi.createTelegramAggregateTypingActionSender(telegramApiRuntime),
     updateStatus,
     isContextActive: telegramSessionContextStore.isCurrent,
+    getTransportAuthority() {
+      if (ownsTelegramDirectDelivery()) {
+        const epoch = getCurrentLeaderEpoch();
+        return epoch === undefined ? undefined : `direct:${epoch}`;
+      }
+      if (!telegramBusFollowerRegistrationState.isRegistered()) return undefined;
+      const generation = telegramBusFollowerRegistrationState.getGeneration();
+      return generation ? `follower:${generation}` : undefined;
+    },
     recordRuntimeEvent,
   });
   const currentModelRuntime = Model.createCurrentModelRuntime({

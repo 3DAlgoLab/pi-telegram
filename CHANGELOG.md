@@ -2,6 +2,10 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.36.10: Transport-Fenced Typing Hotfix
+
+- `Typing Authority Fence`: Starts and continues Telegram typing activity only while the Pi instance has direct ownership or a live follower registration, stopping quietly when authority disappears so classic takeover cannot re-arm a stale loop or flood diagnostics with expected follower-registration errors.
+
 ## 0.36.9: Telegram Status And Generated Controls Hotfix
 
 - `Classic Takeover Status`: Keeps a classic-mode client visibly `disconnected` after another Pi instance takes Telegram ownership, preventing stale transport-side activity errors from overriding the authoritative connection state.
