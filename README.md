@@ -274,7 +274,7 @@ Stable public entrypoints are documented in [Public API](./docs/public-api.md), 
 
 ## Safety Boundaries
 
-Durable inbound admission is a **process-crash recovery** guarantee. Atomic private-file replacement preserves acknowledged journal authority across ordinary process exit, crash, kill, and replacement, but the extension does not flush files or parent directories for host/kernel/filesystem/device/power-loss durability. Keep `~/.pi/agent` on appropriately managed storage and backups if that stronger operational guarantee is required. Before downgrading below `0.28.0`, run `node scripts/check-downgrade.mjs`; a blocked result means `0.28.x` must drain the retained journal first. See [Durable Admission And Recovery](./docs/architecture.md#durable-admission-and-recovery).
+Durable inbound admission is a **process-crash recovery** guarantee. Atomic private-file replacement preserves acknowledged journal authority and its journal-owned `acceptedThroughUpdateId` polling cursor across ordinary process exit, crash, kill, and replacement, but the extension does not flush files or parent directories for host/kernel/filesystem/device/power-loss durability. `telegram.json` contains configuration only. Keep `~/.pi/agent` on appropriately managed storage and backups if that stronger operational guarantee is required. Before downgrading below `0.37.0`, run `node scripts/check-downgrade.mjs`; any retained cursor-schema journal blocks downgrade because an older runtime could repoll admitted updates. See [Durable Admission And Recovery](./docs/architecture.md#durable-admission-and-recovery).
 
 `pi-telegram` intentionally does not:
 

@@ -157,6 +157,7 @@ export interface TelegramUpdateJournalEntry {
 export interface TelegramUpdateJournalFile {
   version: typeof TELEGRAM_UPDATE_JOURNAL_VERSION;
   revision?: number;
+  acceptedThroughUpdateId?: number;
   profile: string;
   botIdentity: TelegramUpdateJournalBotIdentity;
   entries: TelegramUpdateJournalEntry[];
@@ -312,6 +313,7 @@ export interface TelegramUpdateJournalStore {
   read(): TelegramUpdateJournalSnapshot;
   appendBatch<TUpdate extends TelegramUpdateJournalInput>(
     updates: readonly TUpdate[],
+    acceptedThroughUpdateId?: number,
   ): TelegramUpdateJournalAppendResult;
   markQueued(
     receipt: TelegramUpdateJournalQueueReceipt,
@@ -385,6 +387,7 @@ export interface TelegramUpdateJournalSegment {
   version: typeof TELEGRAM_UPDATE_JOURNAL_VERSION;
   revision: number;
   previousRevision: number;
+  acceptedThroughUpdateId?: number;
   profile: string;
   botIdentity: TelegramUpdateJournalBotIdentity;
   upsertedEntries: TelegramUpdateJournalEntry[];
@@ -975,6 +978,7 @@ function parseJournalFile(
     !hasOnlyKeys(value, [
       "version",
       "revision",
+      "acceptedThroughUpdateId",
       "profile",
       "botIdentity",
       "entries",
@@ -983,6 +987,8 @@ function parseJournalFile(
     !Number.isSafeInteger(value.version) ||
     (value.revision !== undefined &&
       (!isSafeNonNegativeInteger(value.revision) || value.revision === 0)) ||
+    (value.acceptedThroughUpdateId !== undefined &&
+      !isSafeNonNegativeInteger(value.acceptedThroughUpdateId)) ||
     !isNonEmptyString(value.profile) ||
     !Array.isArray(value.entries) ||
     (value.operatorDispositions !== undefined &&
@@ -1008,6 +1014,17 @@ function parseJournalFile(
         "contains duplicate or unordered entry ids",
       );
     }
+  }
+  if (
+    entries.length > 0 &&
+    value.acceptedThroughUpdateId !== undefined &&
+    value.acceptedThroughUpdateId < entries.at(-1)!.updateId
+  ) {
+    throw createJournalError(
+      "invalid",
+      path,
+      "has an admission cursor behind its active entries",
+    );
   }
   const queuedReceipts = new Map<
     string,
@@ -1096,6 +1113,9 @@ function parseJournalFile(
     ...(value.revision !== undefined
       ? { revision: value.revision as number }
       : {}),
+    ...(value.acceptedThroughUpdateId !== undefined
+      ? { acceptedThroughUpdateId: value.acceptedThroughUpdateId as number }
+      : {}),
     profile: value.profile,
     botIdentity: validateBotIdentity(value.botIdentity, path),
     entries,
@@ -1113,6 +1133,7 @@ function parseJournalSegment(
       "version",
       "revision",
       "previousRevision",
+      "acceptedThroughUpdateId",
       "profile",
       "botIdentity",
       "upsertedEntries",
@@ -1122,6 +1143,8 @@ function parseJournalSegment(
     value.version !== TELEGRAM_UPDATE_JOURNAL_VERSION ||
     !isSafePositiveInteger(value.revision) ||
     !isSafeNonNegativeInteger(value.previousRevision) ||
+    (value.acceptedThroughUpdateId !== undefined &&
+      !isSafeNonNegativeInteger(value.acceptedThroughUpdateId)) ||
     !isNonEmptyString(value.profile) ||
     !Array.isArray(value.upsertedEntries) ||
     !Array.isArray(value.removedUpdateIds) ||
@@ -1139,6 +1162,18 @@ function parseJournalSegment(
       throw createJournalError("invalid", path, "has duplicate segment upserts");
     }
     upsertedIds.add(entry.updateId);
+  }
+  if (
+    upsertedEntries.length > 0 &&
+    value.acceptedThroughUpdateId !== undefined &&
+    value.acceptedThroughUpdateId <
+      Math.max(...upsertedEntries.map((entry) => entry.updateId))
+  ) {
+    throw createJournalError(
+      "invalid",
+      path,
+      "has an admission cursor behind its segment upserts",
+    );
   }
   const removedUpdateIds: number[] = [];
   const removedIds = new Set<number>();
@@ -1162,6 +1197,9 @@ function parseJournalSegment(
     version: TELEGRAM_UPDATE_JOURNAL_VERSION,
     revision: value.revision,
     previousRevision: value.previousRevision,
+    ...(value.acceptedThroughUpdateId !== undefined
+      ? { acceptedThroughUpdateId: value.acceptedThroughUpdateId as number }
+      : {}),
     profile: value.profile,
     botIdentity: validateBotIdentity(value.botIdentity, path),
     upsertedEntries,
@@ -1190,6 +1228,9 @@ function cloneFile(file: TelegramUpdateJournalFile): TelegramUpdateJournalFile {
   return {
     version: TELEGRAM_UPDATE_JOURNAL_VERSION,
     ...(file.revision !== undefined ? { revision: file.revision } : {}),
+    ...(file.acceptedThroughUpdateId !== undefined
+      ? { acceptedThroughUpdateId: file.acceptedThroughUpdateId }
+      : {}),
     profile: file.profile,
     botIdentity: { ...file.botIdentity },
     entries: file.entries.map(cloneEntry),
@@ -1880,6 +1921,17 @@ export function createTelegramUpdateJournalStore(
         );
       }
       if (
+        segment.acceptedThroughUpdateId !== undefined &&
+        file.acceptedThroughUpdateId !== undefined &&
+        segment.acceptedThroughUpdateId < file.acceptedThroughUpdateId
+      ) {
+        throw createJournalError(
+          "invalid",
+          segmentPath,
+          "regresses the admission cursor",
+        );
+      }
+      if (
         segment.profile !== storedProfile ||
         !identitiesMatch(segment.botIdentity, storedIdentity)
       ) {
@@ -1907,6 +1959,11 @@ export function createTelegramUpdateJournalStore(
         {
           version: TELEGRAM_UPDATE_JOURNAL_VERSION,
           revision: segment.revision,
+          ...(segment.acceptedThroughUpdateId !== undefined
+            ? { acceptedThroughUpdateId: segment.acceptedThroughUpdateId }
+            : file.acceptedThroughUpdateId !== undefined
+              ? { acceptedThroughUpdateId: file.acceptedThroughUpdateId }
+              : {}),
           profile: storedProfile,
           botIdentity: mergeBotIdentity(file.botIdentity, segment.botIdentity),
           entries: [...entriesById.values()].sort(
@@ -2136,6 +2193,7 @@ export function createTelegramUpdateJournalStore(
     entries: TelegramUpdateJournalEntry[],
     contentChanged: boolean,
     operatorDispositions = current.file.operatorDispositions,
+    acceptedThroughUpdateId = current.file.acceptedThroughUpdateId,
   ): { file: TelegramUpdateJournalFile; serializedBytes: number } => {
     const botIdentity = mergeBotIdentity(
       current.file.botIdentity,
@@ -2147,7 +2205,8 @@ export function createTelegramUpdateJournalStore(
       isDeepStrictEqual(
         current.file.operatorDispositions ?? [],
         operatorDispositions ?? [],
-      )
+      ) &&
+      current.file.acceptedThroughUpdateId === acceptedThroughUpdateId
     ) {
       return { file: current.file, serializedBytes: current.serializedBytes };
     }
@@ -2156,6 +2215,9 @@ export function createTelegramUpdateJournalStore(
       profile,
       botIdentity,
       entries,
+      ...(acceptedThroughUpdateId !== undefined
+        ? { acceptedThroughUpdateId }
+        : {}),
       ...(operatorDispositions?.length
         ? { operatorDispositions }
         : {}),
@@ -2164,6 +2226,7 @@ export function createTelegramUpdateJournalStore(
     const serializedBytes = assertCapacity(file, serialized);
     const changed =
       contentChanged ||
+      current.file.acceptedThroughUpdateId !== acceptedThroughUpdateId ||
       !isDeepStrictEqual(current.file.botIdentity, file.botIdentity);
     if (!changed) {
       return { file, serializedBytes: current.serializedBytes };
@@ -2193,6 +2256,9 @@ export function createTelegramUpdateJournalStore(
       botIdentity: file.botIdentity,
       upsertedEntries,
       removedUpdateIds,
+      ...(acceptedThroughUpdateId !== undefined
+        ? { acceptedThroughUpdateId }
+        : {}),
       ...(!isDeepStrictEqual(
         current.file.operatorDispositions ?? [],
         operatorDispositions ?? [],
@@ -2260,8 +2326,18 @@ export function createTelegramUpdateJournalStore(
         };
       });
     },
-    appendBatch(updates) {
+    appendBatch(updates, requestedAcceptedThroughUpdateId) {
       return runMutation(() => {
+        if (
+          requestedAcceptedThroughUpdateId !== undefined &&
+          !isSafeNonNegativeInteger(requestedAcceptedThroughUpdateId)
+        ) {
+          throw createJournalError(
+            "invalid",
+            path,
+            "received an invalid admission cursor",
+          );
+        }
         const current = readCurrent();
         const normalizedUpdates: TelegramJournaledUpdate[] = [];
         for (const update of updates) {
@@ -2290,6 +2366,8 @@ export function createTelegramUpdateJournalStore(
         const entriesById = new Map(
           current.file.entries.map((entry) => [entry.updateId, entry]),
         );
+        const previousAcceptedThroughUpdateId =
+          current.file.acceptedThroughUpdateId;
         const discardedUpdateIds = new Set(
           (current.file.operatorDispositions ?? [])
             .filter((disposition) => disposition.action === "discard")
@@ -2335,6 +2413,31 @@ export function createTelegramUpdateJournalStore(
           addedUpdateIds.push(entry.updateId);
         }
 
+        const batchLastUpdateId = normalizedUpdates.at(-1)?.update_id;
+        if (
+          requestedAcceptedThroughUpdateId !== undefined &&
+          batchLastUpdateId !== undefined &&
+          requestedAcceptedThroughUpdateId < batchLastUpdateId
+        ) {
+          throw createJournalError(
+            "invalid",
+            path,
+            "received an admission cursor behind its batch",
+          );
+        }
+        if (
+          requestedAcceptedThroughUpdateId !== undefined &&
+          previousAcceptedThroughUpdateId !== undefined &&
+          requestedAcceptedThroughUpdateId < previousAcceptedThroughUpdateId
+        ) {
+          throw createJournalError(
+            "conflict",
+            path,
+            "received a regressing admission cursor",
+          );
+        }
+        const acceptedThroughUpdateId =
+          requestedAcceptedThroughUpdateId ?? previousAcceptedThroughUpdateId;
         const contentChanged = addedUpdateIds.length > 0;
         const published = publishMutation(
           current,
@@ -2344,6 +2447,8 @@ export function createTelegramUpdateJournalStore(
               )
             : current.file.entries,
           contentChanged,
+          current.file.operatorDispositions,
+          acceptedThroughUpdateId,
         );
         return {
           addedUpdateIds,

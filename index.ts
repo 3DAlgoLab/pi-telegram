@@ -302,11 +302,6 @@ export default function (pi: Pi.ExtensionAPI) {
       persist: configStore.persist,
       markConfigChange: telegramSyncStateRuntime.markConfigChange,
     });
-  const persistTelegramPollingOffset =
-    Config.createTelegramPollingOffsetPersister(
-      configStore,
-      persistTelegramConfigWithSync,
-    );
   const {
     current: currentInstanceThreadRuntime,
     status: threadStatusProjectionRuntime,
@@ -352,6 +347,10 @@ export default function (pi: Pi.ExtensionAPI) {
     ),
     getInboundWorkerState() {
       return updateAdmissionRuntimeBinding.getActive()?.getState();
+    },
+    getAcceptedThroughUpdateId() {
+      return resolveTelegramUpdateJournalBinding()?.journal.read()
+        .acceptedThroughUpdateId;
     },
     getActiveSourceMessageIds: activeTurnRuntime.getSourceMessageIds,
     hasActiveTurn: activeTurnRuntime.has,
@@ -1009,13 +1008,35 @@ export default function (pi: Pi.ExtensionAPI) {
       hasBotToken: configStore.hasBotToken,
       deleteWebhook,
       getUpdates,
-      persistConfig: persistTelegramPollingOffset,
+      persistConfig: persistTelegramConfigWithSync,
       prepareUpdateBatch: textGroupRuntime.prepareUpdateBatch,
       journal: {
-        appendBatch(updates) {
+        appendBatch(updates, acceptedThroughUpdateId) {
           return updateAdmissionLifecycleRuntime.appendBatch(
             updates as Journal.TelegramJournaledUpdate[],
+            acceptedThroughUpdateId,
           );
+        },
+        getAcceptedThroughUpdateId() {
+          return resolveTelegramUpdateJournalBinding()?.journal.read()
+            .acceptedThroughUpdateId;
+        },
+        async prepareCursorCutover() {
+          const binding = resolveTelegramUpdateJournalBinding();
+          if (!binding) {
+            throw new Error("Telegram update journal binding is unavailable.");
+          }
+          await Polling.cutOverTelegramPollingCursor({
+            getLegacyCursor: configStore.getLegacyPollingCursor,
+            readJournal: binding.journal.read,
+            publishJournalCursor(acceptedThroughUpdateId) {
+              binding.journal.appendBatch([], acceptedThroughUpdateId);
+            },
+            async removeLegacyCursor() {
+              configStore.removeLegacyPollingCursor();
+              await persistTelegramConfigWithSync();
+            },
+          });
         },
         getEntryCount: updateAdmissionLifecycleRuntime.getJournalEntryCount,
         signalWorker: updateAdmissionLifecycleRuntime.signal,

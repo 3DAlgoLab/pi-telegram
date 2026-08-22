@@ -2,6 +2,10 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.37.0: Journal-Owned Telegram Admission
+
+- `Configuration-Only State`: Moves the per-profile polling cursor out of `telegram.json` into atomic durable journal revisions, including cursor-only initial sync, compaction, reconstruction, and recovery. A journal-first one-shot cutover removes legacy config state idempotently, exact bot/profile fences remain enforced, status reads journal authority, and unsafe downgrade now fails closed.
+
 ## 0.36.11: At-Most-Once Prompt Dispatch Hotfix
 
 - `At-Most-Once Prompt Dispatch`: Commits each exact durable Telegram receipt synchronously before Pi model admission and blocks dispatch when that commit fails, closing the session/process-replacement replay window that could deliver an already-processed old prompt again; the narrow commit-before-admission crash boundary now favors no duplicate over retry.
