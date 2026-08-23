@@ -415,6 +415,8 @@ export default function (pi: Pi.ExtensionAPI) {
       },
       getRegistrationGeneration:
         telegramBusFollowerRegistrationState.getGeneration,
+      waitForRegistrationGeneration:
+        telegramBusFollowerRegistrationState.waitForGeneration,
       getForwardCommentBatchPosition:
         textGroupRuntime.getPreparedForwardingPosition,
       recordRuntimeEvent,
