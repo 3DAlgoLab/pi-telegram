@@ -2,6 +2,10 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.37.1: Settings Manager Compatibility Hotfix
+
+- `Menu Compatibility`: Keeps `/start`, model, and queue menu rendering compatible with Pi settings-manager implementations that do not expose `reload()`. Hosts with reload retain explicit refresh behavior; other hosts use the freshly constructed settings snapshot instead of failing with `settingsManager.reload is not a function`.
+
 ## 0.37.0: Journal-Owned Telegram Admission
 
 - `Configuration-Only State`: Moves the per-profile polling cursor out of `telegram.json` into atomic durable journal revisions, including cursor-only initial sync, compaction, reconstruction, and recovery. A journal-first one-shot cutover removes legacy config state idempotently, exact bot/profile fences remain enforced, status reads journal authority, and unsafe downgrade now fails closed.
