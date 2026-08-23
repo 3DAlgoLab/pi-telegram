@@ -2,6 +2,10 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## Unreleased
+
+- `Follower Recovery Delivery`: Holds follower Bot API calls behind a bounded registration wait when heartbeat recovery temporarily clears local authority, then sends once with the restored exact generation. Calls still fail closed if registration is not restored, and acknowledgement ambiguity remains non-retryable.
+
 ## 0.37.1: Settings Manager Compatibility Hotfix
 
 - `Menu Compatibility`: Keeps `/start`, model, and queue menu rendering compatible with Pi settings-manager implementations that do not expose `reload()`. Hosts with reload retain explicit refresh behavior; other hosts use the freshly constructed settings snapshot instead of failing with `settingsManager.reload is not a function`.
