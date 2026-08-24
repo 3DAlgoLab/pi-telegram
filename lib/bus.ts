@@ -816,8 +816,11 @@ export type TelegramBusEnvelope = (
           | "commit-unknown"
           | "request-id-collision"
           | "ledger-overloaded"
-          | "incompatible-protocol";
+          | "incompatible-protocol"
+          | "stale-target";
         method?: string;
+        chatId?: number;
+        threadId?: number;
       };
     }
 ) & { auth?: string };
@@ -2527,13 +2530,24 @@ function parseAckEnvelope(
       code === "commit-unknown" ||
       code === "request-id-collision" ||
       code === "ledger-overloaded" ||
-      code === "incompatible-protocol"
+      code === "incompatible-protocol" ||
+      code === "stale-target"
     ) {
+      const chatId = value.error.chatId;
+      const threadId = value.error.threadId;
+      if (
+        code === "stale-target" &&
+        (!Number.isSafeInteger(chatId) || !Number.isSafeInteger(threadId))
+      ) {
+        return undefined;
+      }
       envelope.error = {
         code,
         ...(typeof value.error.method === "string"
           ? { method: value.error.method }
           : {}),
+        ...(typeof chatId === "number" ? { chatId } : {}),
+        ...(typeof threadId === "number" ? { threadId } : {}),
       };
     }
   }
