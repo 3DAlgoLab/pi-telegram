@@ -1133,6 +1133,25 @@ function getTelegramCommandErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function formatTelegramCompactionFailure(error: unknown): string {
+  let message = getTelegramCommandErrorMessage(error).trim();
+  const redundantPrefixes = [
+    "Compaction failed: ",
+    "Turn prefix summarization failed: ",
+  ];
+  let stripped = true;
+  while (stripped) {
+    stripped = false;
+    for (const prefix of redundantPrefixes) {
+      if (!message.startsWith(prefix)) continue;
+      message = message.slice(prefix.length).trim();
+      stripped = true;
+    }
+  }
+  const sentence = /[.!?]$/u.test(message) ? message : `${message}.`;
+  return `Compaction failed! ${sentence}`;
+}
+
 export function parseTelegramCommand(
   text: string,
 ): ParsedTelegramCommand | undefined {
@@ -1432,11 +1451,10 @@ export async function handleTelegramCompactCommand(
         deps.updateStatus();
         dispatchNextQueuedTelegramTurnAfterCompact(deps);
         deps.recordRuntimeEvent?.("compact", error);
-        const errorMessage = getTelegramCommandErrorMessage(error);
         void deps.sendTextReply(
           formatTelegramInformationHeading(
-            "❌",
-            `Compaction failed: ${errorMessage}`,
+            "⚠️",
+            formatTelegramCompactionFailure(error),
           ),
           { parseMode: "HTML" },
         );
@@ -1447,11 +1465,10 @@ export async function handleTelegramCompactCommand(
     deps.setCompactionInProgress(false);
     deps.updateStatus();
     deps.recordRuntimeEvent?.("compact", error);
-    const errorMessage = getTelegramCommandErrorMessage(error);
     await deps.sendTextReply(
       formatTelegramInformationHeading(
-        "❌",
-        `Compaction failed: ${errorMessage}`,
+        "⚠️",
+        formatTelegramCompactionFailure(error),
       ),
       { parseMode: "HTML" },
     );

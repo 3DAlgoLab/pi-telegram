@@ -2,6 +2,10 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.39.1: Compaction Failure Formatting Hotfix
+
+- `Compaction Failure Formatting`: Preserves the HTML parse mode when a confirmed `/compact` callback reports asynchronous failure, preventing bold standalone failure headings from appearing as literal `<b>…</b>` markup in Telegram.
+
 ## 0.39.0: Session-Owned Queue Lifecycle
 
 - `Queue Counters`: Excludes Skip-marked prompts immediately from the shared executable queue count used by the Pi status bar and Telegram main menu while preserving physical queue position, deferred drop semantics, and reversible Keep behavior.

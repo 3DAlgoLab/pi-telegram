@@ -4178,9 +4178,10 @@ test("Extension runtime opens immediate model menu before queued prompt after ag
   }
 });
 
-test("Extension runtime keeps queued turns blocked until compaction completes", async () => {
+test("Extension runtime keeps queued turns blocked until compaction settles", async () => {
   const telegramConfig = await createRuntimeTelegramConfigFixture();
   const runtimeEvents: string[] = [];
+  const failureParseModes: string[] = [];
   let compactHooks:
     | {
         onComplete: () => void;
@@ -4226,7 +4227,11 @@ test("Extension runtime keeps queued turns blocked until compaction completes", 
       throw new DOMException("stop", "AbortError");
     }
     if (method === "sendMessage" || method === "sendRichMessage") {
-      runtimeEvents.push(`send:${getRuntimeTelegramApiText(body)}`);
+      const text = getRuntimeTelegramApiText(body);
+      runtimeEvents.push(`send:${text}`);
+      if (text.includes("Compaction failed!")) {
+        failureParseModes.push(String(body?.parse_mode ?? ""));
+      }
       return createRuntimeTelegramApiResponse({
         message_id: 100 + runtimeEvents.length,
       });
@@ -4318,13 +4323,20 @@ test("Extension runtime keeps queued turns blocked until compaction completes", 
       ),
       false,
     );
-    compactHooks?.onComplete();
+    compactHooks?.onError(
+      new Error(
+        "Turn prefix summarization failed: This operation was aborted",
+      ),
+    );
     await waitForCondition(() =>
       runtimeEvents.includes("dispatch:[telegram] follow up after compaction"),
     );
     await waitForCondition(() =>
-      runtimeEvents.includes("send:<b>✅ Compaction completed.</b>"),
+      runtimeEvents.includes(
+        "send:<b>⚠️ Compaction failed! This operation was aborted.</b>",
+      ),
     );
+    assert.deepEqual(failureParseModes, ["HTML"]);
     await handlers.get("session_shutdown")?.({}, ctx);
   } finally {
     restoreFetch();
