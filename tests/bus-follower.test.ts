@@ -49,7 +49,10 @@ import {
   getTelegramLeaderSessionHandoff,
   setTelegramLeaderSessionHandoff,
 } from "../lib/threads.ts";
-import { isTelegramApiCommitUnknownError } from "../lib/telegram-api.ts";
+import {
+  getTelegramApiErrorRequestTarget,
+  isTelegramApiCommitUnknownError,
+} from "../lib/telegram-api.ts";
 
 const TEST_BUS_PROTOCOL_IDENTITY = createTelegramBusProtocolIdentity({
   runtimeBuild: "test",
@@ -2442,6 +2445,41 @@ test("Bus follower API caller preserves structured commit-unknown errors", async
       () => callApi("call", ["sendMessage", { chat_id: 1, text: "hello" }]),
       isTelegramApiCommitUnknownError,
     );
+  } finally {
+    await server.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Bus follower API caller preserves structured stale-target evidence", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-api-stale-target-"));
+  const socketPath = join(dir, "bus.sock");
+  const server = createTelegramBusLocalServer({
+    socketPath,
+    handleEnvelope: (envelope) => ({
+      kind: "bus.ack",
+      requestId: envelope.requestId,
+      ok: false,
+      message: "Bad Request: message thread not found",
+      error: { code: "stale-target", chatId: 1, threadId: 2 },
+    }),
+  });
+  const callApi = createTelegramBusFollowerApiCaller({
+    socketPath,
+    instanceId: "inst-a",
+    createRequestId: () => "inst-a:stale-target:1",
+    getRegistrationGeneration: () => "generation-a",
+  });
+  try {
+    await server.start();
+    const error = await callApi("call", [
+      "sendMessage",
+      { chat_id: 1, message_thread_id: 2, text: "hello" },
+    ]).catch((failure: unknown) => failure);
+    assert.deepEqual(getTelegramApiErrorRequestTarget(error), {
+      chatId: 1,
+      threadId: 2,
+    });
   } finally {
     await server.stop();
     rmSync(dir, { recursive: true, force: true });

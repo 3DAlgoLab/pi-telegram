@@ -32,7 +32,10 @@ import {
   type TelegramBusLeaderRuntimeDeps,
 } from "../lib/bus-leader.ts";
 import { createTelegramTopicTargetStore } from "../lib/threads.ts";
-import { TelegramApiCommitUnknownError } from "../lib/telegram-api.ts";
+import {
+  TelegramApiCommitUnknownError,
+  TelegramApiStaleTargetError,
+} from "../lib/telegram-api.ts";
 
 const TEST_BUS_PROTOCOL_IDENTITY = createTelegramBusProtocolIdentity({
   runtimeBuild: "test",
@@ -1958,6 +1961,47 @@ test("Bus leader handles follower API call envelopes for registered followers", 
       requestId: "missing:1",
       ok: false,
       message: "Unknown Telegram bus follower instance.",
+    },
+  );
+});
+
+test("Bus leader returns exact stale-target evidence to the owning follower", async () => {
+  const registry = createTelegramBusFollowerRegistry();
+  registry.register({
+    instanceId: "inst-a",
+    registrationGeneration: "generation-a",
+    connectedAtMs: 1000,
+  });
+  const handleEnvelope = createTelegramBusLeaderEnvelopeHandler({
+    followerRegistry: registry,
+    callApi() {
+      throw new TelegramApiStaleTargetError(
+        "Telegram API sendMessage failed: HTTP 400: Bad Request: message thread not found",
+        { chatId: 1, threadId: 42 },
+      );
+    },
+  });
+
+  assert.deepEqual(
+    await handleEnvelope({
+      kind: "follower.callApi",
+      requestId: "inst-a:stale:1",
+      instanceId: "inst-a",
+      registrationGeneration: "generation-a",
+      method: "call",
+      args: [
+        "sendMessage",
+        { chat_id: 1, message_thread_id: 42, text: "private" },
+      ],
+      sentAtMs: 4000,
+    }),
+    {
+      kind: "bus.ack",
+      requestId: "inst-a:stale:1",
+      ok: false,
+      message:
+        "Telegram API sendMessage failed: HTTP 400: Bad Request: message thread not found",
+      error: { code: "stale-target", chatId: 1, threadId: 42 },
     },
   );
 });

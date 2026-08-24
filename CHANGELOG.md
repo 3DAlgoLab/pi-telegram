@@ -2,6 +2,10 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.39.2: Deleted Thread Receipt Hotfix
+
+- `Deleted Thread Receipt`: Terminally settles the currently executing durable update when Telegram returns exact HTTP 400 stale/deleted-thread evidence for its `{chatId, threadId}`, including leader-first shared-store invalidation followed by follower settlement. Transient, ambiguous, unrelated, and stale-looking HTTP 5xx failures retain indefinite retry authority; persisted follower records remain restart hints rather than speculative live registrations.
+
 ## 0.39.1: Compaction Failure Formatting Hotfix
 
 - `Compaction Failure Formatting`: Preserves the HTML parse mode when a confirmed `/compact` callback reports asynchronous failure, preventing bold standalone failure headings from appearing as literal `<b>…</b>` markup in Telegram.
