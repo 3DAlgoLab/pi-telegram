@@ -1470,7 +1470,7 @@ test("Command helpers report compact errors", async () => {
     },
     dispatchNextQueuedTelegramTurn: () => {},
     compact: () => {
-      throw new Error("sync boom");
+      throw new Error("sync boom!");
     },
     startTypingLoop: () => {
       events.push("throw-typing:start");
@@ -1494,15 +1494,15 @@ test("Command helpers report compact errors", async () => {
     "status",
     "dispatch",
     "event:compact:boom",
-    "reply:<b>❌ Compaction failed: boom</b>",
+    "reply:<b>⚠️ Compaction failed! boom.</b>",
     "throw-set:true",
     "throw-status",
     "throw-typing:start",
     "throw-typing:stop",
     "throw-set:false",
     "throw-status",
-    "event:compact:sync boom",
-    "reply:<b>❌ Compaction failed: sync boom</b>",
+    "event:compact:sync boom!",
+    "reply:<b>⚠️ Compaction failed! sync boom!</b>",
   ]);
 });
 

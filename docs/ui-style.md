@@ -53,7 +53,7 @@ Use emoji as stable semantic markers, not decoration. Emoji carry transportable 
 | `🔁` | Replace/restore mode | Thread replace/restore chooser entrypoints | Opens a second step for moving a Pi instance binding to the current source thread. |
 | `➡️` | Choose replacement target | Thread replace/restore target buttons that select which Pi instance should move to the current thread | Use inside the second replace/restore chooser, not for ordinary reroutes. |
 | `☑️` | Activate / choose this item | Model detail activation action, generated button-only choice heading | Positive selection cue; use `🟢 Active` for already-current state. |
-| `❌` | No / cancel / failed | Confirmation cancel buttons and failure notices | Use for safe cancellation or operation failure, not destructive removal. |
+| `❌` | No / cancel / terminal failure | Confirmation cancel buttons and terminal failure notices | Do not use for a recoverable operation failure that leaves session state intact. |
 | `🗑` | Delete / defer removal | Destructive confirmations and removal reaction | In the queue menu, reversible Keep/Skip selectors replace immediate deletion. |
 
 ### Informational Feedback
@@ -63,6 +63,7 @@ Use emoji as stable semantic markers, not decoration. Emoji carry transportable 
 | `💤` | Nothing active | No-active-turn notices | Neutral idle result, not an error. |
 | `✅` | Completed successfully | Compaction and other completion notices | Use only after the operation has completed. |
 | `🚫` | Unavailable, denied, or cancelled operation | Missing capability/auth notices, access denial, and compaction cancellation | Callback alerts use the same emoji without bold markup. |
+| `⚠️` | Recoverable operation failure | Compaction failure notice | The attempted operation failed, but the original session state remains usable. |
 
 ### State Indicators And Button Grammars
 
