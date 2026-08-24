@@ -2,6 +2,11 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.38.0: Coherent Voice Reply Policy
+
+- `Voice Reply Policy`: Renames the default user-facing `hidden` mode to `manual` while retaining `hidden` as a read-only configuration and callback compatibility alias. `manual`, `mirror`, and `always` remain the complete policy set: explicit `telegram_voice`, modality mirroring, or automatic voice replacement.
+- `Voice Provider Contract`: Removes the redundant `voice.sendTranscript` configuration, `getTelegramVoiceSendTranscript()` public helper, provider-returned `transcriptText`, and voice-caption path. Synthesis providers now return only an OGG/Opus path or `undefined`; text-plus-voice remains an explicit agent composition rather than a parallel automatic policy.
+
 ## 0.37.2: Follower Recovery Delivery Hotfix
 
 - `Follower Recovery Delivery`: Holds follower Bot API calls behind a bounded registration wait when heartbeat recovery temporarily clears local authority, then sends once with the restored exact generation. Calls still fail closed if registration is not restored, and acknowledgement ambiguity remains non-retryable.
