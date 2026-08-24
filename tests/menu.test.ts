@@ -1803,7 +1803,7 @@ test("Queue menu keeps main-menu navigation on top", async () => {
   ]);
   assert.deepEqual(markups[3]?.inline_keyboard[1], [
     { text: "⚫️ Priority", callback_data: "queue:prio-set:1:10:priority" },
-    { text: "🟣 Normal", callback_data: "queue:prio-set:1:10:normal" },
+    { text: "🔵 Normal", callback_data: "queue:prio-set:1:10:normal" },
   ]);
   assert.deepEqual(markups[3]?.inline_keyboard[2], [
     { text: "🟢 Keep", callback_data: "queue:skip-set:1:10:keep" },
@@ -1811,7 +1811,7 @@ test("Queue menu keeps main-menu navigation on top", async () => {
   ]);
   assert.equal(
     markups[4]?.inline_keyboard[2]?.[0]?.text,
-    "1. 👎 queued <prompt>",
+    "1̵ . 👎 queued <prompt>",
   );
   assert.deepEqual(markups[5]?.inline_keyboard, [
     [{ text: "⬆️ Main menu", callback_data: "menu:back" }],
@@ -1982,7 +1982,7 @@ test("Queue item Keep and Skip selectors share deferred-removal state", async ()
       : undefined,
     "👎",
   );
-  assert.equal(texts[0], "<b>1.</b> 👎\n<pre>[telegram] keep or skip</pre>");
+  assert.equal(texts[0], "<s>1</s>. 👎\n<pre>[telegram] keep or skip</pre>");
   assert.deepEqual(markups[0]?.inline_keyboard[2], [
     { text: "⚫️ Keep", callback_data: "queue:skip-set:1:10:keep" },
     { text: "🔴 Skip", callback_data: "queue:skip-set:1:10:skip" },
