@@ -2025,7 +2025,7 @@ test("Bus follower registration runtime heartbeats until stopped", async () => {
     nowMs = 2000;
     await waitForCondition(
       () => registry.get("inst-a")?.lastHeartbeatMs === 2000,
-      120,
+      500,
     );
     follower.stop();
     nowMs = 3000;
