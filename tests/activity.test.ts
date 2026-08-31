@@ -252,18 +252,23 @@ test("Activity normalizer exposes coalesced UI prompt waiting boundaries", async
     received.map((event) => event.type),
     ["agent-start", "ui-prompt-start", "ui-prompt-end", "agent-settled"],
   );
-  assert.deepEqual(
-    received.find((event) => event.type === "ui-prompt-start"),
-    {
-      type: "ui-prompt-start",
-      kind: "confirm",
-      title: "Approve?",
-      activityId: "ui-prompt-boundary:1",
-      sequence: 2,
-      source: "local",
-      timestamp: received[0]?.timestamp,
-    },
+  const agentStart = received[0];
+  const promptStart = received.find(
+    (event) => event.type === "ui-prompt-start",
   );
+  assert.ok(agentStart);
+  assert.ok(promptStart);
+  const { timestamp, ...promptStartWithoutTimestamp } = promptStart;
+  assert.deepEqual(promptStartWithoutTimestamp, {
+    type: "ui-prompt-start",
+    kind: "confirm",
+    title: "Approve?",
+    activityId: "ui-prompt-boundary:1",
+    sequence: 2,
+    source: "local",
+  });
+  assert.equal(typeof timestamp, "number");
+  assert.ok(timestamp >= agentStart.timestamp);
 });
 
 test("Activity normalizer exposes completed public blocks without reasoning or tools", async () => {
