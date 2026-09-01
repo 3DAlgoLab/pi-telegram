@@ -76,6 +76,7 @@ test("Voice reply planner ignores payloads outside the canonical action shape", 
       '<!-- telegram_voice unknown="Speak this." -->',
       '<!-- telegram_voice [broken text=Must-not-recover] -->',
       '<!-- telegram_voice [[{Matrix is unsupported.}]] -->',
+      '<!-- telegram_voice {|en} -->',
       '<!-- telegram_voice {Too|many|voice|atoms} -->',
     ].join("\n"),
   );

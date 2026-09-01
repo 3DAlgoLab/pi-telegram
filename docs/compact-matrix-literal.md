@@ -58,13 +58,16 @@ A two-atom cell separates label and prompt:
 {Pause|music::pause}
 ```
 
-A three-atom cell adds the selected style:
+Only the first label position may be empty. Prompt-only `{|e2}` is equivalent to JSON `{"prompt":"e2"}`: the existing button fallback uses `e2` as both visible text and queued prompt without requiring a separately authored label.
+
+A three-atom cell adds the selected style and retains the same optional-label form:
 
 ```text
 {Stop|music::stop|danger}
+{|e2|success}
 ```
 
-The style atom is accepted only as `primary`, `success`, or `danger`.
+The prompt and style atoms remain required. The style atom is accepted only as `primary`, `success`, or `danger`.
 
 ## Adaptive Grammar
 
@@ -78,8 +81,8 @@ row             := "[" ws cell (boundary cell)* ws "]"
 cell            := json-object | positional-cell
 boundary        := ws [","] ws
 positional-cell := "{" atom "}"
-                 | "{" atom "|" atom "}"
-                 | "{" atom "|" atom "|" atom "}"
+                 | "{" [atom] "|" atom "}"
+                 | "{" [atom] "|" atom "|" atom "}"
 atom            := atom-unit+
 atom-unit       := ordinary | "\|" | "\}" | "\\"
 ws              := *(SP | HTAB | CR | LF)
@@ -114,7 +117,7 @@ A conforming parser:
 3. Tries one complete strict JSON object, then bounded trailing-comma recovery, at each cell boundary before positional interpretation.
 4. Keeps JSON-shaped named objects on the JSON path when validation fails instead of exposing their source as positional text.
 5. Accepts at most one comma between elements or immediately before a closing row or matrix delimiter, while rejecting leading, repeated, or property-level omitted commas.
-6. Rejects empty atoms, matrices, rows, and nesting deeper than one row.
+6. Rejects empty matrices, rows, one-atom cells, prompts, styles, and nesting deeper than one row; only the first label position may be empty in a two- or three-atom button cell.
 7. Decodes only `\|`, `\}`, and `\\` in positional cells.
 8. Extracts the first complete valid payload from a tolerant comment envelope and ignores unrelated text or isolated unmatched matrix brackets around it.
 9. Returns no partial rows or cells from a balanced malformed candidate.
@@ -128,8 +131,9 @@ For `telegram_button` comments:
 
 - JSON `value` keeps its existing label/prompt fallback semantics.
 - Positional `{value}` is equivalent to JSON `{"value":"value"}`; a lone JSON `label` or `prompt` has the same both-fields shorthand semantics.
+- Positional `{|prompt}` is equivalent to JSON `{"prompt":"prompt"}` and therefore uses the prompt as both visible text and queued prompt.
 - Positional `{label|prompt}` is equivalent to JSON `{"label":"label","prompt":"prompt"}`.
-- Positional `{label|prompt|selected_style}` is equivalent to the corresponding three-field JSON object.
+- Positional `{label|prompt|selected_style}` and `{|prompt|selected_style}` are equivalent to their corresponding JSON objects.
 - Top-level cells become full-width rows.
 - Nested rows become horizontal keyboard rows.
 - Invalid payloads are stripped with their recognized action comment and register no callbacks.
@@ -153,7 +157,7 @@ The grammar imposes no visual row-width maximum. Renderer and interaction policy
 Accepted classes include:
 
 - Strict JSON objects and matrices.
-- Positional singleton, two-atom, and styled cells.
+- Positional singleton, two-atom, prompt-only `{|prompt}`, and styled cells.
 - Matrices and rows with commas, without commas, or a mixture of boundaries.
 - Named JSON and positional cells mixed in one matrix or row.
 - Literal commas inside positional atoms and strict JSON strings.
@@ -162,7 +166,7 @@ Accepted classes include:
 
 Rejected classes include:
 
-- Empty payloads, matrices, rows, labels, prompts, or style atoms.
+- Empty payloads, matrices, rows, one-atom cells, prompts, or style atoms; an empty label is valid only as the first position of a two- or three-atom button cell.
 - Leading or repeated element commas.
 - Missing commas between properties inside a JSON object.
 - Deeper row nesting.
@@ -175,4 +179,4 @@ Every rejected case proves zero callback registration.
 
 ## Versioning
 
-This document defines CML v3. V3 extends the v2 positional grammar with strict JSON object cells, mixed representation, and optional element-boundary commas. It does not make JSON object internals permissive and does not add deeper structures. Future versions must preserve strict-JSON-first routing, bounded depth, atomic rejection, and an explicit discriminator for any new meaning at a security or ownership boundary.
+This document defines CML v3. V3 extends the v2 positional grammar with strict JSON object cells, mixed representation, optional element-boundary commas, and prompt-only button cells that preserve the established JSON fallback semantics. It does not make JSON object internals permissive and does not add deeper structures. Future versions must preserve strict-JSON-first routing, bounded depth, atomic rejection, and an explicit discriminator for any new meaning at a security or ownership boundary.

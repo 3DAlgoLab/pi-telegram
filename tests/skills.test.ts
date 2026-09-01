@@ -61,6 +61,7 @@ test("Telegram extension contributes focused bundled skills", async () => {
   assert.match(bridge, /\{text\|lang\|rate\}/u);
   assert.match(bridge, /voice does not use matrix composition/u);
   assert.match(bridge, /emoji \+ space \+ text/u);
+  assert.match(bridge, /\{\|prompt\}.*prompt as both visible text and queued prompt/u);
   assert.match(bridge, /click creates an ordinary user request/u);
   assert.match(
     bridge,

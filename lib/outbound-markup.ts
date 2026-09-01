@@ -276,22 +276,27 @@ function parseTelegramButtonCompactActionPayload(
   atoms: readonly string[],
 ): Record<string, unknown> | undefined {
   const [label, prompt, selectedStyle] = atoms;
-  if (atoms.length === 1) return { value: label };
-  if (atoms.length === 2) return { label, prompt };
+  if (atoms.length === 1) return label ? { value: label } : undefined;
+  if (!prompt) return undefined;
+  const action = label ? { label, prompt } : { prompt };
+  if (atoms.length === 2) return action;
   if (
     selectedStyle !== "primary" &&
     selectedStyle !== "success" &&
     selectedStyle !== "danger"
   ) return undefined;
-  return { label, prompt, selected_style: selectedStyle };
+  return { ...action, selected_style: selectedStyle };
 }
 
 function parseTelegramVoiceCompactActionPayload(
   atoms: readonly string[],
 ): Record<string, unknown> | undefined {
   const [text, lang, rate] = atoms;
+  if (!text) return undefined;
   if (atoms.length === 1) return { text };
+  if (!lang) return undefined;
   if (atoms.length === 2) return { text, lang };
+  if (!rate) return undefined;
   return { text, lang, rate };
 }
 
@@ -318,7 +323,7 @@ function parseTelegramAdaptiveActionPayloadRows(
   };
   const normalizeAtom = (value: string): string | undefined => {
     const normalized = value.trim();
-    return normalized && !TELEGRAM_COMPACT_ACTION_CONTROL_PATTERN.test(normalized)
+    return !TELEGRAM_COMPACT_ACTION_CONTROL_PATTERN.test(normalized)
       ? normalized
       : undefined;
   };
