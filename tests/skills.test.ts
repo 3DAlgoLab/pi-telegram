@@ -149,18 +149,23 @@ test("Generated filesystem reference preserves bounded structural navigation", a
     "generated-control-surface",
     "capability-adapters.md",
   );
-  const section = source.match(/## Filesystem\n([\s\S]*?)(?=\n## )/u)?.[1] ?? "";
-  const rules = section.match(/^\d+\. .+$/gmu) ?? [];
-  assert.equal(rules.length, 5);
-  assert.match(rules[0] ?? "", /⬆️ Up.*root/u);
-  assert.match(rules[1] ?? "", /⬅️ Previous.*➡️ Next/u);
-  assert.match(
-    rules[2] ?? "",
-    /visible directories, hidden directories, visible files, then hidden files/u,
-  );
-  assert.match(rules[3] ?? "", /at most 10 entries/u);
-  assert.match(rules[4] ?? "", /Path and Entries.*Refresh/u);
-  assert.match(section, /numbered fallback/u);
+  const lfSource = source.replaceAll("\r\n", "\n");
+  for (const candidate of [lfSource, lfSource.replaceAll("\n", "\r\n")]) {
+    const normalized = candidate.replaceAll("\r\n", "\n");
+    const section =
+      normalized.match(/## Filesystem\n([\s\S]*?)(?=\n## )/u)?.[1] ?? "";
+    const rules = section.match(/^\d+\. .+$/gmu) ?? [];
+    assert.equal(rules.length, 5);
+    assert.match(rules[0] ?? "", /⬆️ Up.*root/u);
+    assert.match(rules[1] ?? "", /⬅️ Previous.*➡️ Next/u);
+    assert.match(
+      rules[2] ?? "",
+      /visible directories, hidden directories, visible files, then hidden files/u,
+    );
+    assert.match(rules[3] ?? "", /at most 10 entries/u);
+    assert.match(rules[4] ?? "", /Path and Entries.*Refresh/u);
+    assert.match(section, /numbered fallback/u);
+  }
 });
 
 test("Package metadata publishes the bundled skill root", async () => {
