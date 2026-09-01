@@ -50,7 +50,7 @@ Stable commands inside the paired Telegram DM:
 
 - `/start` — pair when needed and open the main application menu.
 - `/compact` — open confirmation and compact when idle.
-- `/next` — dispatch the next queued turn, aborting active work first when needed.
+- `/next` — dispatch the next queued turn, aborting active work first when needed; one Pi-aligned informational reply anchors to a pre-abort snapshot of the Telegram turn or falls back to the command, and aborted pending assistant text is suppressed.
 - `/continue` — enqueue a priority `continue` prompt.
 - `/abort` — abort active work and keep the queue; abort-history is scoped to Telegram-owned active turns.
 - `/stop` — abort active Telegram-owned work and clear waiting Telegram queue items.
@@ -336,7 +336,7 @@ Contract:
 - Providers are synchronous because `/start` status text is rendered inline with the menu.
 - Return `undefined` when the line is not relevant for the active model.
 - Provider failures are isolated and skipped so optional companion status cannot break the core Telegram menu.
-- The bridge renders rows as `<Label>: <value>` in the same HTML status block as Status, Tokens, Cost, and Context, capitalizing the first label character for Telegram UI consistency. Tokens mirrors Pi's footer telemetry: `↑` input, `↓` output, `R` cache-read tokens, `W` cache-write tokens, and `CH` for the latest assistant request's `cacheRead / (input + cacheRead + cacheWrite)`, shown to one decimal place only after the session reports cache activity. The precise Tokens label avoids conflating token telemetry with companion-provided usage-limit rows.
+- The bridge renders rows as `<Label>: <value>` in the same HTML status block as Status, Tokens, Cache, Cost, and Context, capitalizing the first label character for Telegram UI consistency. Tokens contains only `↑` input and `↓` output totals. Cache groups `R` cache-read tokens, `W` cache-write tokens, and `CH` for the latest assistant request's `cacheRead / (input + cacheRead + cacheWrite)`, shown to one decimal place only after the session reports cache activity. These precise labels avoid conflating token telemetry with companion-provided usage-limit rows.
 
 ## Updates
 
