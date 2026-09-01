@@ -38,7 +38,7 @@ test("Button reply planner strips telegram_button markup and registers actions",
   });
 });
 
-test("Button reply planner accepts JSON and attributes with one action marker", () => {
+test("Button reply planner retains legacy attribute compatibility", () => {
   const actions: unknown[] = [];
   const plan = planTelegramButtonReply(
     [
@@ -218,6 +218,77 @@ test("Button reply planner preserves semantics across adaptive JSON and CML comp
   }
 });
 
+test("Button reply planner extracts the JSON-to-CML gradient from tolerant envelopes", () => {
+  const cases = [
+    ['<!-- telegram_button {"label":"text","prompt":"text"} -->', [["text"]]],
+    ['<!-- telegram_button JSON {"label":"trailing","prompt":"trailing",} -->', [["trailing"]]],
+    ["<!-- telegram_button noise [draft {after noise} -->", [["after noise"]]],
+    ["<!-- telegram_button noise [{after orphan opener} -->", [["after orphan opener"]]],
+    ["<!-- telegram_button {label|prompt} -->", [["label"]]],
+    ["<!-- telegram_button [{label|prompt}] -->", [["label"]]],
+    ["<!-- telegram_button {prompt} -->", [["prompt"]]],
+    ["<!-- telegram_button [{prompt}] -->", [["prompt"]]],
+    ['<!-- telegram_button noise {Say "yes"|speak} trailing -->', [['Say "yes"']]],
+    ["<!-- telegram_button noise {Open [draft|open} trailing -->", [["Open [draft"]]],
+    ["<!-- telegram_button [[{prompt}]] -->", [["prompt"]]],
+    ["<!-- telegram_button [[{one}{two}]] -->", [["one", "two"]]],
+    ["<!-- telegram_button [[{one},{two}]] -->", [["one", "two"]]],
+    ["<!-- telegram_button [[{one},{two},],] -->", [["one", "two"]]],
+    [
+      '<!-- telegram_button [[{"label":"text","prompt":"text"},{prompt}]] -->',
+      [["text", "prompt"]],
+    ],
+    [
+      '<!-- telegram_button: CML [[{"label":"text"},{"prompt":"text"}{prompt}]] -->',
+      [["text", "text", "prompt"]],
+    ],
+    [
+      '<!-- telegram_buttons something [{"label":"text"}{"prompt":"text"},{prompt}] what? -->',
+      [["text"], ["text"], ["prompt"]],
+    ],
+    [
+      "<!-- telegram_button ignored label=Label prompt=Prompt trailing -->",
+      [["Label"]],
+    ],
+  ] as const;
+
+  for (const [comment, expectedRows] of cases) {
+    let nextId = 0;
+    const plan = planTelegramButtonReply(comment, {
+      registerAction: () => `btn:${++nextId}`,
+    });
+    assert.deepEqual(
+      plan.replyMarkup?.inline_keyboard.map((row) =>
+        row.map((button) => button.text),
+      ),
+      expectedRows,
+      comment,
+    );
+  }
+});
+
+test("Button reply planner preserves label and prompt semantics across shorthand forms", () => {
+  const actions: unknown[] = [];
+  planTelegramButtonReply(
+    [
+      "<!-- telegram_button {Label|Prompt} -->",
+      '<!-- telegram_button {"label":"Label only"} -->',
+      '<!-- telegram_button {"prompt":"Prompt only"} -->',
+    ].join("\n"),
+    {
+      registerAction: (action) => {
+        actions.push(action);
+        return `btn:${actions.length}`;
+      },
+    },
+  );
+  assert.deepEqual(actions, [
+    { text: "Label", prompt: "Prompt" },
+    { text: "Label only", prompt: "Label only" },
+    { text: "Prompt only", prompt: "Prompt only" },
+  ]);
+});
+
 test("Compact button style accepts exactly the selected-style enum", () => {
   for (const selectedStyle of ["primary", "success", "danger"] as const) {
     const actions: unknown[] = [];
@@ -236,7 +307,7 @@ test("Compact button style accepts exactly the selected-style enum", () => {
   }
 });
 
-test("Button reply planner ignores payloads outside the canonical action shape", () => {
+test("Button reply planner rejects payloads without a valid button shape", () => {
   const actions: unknown[] = [];
   const plan = planTelegramButtonReply(
     [
@@ -244,10 +315,9 @@ test("Button reply planner ignores payloads outside the canonical action shape",
       '<!-- telegram_button [1,2] -->',
       '<!-- telegram_button [[]] -->',
       '<!-- telegram_button [[[{"value":"Nested too deeply"}]]] -->',
-      '<!-- telegram_button {"label":"Missing prompt"} -->',
-      '<!-- telegram_button [{"value":"Valid"}{"label":"Missing prompt"}] -->',
-      '<!-- telegram_button label=Continue prompt="Continue." -->',
-      '<!-- telegram_button label="Continue"\nContinue.\n-->',
+      '<!-- telegram_button unknown=data -->',
+      '<!-- telegram_button {"label":"Must not become CML","prompt":} -->',
+      '<!-- telegram_button [{broken|} prompt=Must-not-recover] -->',
     ].join("\n"),
     {
       registerAction: (action) => {
@@ -278,14 +348,11 @@ test("Button reply planner rejects malformed compact matrix literals atomically"
     "[]",
     "[[]]",
     "{x",
-    "[{x}",
     "[{x}}]",
     "[[[{deep}]]]",
     "[,{a}]",
     "[{a},,{b}]",
-    "[{a},]",
     "{x|line\nbreak}",
-    "[{x}] trailing",
   ]) {
     const actions: unknown[] = [];
     const plan = planTelegramButtonReply(
@@ -374,6 +441,7 @@ test("Button prompt turn preserves prompt text and queue metadata", () => {
     queueOrder: 30,
     action: { text: "Run", prompt: "Run this now." },
     target: { chatId: 10, threadId: 40 },
+    telegramPrefix: "[telegram|thread:Nimbus]",
   });
 
   assert.equal(turn.kind, "prompt");
@@ -383,7 +451,7 @@ test("Button prompt turn preserves prompt text and queue metadata", () => {
   assert.equal(turn.queueLane, "priority");
   assert.deepEqual(turn.sourceMessageIds, [20]);
   assert.deepEqual(turn.content, [
-    { type: "text", text: "[telegram] Run this now." },
+    { type: "text", text: "[telegram|thread:Nimbus] Run this now." },
   ]);
   assert.equal(turn.historyText, "Run this now.");
   assert.equal(turn.statusSummary, "Run");

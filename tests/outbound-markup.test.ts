@@ -41,7 +41,7 @@ test("Markup stripping removes closed and partial top-level comments", () => {
   );
 });
 
-test("Voice reply planner accepts JSON and attributes with one action marker", () => {
+test("Voice reply planner retains legacy attribute compatibility", () => {
   const plan = planTelegramVoiceReply(
     [
       "Visible answer.",
@@ -72,8 +72,11 @@ test("Voice reply planner ignores payloads outside the canonical action shape", 
       '<!-- telegram_voice [{"text":"Array is unsupported."}] -->',
       '<!-- telegram_voice {"lang":"ru"} -->',
       '<!-- telegram_voice {"text": -->',
-      '<!-- telegram_voice text="Speak this." lang=ru -->',
-      '<!-- telegram_voice lang="ru"\nSpeak this.\n-->',
+      '<!-- telegram_voice {"text":"Must not become CML","rate":} -->',
+      '<!-- telegram_voice unknown="Speak this." -->',
+      '<!-- telegram_voice [broken text=Must-not-recover] -->',
+      '<!-- telegram_voice [[{Matrix is unsupported.}]] -->',
+      '<!-- telegram_voice {Too|many|voice|atoms} -->',
     ].join("\n"),
   );
 

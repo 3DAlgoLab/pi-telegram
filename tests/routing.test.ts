@@ -1725,6 +1725,8 @@ test("Routing runtime preserves follower target and marks generated prompt butto
       editMessageReplyMarkup: async (chatId, messageId, replyMarkup) => {
         selectedMarkups.push({ chatId, messageId, replyMarkup });
       },
+      getLocalThreadLabelForTarget: ({ threadId }) =>
+        threadId === 55 ? "Nimbus" : undefined,
     });
   const callbackData = buttonActionStore.register({
     text: "Continue",
@@ -1762,6 +1764,12 @@ test("Routing runtime preserves follower target and marks generated prompt butto
   assert.equal(
     queued?.kind === "prompt" ? queued.replyToMessageId : undefined,
     44,
+  );
+  assert.equal(
+    queued?.kind === "prompt" && queued.content[0]?.type === "text"
+      ? queued.content[0].text
+      : "",
+    "[telegram|thread:Nimbus] Continue from button",
   );
   assert.equal(events.includes("dispatch"), true);
   assert.deepEqual(selectedMarkups, [

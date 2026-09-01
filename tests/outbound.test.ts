@@ -260,7 +260,33 @@ test("Voice reply planner supports compact JSON comments", () => {
   });
 });
 
-test("Voice reply planner supports text attribute comments", () => {
+test("Voice reply planner supports positional compact action cells", () => {
+  const plan = planTelegramVoiceReply(
+    [
+      "Text before.",
+      "",
+      "<!-- telegram_voice {Short spoken summary.} -->",
+      "<!-- telegram_voice {Résumé bref.|fr} -->",
+      "<!-- telegram_voice {Fast summary.|en|+10%} -->",
+      String.raw`<!-- telegram_voice {Use A \| B and C\}|en} -->`,
+    ].join("\n"),
+  );
+  assert.deepEqual(plan, {
+    markdown: "Text before.",
+    voiceText:
+      "Short spoken summary.\n\nRésumé bref.\n\nFast summary.\n\nUse A | B and C}",
+    voiceReplies: [
+      { text: "Short spoken summary." },
+      { text: "Résumé bref.", lang: "fr" },
+      { text: "Fast summary.", lang: "en", rate: "+10%" },
+      { text: "Use A | B and C}", lang: "en" },
+    ],
+    lang: "en",
+    rate: "+10%",
+  });
+});
+
+test("Voice reply planner retains text-attribute compatibility", () => {
   const plan = planTelegramVoiceReply(
     'Text before.\n\n<!-- telegram_voice lang="ru" rate="+10%" text="Inline spoken summary." -->',
   );
@@ -275,7 +301,33 @@ test("Voice reply planner supports text attribute comments", () => {
   });
 });
 
-test("Voice reply planner accepts complete attribute actions", () => {
+test("Voice reply planner extracts canonical payloads and compatible attributes from tolerant envelopes", () => {
+  const plan = planTelegramVoiceReply(
+    [
+      "Text before.",
+      "",
+      '<!-- telegram_voice: JSON noise {"text":"Structured voice.","lang":"en"} trailing -->',
+      '<!-- telegram_voice JSON {"text":"Trailing comma voice.",} -->',
+      '<!-- telegram_voice noise [draft {After bracket noise.} -->',
+      '<!-- telegram_voices ignored unknown=Unquoted value="Attribute voice." rate=+10% trailing -->',
+    ].join("\n"),
+  );
+  assert.deepEqual(plan, {
+    markdown: "Text before.",
+    voiceText:
+      "Structured voice.\n\nTrailing comma voice.\n\nAfter bracket noise.\n\nAttribute voice.",
+    voiceReplies: [
+      { text: "Structured voice.", lang: "en" },
+      { text: "Trailing comma voice." },
+      { text: "After bracket noise." },
+      { text: "Attribute voice.", rate: "+10%" },
+    ],
+    lang: "en",
+    rate: "+10%",
+  });
+});
+
+test("Voice reply planner retains complete legacy attribute actions", () => {
   const plan = planTelegramVoiceReply(
     [
       "Text before.",
@@ -556,7 +608,7 @@ test("Button reply planner supports compact value payload", () => {
   });
 });
 
-test("Button reply planner supports prompt attribute shortcut", () => {
+test("Button reply planner retains prompt-attribute compatibility", () => {
   const actions: unknown[] = [];
   const plan = planTelegramButtonReply(
     [
@@ -610,7 +662,7 @@ test("Button reply planner accepts complete JSON actions", () => {
   });
 });
 
-test("Button reply planner requires prompt attribute for closed heads", () => {
+test("Button reply planner mirrors a lone label into its prompt", () => {
   const actions: unknown[] = [];
   const plan = planTelegramButtonReply(
     [
@@ -628,10 +680,10 @@ test("Button reply planner requires prompt attribute for closed heads", () => {
     },
   );
   assert.equal(plan.markdown, "Visible answer.\n\nVisible tail.");
-  assert.deepEqual(actions, []);
+  assert.deepEqual(actions, [{ text: "Closed", prompt: "Closed" }]);
 });
 
-test("Button reply planner does not recover body syntax", () => {
+test("Button reply planner ignores text outside a closed button envelope", () => {
   const actions: unknown[] = [];
   const plan = planTelegramButtonReply(
     [
@@ -659,7 +711,7 @@ test("Button reply planner does not recover body syntax", () => {
       "-->",
     ].join("\n"),
   );
-  assert.deepEqual(actions, []);
+  assert.deepEqual(actions, [{ text: "Long", prompt: "Long" }]);
 });
 
 test("Button action store resolves generated callback data", () => {
