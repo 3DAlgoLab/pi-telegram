@@ -2,6 +2,10 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.42.1: Prompt-Only Button Cells
+
+- `Prompt-Only CML Buttons`: Accepts `{|prompt}` and `{|prompt|selected_style}` as canonical button cells equivalent to prompt-only JSON, so established prompt fallback supplies both visible text and queued input without a separately authored label; empty one-atom cells, prompts, styles, and voice atoms still fail closed.
+
 ## 0.42.0: Compact Action Grammar
 
 - `Adaptive Action Grammar`: Extracts the first semantically valid JSON or positional CML payload from noisy `telegram_button` and `telegram_voice` envelopes, tolerates bounded trailing commas and unmatched matrix noise, keeps malformed named JSON on the JSON path, and retains legacy attribute parsing as undocumented compatibility.

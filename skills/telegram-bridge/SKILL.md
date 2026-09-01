@@ -52,11 +52,12 @@ CML trims atom boundaries and decodes `\|`, `\}`, and `\\`. Keep one complete ac
 
 ### Prompt Buttons
 
-Every button has a short distinct `emoji + space + text` label, a self-contained prompt, and an optional selection style. A click creates an ordinary user request; it never grants authority or bypasses confirmation.
+Every button has a self-contained prompt and an optional selection style. Use a short distinct `emoji + space + text` label when separate human-readable labeling adds meaning; established coordinates or symbolic tokens may use the prompt itself as visible text. A click creates an ordinary user request; it never grants authority or bypasses confirmation.
 
 - `{prompt}` uses the same text for label and prompt.
+- `{|prompt}` omits a separately authored label and uses the prompt as both visible text and queued prompt.
 - `{label|prompt}` separates visible label from queued prompt.
-- `{label|prompt|selected_style}` accepts `primary`, `success`, or `danger`.
+- `{label|prompt|selected_style}` and `{|prompt|selected_style}` accept `primary`, `success`, or `danger`.
 - Top-level cells form vertical rows; one nested row groups horizontal peers.
 - Prefer one matrix comment for the complete surface.
 

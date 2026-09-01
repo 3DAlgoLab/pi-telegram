@@ -226,6 +226,7 @@ test("Button reply planner extracts the JSON-to-CML gradient from tolerant envel
     ["<!-- telegram_button noise [{after orphan opener} -->", [["after orphan opener"]]],
     ["<!-- telegram_button {label|prompt} -->", [["label"]]],
     ["<!-- telegram_button [{label|prompt}] -->", [["label"]]],
+    ["<!-- telegram_button [{|e2}{|e4}] -->", [["e2"], ["e4"]]],
     ["<!-- telegram_button {prompt} -->", [["prompt"]]],
     ["<!-- telegram_button [{prompt}] -->", [["prompt"]]],
     ['<!-- telegram_button noise {Say "yes"|speak} trailing -->', [['Say "yes"']]],
@@ -272,6 +273,7 @@ test("Button reply planner preserves label and prompt semantics across shorthand
   planTelegramButtonReply(
     [
       "<!-- telegram_button {Label|Prompt} -->",
+      "<!-- telegram_button [{|e2}{|e4}] -->",
       '<!-- telegram_button {"label":"Label only"} -->',
       '<!-- telegram_button {"prompt":"Prompt only"} -->',
     ].join("\n"),
@@ -284,6 +286,8 @@ test("Button reply planner preserves label and prompt semantics across shorthand
   );
   assert.deepEqual(actions, [
     { text: "Label", prompt: "Prompt" },
+    { text: "e2", prompt: "e2" },
+    { text: "e4", prompt: "e4" },
     { text: "Label only", prompt: "Label only" },
     { text: "Prompt only", prompt: "Prompt only" },
   ]);
@@ -293,7 +297,10 @@ test("Compact button style accepts exactly the selected-style enum", () => {
   for (const selectedStyle of ["primary", "success", "danger"] as const) {
     const actions: unknown[] = [];
     planTelegramButtonReply(
-      `<!-- telegram_button {Run|run-now|${selectedStyle}} -->`,
+      [
+        `<!-- telegram_button {Run|run-now|${selectedStyle}} -->`,
+        `<!-- telegram_button {|retry-now|${selectedStyle}} -->`,
+      ].join("\n"),
       {
         registerAction: (action) => {
           actions.push(action);
@@ -303,6 +310,7 @@ test("Compact button style accepts exactly the selected-style enum", () => {
     );
     assert.deepEqual(actions, [
       { text: "Run", prompt: "run-now", selectedStyle },
+      { text: "retry-now", prompt: "retry-now", selectedStyle },
     ]);
   }
 });
@@ -338,7 +346,8 @@ test("Button reply planner rejects malformed compact matrix literals atomically"
     "{   }",
     "{x|}",
     "{x|   }",
-    "{|x}",
+    "{|}",
+    "{||danger}",
     "{x|y|unknown}",
     "{x|y|}",
     "{x||danger}",
