@@ -867,6 +867,55 @@ test("Assistant output projection plans prompt buttons before proactive delivery
   );
 });
 
+test("Assistant output projection strips foreign comments and skips comment-only segments", async () => {
+  const sent: Array<Record<string, unknown>> = [];
+  const send = createTelegramAssistantOutputSender<string>({
+    sendMessage: async (body) => {
+      sent.push(body);
+      return { message_id: 1 };
+    },
+    sendRichMessage: async (body) => {
+      sent.push(body);
+      return { message_id: 2 };
+    },
+    editMessage: async () => "edited",
+    getAssistantRenderingMode: () => "rich",
+    execCommand: async () => ({
+      stdout: "",
+      stderr: "",
+      code: 0,
+      killed: false,
+    }),
+  });
+  const authority = {
+    transportStamp: "stamp-1",
+    route: "direct" as const,
+    directEpoch: 1,
+    target: { chatId: 10, threadId: 42 },
+  };
+
+  await send(
+    assistantSegment(1, {
+      text: "Visible <!-- companion_extension private state --> text.",
+    }),
+    authority,
+    () => true,
+  );
+  await send(
+    assistantSegment(2, {
+      text: "\n<!-- companion_extension private state -->\n",
+    }),
+    authority,
+    () => true,
+  );
+
+  assert.equal(sent.length, 1);
+  assert.deepEqual(sent[0]?.rich_message, {
+    markdown: "Visible  text.",
+    skip_entity_detection: true,
+  });
+});
+
 test("Assistant output Rich and HTML senders fence after async transformation", async () => {
   for (const rendering of ["rich", "html"] as const) {
     let active = true;

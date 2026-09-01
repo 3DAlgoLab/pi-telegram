@@ -65,6 +65,10 @@ test("Telegram extension contributes focused bundled skills", async () => {
   assert.match(bridge, /click creates an ordinary user request/u);
   assert.match(
     bridge,
+    /removes every assistant-authored HTML comment.*only recognized top-level comments activate actions/su,
+  );
+  assert.match(
+    bridge,
     /Proactively use `generated-control-surface`.*must emit useful buttons/su,
   );
   assert.match(bridge, /dangerous button opens a consequence\/confirmation step/u);
