@@ -2,6 +2,13 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.42.0: Compact Action Grammar
+
+- `Adaptive Action Grammar`: Extracts the first semantically valid JSON or positional CML payload from noisy `telegram_button` and `telegram_voice` envelopes, tolerates bounded trailing commas and unmatched matrix noise, keeps malformed named JSON on the JSON path, and retains legacy attribute parsing as undocumented compatibility.
+- `Voice Action Cells`: Adds compact `{text}`, `{text|lang}`, and `{text|lang|rate}` voice actions while preserving JSON for multiline, named, and escape-heavy payloads; each voice comment remains one independent artifact and matrix-shaped voice payloads fail closed.
+- `Thread-Aware Buttons`: Tags prompts created by generated-button callbacks with the same resolved Telegram Thread label as ordinary inbound turns, preserving current local labels, persisted bindings, target routing, queue ordering, and callback selection behavior.
+- `Focused Agent Guidance`: Makes generated control surfaces proactively emit useful emoji-led prompt buttons, keeps Telegram action syntax under the bridge owner, and moves specialized delivery, configuration, diagnosis, layout, state, and capability guidance behind conditional references to reduce default context without dropping safety constraints.
+
 ## 0.41.1: Focused Operator Status Hotfix
 
 - `Next Turn Feedback`: Replies one Pi-aligned fully bold abort notice to the aborted Telegram turn, falls back to the `/next` command for local work, preserves completed intermediate output, and suppresses pending aborted assistant text so one forced transition no longer produces a contradictory second reply.

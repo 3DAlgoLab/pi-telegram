@@ -1,6 +1,6 @@
 # Adaptive Button Literal
 
-> Status: Portable CML v3 standard implemented by the unreleased `pi-telegram` control-surface parser.
+> Status: Portable CML v3 button standard; `pi-telegram` also reuses its positional-cell mechanics for compact voice actions.
 
 Adaptive Button Literal is one bounded-depth matrix grammar over a shared button AST. It accepts strict JSON button objects, positional Compact Matrix Literal (CML) cells, or both in the same matrix and row. Commas between completed matrix or row elements are optional, so producers can progressively compress representation without changing runtime meaning.
 
@@ -85,9 +85,9 @@ atom-unit       := ordinary | "\|" | "\}" | "\\"
 ws              := *(SP | HTAB | CR | LF)
 ```
 
-`boundary` occurs only after one complete element and before another. It may contain one comma or no comma. Element delimiters make empty adjacency unambiguous. Leading, repeated, and trailing commas are invalid.
+`boundary` occurs after one complete element. It may contain one comma or no comma; one trailing comma before a closing row or matrix delimiter is also tolerated. Element delimiters keep empty adjacency unambiguous. Leading and repeated commas remain invalid.
 
-A `json-object` is one complete strict JSON object. Its property commas, strings, escaping, nested values, and other internals remain ordinary strict JSON; comma optionality applies only between matrix or row elements.
+A `json-object` is one complete JSON object. Strict JSON is attempted first; a bounded recovery removes commas immediately before `}` or `]` outside strings and retries. Property names, strings, escaping, nested values, and all other internals remain strict; missing property commas are not invented.
 
 Rows cannot contain rows. The grammar never recurses beyond one row inside the top-level matrix.
 
@@ -111,28 +111,30 @@ A conforming parser:
 
 1. Attempts strict JSON first for sources beginning with `{` or `[`. Successful JSON is validated only against the existing button matrix schema and never reinterpreted.
 2. If strict JSON parsing fails, parses the original source with the adaptive grammar.
-3. Tries one complete strict JSON object at each cell boundary before positional interpretation.
-4. Accepts at most one optional comma between completed matrix or row elements.
-5. Rejects leading, repeated, trailing, or property-level omitted commas.
+3. Tries one complete strict JSON object, then bounded trailing-comma recovery, at each cell boundary before positional interpretation.
+4. Keeps JSON-shaped named objects on the JSON path when validation fails instead of exposing their source as positional text.
+5. Accepts at most one comma between elements or immediately before a closing row or matrix delimiter, while rejecting leading, repeated, or property-level omitted commas.
 6. Rejects empty atoms, matrices, rows, and nesting deeper than one row.
 7. Decodes only `\|`, `\}`, and `\\` in positional cells.
-8. Consumes exactly one complete payload and rejects trailing content.
-9. Returns no partial rows or cells after any failure.
-10. Runs in linear time over a host-bounded payload with fixed grammar depth.
+8. Extracts the first complete valid payload from a tolerant comment envelope and ignores unrelated text or isolated unmatched matrix brackets around it.
+9. Returns no partial rows or cells from a balanced malformed candidate.
+10. Runs over host-bounded payloads with fixed grammar depth.
 
 Malformed JSON-looking input receives no generic recovery. It is accepted only if it independently forms a complete valid adaptive literal.
 
-## Telegram Profile
+## Telegram Profiles
 
-For `telegram_button` and the exact `telegram_buttons` alias:
+For `telegram_button` comments:
 
 - JSON `value` keeps its existing label/prompt fallback semantics.
-- Positional `{value}` is equivalent to JSON `{"value":"value"}`.
+- Positional `{value}` is equivalent to JSON `{"value":"value"}`; a lone JSON `label` or `prompt` has the same both-fields shorthand semantics.
 - Positional `{label|prompt}` is equivalent to JSON `{"label":"label","prompt":"prompt"}`.
 - Positional `{label|prompt|selected_style}` is equivalent to the corresponding three-field JSON object.
 - Top-level cells become full-width rows.
 - Nested rows become horizontal keyboard rows.
 - Invalid payloads are stripped with their recognized action comment and register no callbacks.
+
+For `telegram_voice`, one positional cell maps `{text}`, `{text|lang}`, or `{text|lang|rate}` to one voice artifact. JSON object cells remain available for named fields, escaping, and multiline text. Voice comments do not accept matrix or row composition.
 
 Example:
 
@@ -161,12 +163,12 @@ Accepted classes include:
 Rejected classes include:
 
 - Empty payloads, matrices, rows, labels, prompts, or style atoms.
-- Leading, repeated, or trailing element commas.
+- Leading or repeated element commas.
 - Missing commas between properties inside a JSON object.
 - Deeper row nesting.
 - Missing, crossed, or mismatched delimiters.
 - A third positional separator, unknown style, unknown escape, or trailing backslash.
-- Internal control characters and trailing garbage.
+- Internal control characters.
 - Valid JSON that fails the existing JSON action schema.
 
 Every rejected case proves zero callback registration.

@@ -759,6 +759,42 @@ export function createTelegramInboundRouteRuntime<
       );
     }
   };
+  const resolveTelegramThreadLabel = (message: {
+    chat: { id: number };
+    message_thread_id?: number;
+  }): string | undefined => {
+    const chatId = message.chat.id;
+    const threadId = message.message_thread_id;
+    if (!threadId) return undefined;
+    const localLabel = deps.getLocalThreadLabelForTarget?.({ chatId, threadId });
+    if (localLabel) return localLabel;
+    if (!deps.threadStore) return undefined;
+    const records = deps.threadStore.list();
+    const currentInstanceId = deps.getCurrentInstanceId?.();
+    for (const record of records) {
+      if (
+        record.target.chatId !== chatId ||
+        record.target.threadId !== threadId
+      ) {
+        continue;
+      }
+      if (
+        currentInstanceId &&
+        record.instanceId &&
+        record.instanceId !== currentInstanceId
+      ) {
+        continue;
+      }
+      return record.threadName &&
+        Threads.isTelegramTopicThreadNameValidForSlot(
+          record.threadName,
+          record.slot,
+        )
+        ? record.threadName
+        : getRestoredThreadName(record, record.slot ?? "");
+    }
+    return undefined;
+  };
   const createAdmissionReceipts = (
     queueKind: Queue.TelegramQueueItemKind,
     sources: readonly unknown[],
@@ -1628,6 +1664,13 @@ export function createTelegramInboundRouteRuntime<
                 replyToMessageId: messageId,
                 queueOrder,
                 action,
+                telegramPrefix: Turns.createTelegramTurnPrefix({
+                  thread: resolveTelegramThreadLabel({
+                    chat: { id: chatId },
+                    message_thread_id:
+                      buttonQuery.message?.message_thread_id,
+                  }),
+                }),
               }),
               ...(admissionReceipts.length > 0 ? { admissionReceipts } : {}),
             };
@@ -1770,34 +1813,7 @@ export function createTelegramInboundRouteRuntime<
 
     // Voice policy resolves missing, invalid, and legacy manual config to hidden.
     getVoiceReplyMode: () => getTelegramVoiceReplyMode(deps.configStore.get()),
-    getTelegramThreadLabel(message) {
-      if (!deps.threadStore) return undefined;
-      const chatId = message.chat.id;
-      const threadId = message.message_thread_id;
-      if (!threadId) return undefined;
-      const localLabel = deps.getLocalThreadLabelForTarget?.({
-        chatId,
-        threadId,
-      });
-      if (localLabel) return localLabel;
-      const records = deps.threadStore.list();
-      const currentInstanceId = deps.getCurrentInstanceId?.();
-      for (const r of records) {
-        if (r.target.chatId !== chatId || r.target.threadId !== threadId)
-          continue;
-        if (
-          currentInstanceId &&
-          r.instanceId &&
-          r.instanceId !== currentInstanceId
-        )
-          continue;
-        return r.threadName &&
-          Threads.isTelegramTopicThreadNameValidForSlot(r.threadName, r.slot)
-          ? r.threadName
-          : getRestoredThreadName(r, r.slot ?? "");
-      }
-      return undefined;
-    },
+    getTelegramThreadLabel: resolveTelegramThreadLabel,
   });
   const enqueueContinueTurn = async (
     message: TMessage,
