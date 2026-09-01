@@ -2,6 +2,13 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.41.1: Focused Operator Status Hotfix
+
+- `Next Turn Feedback`: Replies one Pi-aligned fully bold abort notice to the aborted Telegram turn, falls back to the `/next` command for local work, preserves completed intermediate output, and suppresses pending aborted assistant text so one forced transition no longer produces a contradictory second reply.
+- `Status Telemetry`: Keeps the Tokens row compact with input/output totals and moves cache read/write plus the latest cache-hit rate into a dedicated Cache row.
+- `Reply Transcription`: Runs replied voice and other media through the inbound handler/provider pipeline and appends provenance-scoped outputs inside the reply context, including Guest Mode, instead of leaving quoted audio as an untranscribed attachment.
+- `Information Hierarchy`: Brings access-denial and Threaded Mode chooser headings back under the common fully bold emoji-led sentence/colon contract.
+
 ## 0.41.0: Connected Companion Presence
 
 - `Always-On Projection`: Treats authorized Telegram connection as the public-output boundary for local, autonomous, and unclassified Pi work, always delivering completed visible blocks in order instead of exposing an independent proactive-push opt-out.

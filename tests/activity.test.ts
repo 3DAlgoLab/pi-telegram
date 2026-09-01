@@ -227,6 +227,36 @@ test("Activity normalizer classifies source and assistant segment placement", as
   assert.equal(new Set(received.map((event) => event.activityId)).size, 1);
 });
 
+test("Activity normalizer discards an aborted pending assistant segment", async () => {
+  const received: TelegramActivityEvent[] = [];
+  registerTelegramActivityHandler({
+    id: "capture-abort",
+    handle: (event) => {
+      received.push(event);
+    },
+  });
+  const runtime = createTelegramActivityRuntime({
+    generation: "generation-abort",
+    dispatcher: createTelegramActivityDispatcher(),
+  });
+  runtime.recordInputSource("extension");
+  runtime.onAgentStart({ chatId: 42 });
+  runtime.onAssistantEvent({
+    type: "text_end",
+    contentIndex: 0,
+    content: "This operation was aborted",
+  });
+  runtime.onAssistantMessageEnd("aborted");
+  runtime.onAgentEnd();
+  runtime.onAgentSettled();
+  await waitForActivityDispatch();
+
+  assert.deepEqual(
+    received.map((event) => event.type),
+    ["agent-start", "agent-end", "agent-settled"],
+  );
+});
+
 test("Activity normalizer exposes coalesced UI prompt waiting boundaries", async () => {
   const received: TelegramActivityEvent[] = [];
   registerTelegramActivityHandler({
