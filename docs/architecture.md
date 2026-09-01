@@ -357,7 +357,7 @@ Assistant-authored final-message actions use hidden top-level comments:
 - `telegram_voice` accepts one positional compact action cell or JSON object and creates one voice artifact through configured outbound handlers, programmatic voice handlers, or registered synthesis providers.
 - `telegram_button` accepts a JSON object, adaptive JSON/CML matrix, or positional Compact Matrix Literal. Named JSON objects and positional cells may coexist, with commas optional only between completed matrix or row elements. Each top-level cell creates one full-width row, while a nested row groups buttons horizontally without an artificial parser-width cap; every callback enqueues its configured prompt text as a normal Telegram prompt turn. The JSON-first grammar, positional trim/escape rules, atomic rejection, and renderer-owned width policy are specified in [Adaptive Button Literal](./compact-matrix-literal.md).
 
-Preview delivery strips top-level action comments before streaming draft Markdown. Comments inside code fences, quotes, lists, or indented examples stay literal.
+Action recognition remains restricted to top-level column-zero comments so nested examples cannot trigger voice, buttons, or callbacks. The Telegram surface independently strips every complete assistant-authored HTML comment from previews and final delivery regardless of Markdown position or comment owner; an unclosed comment is withheld through the remaining tail, and a comment-only result sends no text message. Pi's terminal transcript and model context remain unchanged.
 
 Unknown callback data outside owned prefixes is forwarded as `[callback] <data>` only after built-in and extension handlers decline it.
 

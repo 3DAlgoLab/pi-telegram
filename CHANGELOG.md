@@ -2,6 +2,10 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## 0.42.2: Telegram Comment Membrane
+
+- `Transport-Private HTML Comments`: Removes every assistant-authored `<!-- … -->` block from Telegram previews, active-turn finals, connected companion projections, direct sends, and Guest Mode regardless of Markdown position or owning extension; only recognized top-level comments activate actions, unclosed tails stay hidden, comment-only text plans send nothing, and the Pi terminal transcript remains unchanged.
+
 ## 0.42.1: Prompt-Only Button Cells
 
 - `Prompt-Only CML Buttons`: Accepts `{|prompt}` and `{|prompt|selected_style}` as canonical button cells equivalent to prompt-only JSON, so established prompt fallback supplies both visible text and queued input without a separately authored label; empty one-atom cells, prompts, styles, and voice atoms still fail closed.

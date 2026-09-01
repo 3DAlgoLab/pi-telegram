@@ -28,15 +28,36 @@ test("Markup collector ignores comments inside fenced code", () => {
   assert.equal(comments[0]?.content.trim(), "telegram_voice: real");
 });
 
-test("Markup stripping removes closed and partial top-level comments", () => {
+test("Markup stripping removes every HTML comment from Telegram surfaces", () => {
+  const markdown = [
+    "Visible <!-- inline --> text.",
+    "",
+    "> Quoted <!-- private quote --> text.",
+    "",
+    "- Listed <!-- private list --> text.",
+    "",
+    "```md",
+    "<!-- private code example -->",
+    "const visible = true;",
+    "```",
+  ].join("\n");
+  const delivery = stripTelegramCommentMarkupForDelivery(markdown);
+  const preview = stripTelegramCommentMarkupForPreview(markdown);
+
+  assert.equal(delivery, preview);
+  assert.doesNotMatch(delivery, /<!--|-->/u);
+  assert.match(delivery, /Visible  text\./u);
+  assert.match(delivery, /> Quoted  text\./u);
+  assert.match(delivery, /- Listed  text\./u);
+  assert.match(delivery, /const visible = true;/u);
   assert.equal(
     stripTelegramCommentMarkupForDelivery(
-      "Visible\n\n<!-- hidden transport action -->\n\nTail",
+      " \n<!-- first -->\n<!-- second -->\n ",
     ),
-    "Visible\n\nTail",
+    "",
   );
   assert.equal(
-    stripTelegramCommentMarkupForPreview("Visible\n\n<!-- telegram_voice"),
+    stripTelegramCommentMarkupForPreview("Visible\n\n<!-- streaming private tail"),
     "Visible",
   );
 });

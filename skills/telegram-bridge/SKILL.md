@@ -39,7 +39,7 @@ Reply in concise, phone-width Telegram Rich Markdown. Use `$...$` and `$$...$$` 
 
 ## Assistant Actions
 
-`telegram_button` and `telegram_voice` are hidden HTML comments, not tools. Emit each complete comment at column zero, outside lists, quotes, code blocks, and indentation.
+`telegram_button` and `telegram_voice` are hidden HTML comments, not tools. Emit each complete action comment at column zero, outside lists, quotes, code blocks, and indentation. Telegram removes every assistant-authored HTML comment from previews and final replies regardless of owner or Markdown position, but only recognized top-level comments activate actions; comment-only output sends no text message.
 
 ### Shared Encoding Rule
 

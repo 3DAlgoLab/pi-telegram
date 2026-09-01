@@ -95,6 +95,34 @@ test("Outbound text handler transforms text and markdown replies", async () => {
   ]);
 });
 
+test("Outbound text runtime skips comment-only planned replies", async () => {
+  const sent: string[] = [];
+  const handlerCalls: string[] = [];
+  const runtime = createTelegramOutboundTextReplyRuntime({
+    getHandlers: () => [{ type: "text", template: "/tools/translate" }],
+    execCommand: async (command) => {
+      handlerCalls.push(command);
+      return { stdout: "unexpected", stderr: "", code: 0, killed: false };
+    },
+    sendTextReply: async () => 1,
+    sendMarkdownReply: async (_chatId, _replyToMessageId, markdown) => {
+      sent.push(markdown);
+      return 2;
+    },
+  });
+
+  assert.equal(
+    await runtime.sendMarkdownReply(
+      1,
+      2,
+      " \n<!-- companion_extension private state -->\n ",
+    ),
+    undefined,
+  );
+  assert.deepEqual(handlerCalls, []);
+  assert.deepEqual(sent, []);
+});
+
 test("Outbound text handler preserves inline buttons on transformed replies", async () => {
   const sent: Array<{ markdown: string; replyMarkup: unknown }> = [];
   const actions: unknown[] = [];
@@ -448,7 +476,7 @@ test("Comment preview stripping hides generic and partial comments", () => {
   );
 });
 
-test("Outbound comments inside fenced code stay literal", () => {
+test("Comments inside fenced code never activate actions and are stripped for Telegram", () => {
   const markdown = [
     "Example:",
     "",
@@ -463,18 +491,27 @@ test("Outbound comments inside fenced code stay literal", () => {
     "```",
   ].join("\n");
   const actions: unknown[] = [];
-  assert.deepEqual(planTelegramVoiceReply(markdown), { markdown });
-  assert.deepEqual(
-    planTelegramButtonReply(markdown, {
-      registerAction: (action) => {
-        actions.push(action);
-        return `btn:${actions.length}`;
-      },
-    }),
-    { markdown },
-  );
+  const buttonPlan = planTelegramButtonReply(markdown, {
+    registerAction: (action) => {
+      actions.push(action);
+      return `btn:${actions.length}`;
+    },
+  });
+  const voicePlan = planTelegramVoiceReply(markdown);
+  const combinedPlan = createTelegramOutboundReplyPlanner({
+    register: (action) => {
+      actions.push(action);
+      return `btn:${actions.length}`;
+    },
+  })(markdown);
+
+  assert.deepEqual(buttonPlan, { markdown });
+  assert.equal(voicePlan.voiceReplies, undefined);
+  assert.doesNotMatch(voicePlan.markdown, /<!--|-->/u);
+  assert.equal(combinedPlan.markdown, voicePlan.markdown);
+  assert.equal(combinedPlan.replyMarkup, undefined);
   assert.deepEqual(actions, []);
-  assert.equal(stripTelegramCommentMarkupForPreview(markdown), markdown);
+  assert.equal(stripTelegramCommentMarkupForPreview(markdown), voicePlan.markdown);
 });
 
 test("Outbound comments resume after indented and longer closing fences", () => {
@@ -520,7 +557,9 @@ test("Outbound action comments require top-level column-zero markers", () => {
     "> -->",
   ].join("\n");
   const actions: unknown[] = [];
-  assert.deepEqual(planTelegramVoiceReply(markdown), { markdown });
+  const voicePlan = planTelegramVoiceReply(markdown);
+  assert.equal(voicePlan.markdown, "Visible answer.");
+  assert.equal(voicePlan.voiceReplies, undefined);
   assert.deepEqual(
     planTelegramButtonReply(markdown, {
       registerAction: (action) => {

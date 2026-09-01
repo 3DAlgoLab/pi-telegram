@@ -556,8 +556,40 @@ export function normalizeMarkdownAfterVoiceExtraction(
   return markdown.replace(/\n{3,}/g, "\n\n").trim();
 }
 
+function isTelegramCommentOnlyLinePrefix(value: string): boolean {
+  return /^[ \t]*(?:(?:>[ \t]*)+)?(?:(?:[-+*]|\d+[.)])[ \t]+)?$/u.test(
+    value,
+  );
+}
+
+function stripTelegramHtmlCommentBlocks(markdown: string): string {
+  let result = "";
+  let offset = 0;
+  while (offset < markdown.length) {
+    const start = markdown.indexOf("<!--", offset);
+    if (start === -1) return result + markdown.slice(offset);
+    const close = markdown.indexOf("-->", start + 4);
+    const lineStart = markdown.lastIndexOf("\n", start - 1) + 1;
+    const afterComment = close === -1 ? markdown.length : close + 3;
+    const newlineAfterComment = markdown.indexOf("\n", afterComment);
+    const lineEnd =
+      newlineAfterComment === -1 ? markdown.length : newlineAfterComment;
+    const commentOwnsLine =
+      isTelegramCommentOnlyLinePrefix(markdown.slice(lineStart, start)) &&
+      markdown.slice(afterComment, lineEnd).trim().length === 0;
+    result += markdown.slice(offset, commentOwnsLine ? lineStart : start);
+    if (close === -1) return result;
+    offset = commentOwnsLine
+      ? newlineAfterComment === -1
+        ? markdown.length
+        : newlineAfterComment + 1
+      : afterComment;
+  }
+  return result;
+}
+
 export function stripTelegramCommentMarkupForPreview(markdown: string): string {
-  const withoutClosedBlocks = replaceTopLevelHtmlComments(markdown, () => "");
+  const withoutClosedBlocks = stripTelegramHtmlCommentBlocks(markdown);
   const openBlockIndex =
     findTopLevelOpenOrPartialHtmlCommentIndex(withoutClosedBlocks);
   const previewMarkdown =
@@ -570,7 +602,7 @@ export function stripTelegramCommentMarkupForPreview(markdown: string): string {
 export function stripTelegramCommentMarkupForDelivery(
   markdown: string,
 ): string {
-  const withoutClosedBlocks = replaceTopLevelHtmlComments(markdown, () => "");
+  const withoutClosedBlocks = stripTelegramHtmlCommentBlocks(markdown);
   const openBlockIndex =
     findTopLevelOpenOrPartialHtmlCommentIndex(withoutClosedBlocks);
   const deliveryMarkdown =
