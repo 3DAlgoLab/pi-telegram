@@ -14,12 +14,6 @@ This repository is a fork of [`llblab/pi-telegram`](https://github.com/llblab/pi
 
 ## Install
 
-From npm:
-
-```bash
-prime-agent package install npm:prime-agent-telegram
-```
-
 From git:
 
 ```bash
