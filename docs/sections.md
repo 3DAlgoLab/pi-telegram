@@ -8,9 +8,9 @@
 
 ## 1. Philosophy
 
-Telegram Extension Sections let ordinary pi extensions add structured UI surfaces to the `pi-telegram` inline application menu. The platform mirrors Pi's own extensibility model: small, composable extensions that plug into a shared shell without owning transport, polling, authorization, or menu lifecycle.
+Telegram Extension Sections let ordinary pi extensions add structured UI surfaces to the `pa-telegram` inline application menu. The platform mirrors Pi's own extensibility model: small, composable extensions that plug into a shared shell without owning transport, polling, authorization, or menu lifecycle.
 
-`pi-telegram` stays the single bot operator. Extensions register typed sections; the bridge handles Telegram UI rendering, callback routing, token mapping, navigation hierarchy, and diagnostics. Section views default to explicit Telegram HTML UI markup, while extensions can request Markdown or plain text when that better matches their content. No second polling loop, no new loader — just one `registerTelegramSection()` call.
+`pa-telegram` stays the single bot operator. Extensions register typed sections; the bridge handles Telegram UI rendering, callback routing, token mapping, navigation hierarchy, and diagnostics. Section views default to explicit Telegram HTML UI markup, while extensions can request Markdown or plain text when that better matches their content. No second polling loop, no new loader — just one `registerTelegramSection()` call.
 
 ## 2. Contract Layers
 
@@ -39,7 +39,7 @@ The `id` is the owner identity. No separate `owner` field. Used for registry own
 ## 4. Registration Shape
 
 ```ts
-import { registerTelegramSection } from "@llblab/pi-telegram/sections";
+import { registerTelegramSection } from "prime-agent-telegram/sections";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default function (pi: ExtensionAPI) {
@@ -129,19 +129,19 @@ unregister(); // removes from main menu, settings, and callback routing
 
 Two paths, same registry:
 
-**Typed import (preferred):** Extension imports `registerTelegramSection` from `@llblab/pi-telegram/sections`. The function reads from a `globalThis` registry set by `pi-telegram` at startup. In `0.12.0`, package-private `@llblab/pi-telegram/lib/*.ts` deep imports are no longer exported.
+**Typed import (preferred):** Extension imports `registerTelegramSection` from `prime-agent-telegram/sections`. The function reads from a `globalThis` registry set by `pa-telegram` at startup. In `0.12.0`, package-private `prime-agent-telegram/lib/*.ts` deep imports are no longer exported.
 
-**Relative import (local):** When the extension cannot resolve `@llblab/pi-telegram` as an npm package, use the public API membrane via a relative path:
+**Relative import (local):** When the extension cannot resolve `prime-agent-telegram` as an npm package, use the public API membrane via a relative path:
 
 ```ts
-import { registerTelegramSection } from "../pi-telegram/api/sections.ts";
+import { registerTelegramSection } from "../pa-telegram/api/sections.ts";
 ```
 
-**GlobalThis bridge (zero-coupling):** `pi-telegram` exposes `__piTelegramSectionRegistry__` on `globalThis`. The typed import is a thin wrapper. Extensions never touch the raw registry.
+**GlobalThis bridge (zero-coupling):** `pa-telegram` exposes `__piTelegramSectionRegistry__` on `globalThis`. The typed import is a thin wrapper. Extensions never touch the raw registry.
 
-**Load order:** `pi-telegram` must load first (sets the global registry). Demo/consumer extensions load second (call `registerTelegramSection`). Pi's normal extension loader guarantees this when `pi-telegram` is listed first.
+**Load order:** `pa-telegram` must load first (sets the global registry). Demo/consumer extensions load second (call `registerTelegramSection`). Pi's normal extension loader guarantees this when `pa-telegram` is listed first.
 
-**Shutdown:** Call `pi.on("shutdown", () => unregister())` to clean up your section. `pi-telegram` owns the registry for its loaded session, but it does not globally wipe extension registries on every `session_shutdown`.
+**Shutdown:** Call `pi.on("shutdown", () => unregister())` to clean up your section. `pa-telegram` owns the registry for its loaded session, but it does not globally wipe extension registries on every `session_shutdown`.
 
 ## 6. Menu Integration
 
@@ -182,7 +182,7 @@ The final Settings menu keeps `⬆️ Main menu` first, then groups built-ins by
 
 ### Token mapping
 
-Telegram limits `callback_data` to 64 bytes. Full npm names like `@llblab/pi-telegram-explorer` often exceed this. `pi-telegram` maps each registered section to a compact numeric token:
+Telegram limits `callback_data` to 64 bytes. Full npm names like `@llblab/pi-telegram-explorer` often exceed this. `pa-telegram` maps each registered section to a compact numeric token:
 
 ```text
 section:<token>:<action>:<payload>
@@ -194,7 +194,7 @@ The token is an implementation detail. Section authors **never** write `section:
 
 ### Routing order
 
-1. Telegram update arrives through the single `pi-telegram` polling loop
+1. Telegram update arrives through the single `pa-telegram` polling loop
 2. Update handlers observe/consume (raw update interception)
 3. Button action store (`tgbtn:*`)
 4. Compact confirmation callbacks (`compact:*`)
@@ -355,7 +355,7 @@ handleCallback: async (ctx) => {
 
 ### `callback_data` contract
 
-Section callbacks use the `section:` prefix owned by `pi-telegram`:
+Section callbacks use the `section:` prefix owned by `pa-telegram`:
 
 ```text
 section:0:open                   → open section root
@@ -385,11 +385,11 @@ The platform inherits from Pi's own extension model:
 
 - `export default function(pi)` → `registerTelegramSection(section)`
 - `pi.on("shutdown", ...)` → disposer from `registerTelegramSection`
-- Typed imports → typed import from `@llblab/pi-telegram/sections`
+- Typed imports → typed import from `prime-agent-telegram/sections`
 - `globalThis` registry → `__piTelegramSectionRegistry__` on `globalThis`
 - Identity from `package.json/name` → same identity rules as Locks Standard
 - Narrow typed context ports → `TelegramSectionContext` / `TelegramSectionCallbackContext`
-- Extension does not own transport → `pi-telegram` owns polling, message lifecycle
+- Extension does not own transport → `pa-telegram` owns polling, message lifecycle
 
 ## 12. Diagnostics
 
@@ -435,9 +435,9 @@ Available programmatically via `getTelegramSectionDiagnostics()`. Main-menu/sett
 
 ## 14. Relationship to Other Standards
 
-- [Callback Namespaces](./callback-namespaces.md): defines `section:` as pi-telegram-owned prefix. Sections use namespaced callbacks but authors never hand-roll them
+- [Callback Namespaces](./callback-namespaces.md): defines `section:` as pa-telegram-owned prefix. Sections use namespaced callbacks but authors never hand-roll them
 - [Updates](./updates.md): raw update interception for direct Telegram update access. Sections are the structured UI layer above
-- [Architecture](./architecture.md#configuration-and-ownership): pi-telegram transport ownership is extension-local and independent from section registration identity
+- [Architecture](./architecture.md#configuration-and-ownership): pa-telegram transport ownership is extension-local and independent from section registration identity
 - [Command Templates](./command-templates.md): sections do not execute command templates by default. UI registration + callback routing, not shell execution
 
 ## 15. Demo Extension
@@ -446,7 +446,7 @@ Available programmatically via `getTelegramSectionDiagnostics()`. Main-menu/sett
 
 - Main-menu and Settings surfaces with dynamic labels.
 - Managed section callbacks, buttons, edits, navigation, and cleanup.
-- Public `@llblab/pi-telegram/*` imports rather than package-private `/lib` paths.
-- Independent package and lifecycle ownership outside pi-telegram core.
+- Public `prime-agent-telegram/*` imports rather than package-private `/lib` paths.
+- Independent package and lifecycle ownership outside pa-telegram core.
 
-Use it as a template for section-based extensions. Activity-specific registration and delivery patterns remain in [Telegram Activity API](./activity.md); pi-telegram does not duplicate the demo as an in-package `examples/` directory.
+Use it as a template for section-based extensions. Activity-specific registration and delivery patterns remain in [Telegram Activity API](./activity.md); pa-telegram does not duplicate the demo as an in-package `examples/` directory.

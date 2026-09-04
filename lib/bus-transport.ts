@@ -55,7 +55,7 @@ export function getTelegramBusPipePath(input: {
     .digest("base64url")
     .slice(0, 16);
   const scope = input.scope.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 80);
-  return `\\\\.\\pipe\\pi-telegram-${digest}-${scope}`;
+  return `\\\\.\\pipe\\pa-telegram-${digest}-${scope}`;
 }
 
 export function isTelegramBusPipePath(endpoint: string): boolean {

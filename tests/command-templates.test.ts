@@ -283,7 +283,7 @@ test(
   "Command template execution supports Windows cmd wrappers without a shell template",
   { skip: process.platform !== "win32" },
   async () => {
-    const dir = await mkdtemp(join(tmpdir(), "pi-telegram-command-cmd-"));
+    const dir = await mkdtemp(join(tmpdir(), "pa-telegram-command-cmd-"));
     const binDir = join(dir, "node_modules", ".bin");
     await mkdir(binDir, { recursive: true });
     const scriptPath = join(binDir, "voice-writer.cmd");

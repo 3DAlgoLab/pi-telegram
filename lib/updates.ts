@@ -218,7 +218,7 @@ export interface TelegramUpdateMessage {
   from?: TelegramUser;
   message_id?: number;
   message_thread_id?: number;
-  pi_telegram_agent_source_thread?: string;
+  pa_telegram_agent_source_thread?: string;
   forum_topic_created?: unknown;
   forum_topic_closed?: unknown;
   forum_topic_reopened?: unknown;
@@ -426,7 +426,7 @@ function rejectTelegramForeignUpdateSettlement(
 ): never {
   const sourceUpdateId =
     source && typeof source === "object"
-      ? Reflect.get(source, "pi_telegram_source_update_id")
+      ? Reflect.get(source, "pa_telegram_source_update_id")
       : undefined;
   const failure: TelegramForeignUpdateSettlementFailure =
     settlement && settlement.status !== "accepted"
@@ -498,7 +498,7 @@ function bindTelegramUpdateAdmissionCarrier<TValue>(
   if (!value || typeof value !== "object") return value;
   return {
     ...(value as Record<PropertyKey, unknown>),
-    pi_telegram_source_update_id: binding.sourceUpdateId,
+    pa_telegram_source_update_id: binding.sourceUpdateId,
     [TELEGRAM_UPDATE_ADMISSION_BINDING]: binding,
   } as TValue;
 }
@@ -3251,8 +3251,8 @@ export function createTelegramUpdateWorkerRuntime<TContext>(
 /**
  * Verdict returned by a public Telegram update handler.
  *
- * - `"consume"` — the handler processed this update; pi-telegram skips default routing.
- * - `"pass"` (or `void`/`undefined`) — pi-telegram routes the update normally.
+ * - `"consume"` — the handler processed this update; pa-telegram skips default routing.
+ * - `"pass"` (or `void`/`undefined`) — pa-telegram routes the update normally.
  */
 export type TelegramUpdateHandlerVerdict = "consume" | "pass";
 
@@ -3265,7 +3265,7 @@ export interface TelegramUpdateExecutionFence {
 }
 
 const TELEGRAM_UPDATE_EXECUTION_FENCE = Symbol(
-  "pi-telegram.update-execution-fence",
+  "pa-telegram.update-execution-fence",
 );
 
 type TelegramExecutionFencedUpdate = {
@@ -3349,14 +3349,14 @@ export interface TelegramUpdateHandlerRegistry {
    * Register an update handler. Returns a disposer that removes it.
    *
    * Handlers are invoked in registration order on every Telegram update,
-   * before pi-telegram's own routing. The first handler that returns
+   * before pa-telegram's own routing. The first handler that returns
    * `"consume"` wins and stops the chain for that update.
    */
   add: (handler: TelegramUpdateHandler) => () => void;
   /**
    * Run all registered handlers against an update.
    *
-   * Used by pi-telegram's polling runtime; extension consumers should call
+   * Used by pa-telegram's polling runtime; extension consumers should call
    * {@link registerTelegramUpdateHandler} or `add` instead of dispatching directly.
    */
   dispatch: (
@@ -3408,7 +3408,7 @@ function getOrCreateUpdateHandlerRegistry(): TelegramUpdateHandlerRegistry {
 }
 
 /**
- * Called by pi-telegram's own runtime to obtain the registry it dispatches
+ * Called by pa-telegram's own runtime to obtain the registry it dispatches
  * through. Extension consumers should not call this; use
  * {@link registerTelegramUpdateHandler} instead.
  */
@@ -4952,11 +4952,11 @@ export function createTelegramUpdateAdmissionRuntimeAssembly<
 }
 
 /**
- * Register a handler that runs before pi-telegram routes a Telegram update
+ * Register a handler that runs before pa-telegram routes a Telegram update
  * through its built-in handlers.
  *
  * This is the low-level public surface for extensions that share the same bot
- * and Pi process with pi-telegram.
+ * and Pi process with pa-telegram.
  */
 export function registerTelegramUpdateHandler(
   handler: TelegramUpdateHandler,

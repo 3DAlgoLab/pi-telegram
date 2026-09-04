@@ -219,8 +219,8 @@ test("Outbound attachment byte-limit helpers own the outbound file default", () 
   );
   assert.equal(
     getTelegramOutboundAttachmentByteLimitFromEnv(
-      { PI_TELEGRAM_OUTBOUND_ATTACHMENT_MAX_BYTES: "12345" },
-      ["PI_TELEGRAM_OUTBOUND_ATTACHMENT_MAX_BYTES"],
+      { PA_TELEGRAM_OUTBOUND_ATTACHMENT_MAX_BYTES: "12345" },
+      ["PA_TELEGRAM_OUTBOUND_ATTACHMENT_MAX_BYTES"],
       99,
     ),
     12345,
@@ -228,11 +228,11 @@ test("Outbound attachment byte-limit helpers own the outbound file default", () 
   assert.equal(
     getTelegramOutboundAttachmentByteLimitFromEnv(
       {
-        PI_TELEGRAM_OUTBOUND_ATTACHMENT_MAX_BYTES: "0",
+        PA_TELEGRAM_OUTBOUND_ATTACHMENT_MAX_BYTES: "0",
         TELEGRAM_MAX_ATTACHMENT_SIZE_BYTES: "bad",
       },
       [
-        "PI_TELEGRAM_OUTBOUND_ATTACHMENT_MAX_BYTES",
+        "PA_TELEGRAM_OUTBOUND_ATTACHMENT_MAX_BYTES",
         "TELEGRAM_MAX_ATTACHMENT_SIZE_BYTES",
       ],
       99,
@@ -867,7 +867,7 @@ test("Guest attachment staging records cleanup failure without retrying the answ
 
 test("Outbound attachment queueing uses the domain stat fallback", async () => {
   const tempDir = await mkdtemp(
-    join(tmpdir(), "pi-telegram-attachment-queue-"),
+    join(tmpdir(), "pa-telegram-attachment-queue-"),
   );
   const filePath = join(tempDir, "demo.txt");
   await writeFile(filePath, "demo", "utf8");
@@ -1017,7 +1017,7 @@ test("Outbound attachment delivery chooses photo vs document methods from file p
 });
 
 test("Outbound attachment delivery uses the domain stat fallback for size checks", async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), "pi-telegram-attachment-"));
+  const tempDir = await mkdtemp(join(tmpdir(), "pa-telegram-attachment-"));
   const filePath = join(tempDir, "large.txt");
   await writeFile(filePath, "too large", "utf8");
   const replies: string[] = [];

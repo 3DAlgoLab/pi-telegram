@@ -4,7 +4,7 @@ _Status: incremental implementation. Canonical installation and explicit transac
 
 ## Purpose
 
-This document specifies the concrete Generative App runtime implemented by `pi-telegram`. The transport-independent concept, vocabulary, application shapes, hybrid action model, and agent operating workflow belong to the bundled [`generative-apps` Skill](../skills/generative-apps/SKILL.md).
+This document specifies the concrete Generative App runtime implemented by `pa-telegram`. The transport-independent concept, vocabulary, application shapes, hybrid action model, and agent operating workflow belong to the bundled [`generative-apps` Skill](../skills/generative-apps/SKILL.md).
 
 The Telegram implementation provides managed installation, method execution, persistence, button binding, callback routing, and message delivery:
 
@@ -19,7 +19,7 @@ This runtime coexists with ordinary prompt buttons, companion-extension callback
 
 - The bundled [`generative-apps` Skill](../skills/generative-apps/SKILL.md) owns the general concept and agent operation: category definition, `generated` versus `generative`, application shapes, hybrid method/prompt surfaces, selection, authorship, review, workflow, safety, and validation judgment.
 - [`architecture.md`](./architecture.md#generative-apps) owns this runtime's place inside the Telegram bridge and its domain boundaries.
-- This document owns only `pi-telegram` implementation contracts: canonical managed identity, executable ABI, Telegram wire syntax, state timeline, installation/replacement, bounded ports, callback routing, delivery, lifecycle, and current limitations.
+- This document owns only `pa-telegram` implementation contracts: canonical managed identity, executable ABI, Telegram wire syntax, state timeline, installation/replacement, bounded ports, callback routing, delivery, lifecycle, and current limitations.
 - [`generated-control-surface`](../skills/generated-control-surface/SKILL.md) owns the separate ephemeral control-surface operating protocol.
 
 Keep conceptual guidance out of this document and Telegram runtime mechanics out of the Generative Apps Skill.

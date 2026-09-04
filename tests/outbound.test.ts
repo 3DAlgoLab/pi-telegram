@@ -970,7 +970,7 @@ test("Outbound artifact sender sends multiple voice replies independently", asyn
 
 test("Voice reply sender prefers configured outbound voice handlers over registered synthesis providers", async () => {
   const events: unknown[] = [];
-  const voiceTempDir = join(tmpdir(), "pi-telegram-voice-handler-test");
+  const voiceTempDir = join(tmpdir(), "pa-telegram-voice-handler-test");
   const dispose = registerTelegramVoiceSynthesisProvider(async () => {
     events.push("provider-called");
     return "/tmp/provider.opus";
@@ -1030,7 +1030,7 @@ test("Voice reply sender falls back from configured handlers to registered synth
 
 test("Voice reply sender uses configured outbound voice handlers when no provider is registered", async () => {
   const execCalls: unknown[] = [];
-  const voiceTempDir = join(tmpdir(), "pi-telegram-voice-handler-test");
+  const voiceTempDir = join(tmpdir(), "pa-telegram-voice-handler-test");
   const uploads: unknown[] = [];
   const sendVoiceReply = createTelegramVoiceReplySender({
     tempDir: voiceTempDir,

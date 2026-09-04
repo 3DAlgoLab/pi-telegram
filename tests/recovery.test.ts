@@ -31,7 +31,7 @@ function createRuntimePaths(): {
   statePath: string;
   transactionPath: string;
 } {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-recovery-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-recovery-"));
   const ownersPath = join(dir, "owners.json");
   return {
     dir,

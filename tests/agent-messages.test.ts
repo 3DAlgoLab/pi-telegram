@@ -65,7 +65,7 @@ test("Agent message runtime resolves live names and injects attributed turns", a
   assert.equal(updates.length, 1);
   assert.equal(updates[0]![TELEGRAM_INTERNAL_AGENT_MESSAGE], true);
   assert.equal(updates[0]!.message.message_thread_id, 99);
-  assert.equal(updates[0]!.message.pi_telegram_agent_source_thread, "Isle");
+  assert.equal(updates[0]!.message.pa_telegram_agent_source_thread, "Isle");
   assert.equal(updates[0]!.message.text, "Review the release");
 });
 

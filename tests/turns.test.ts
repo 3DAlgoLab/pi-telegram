@@ -116,7 +116,7 @@ test("Turn runtime builder folds agent source into Telegram thread metadata", as
       message_id: 42,
       message_thread_id: 99,
       chat: { id: 7 },
-      pi_telegram_agent_source_thread: "Boreal",
+      pa_telegram_agent_source_thread: "Boreal",
       text: "Message",
     },
   ]);
@@ -370,7 +370,7 @@ test("Turn runtime builder keeps a same-turn comment before forwarded content", 
 });
 
 test("Turn runtime builder keeps forwarded Rich media in source attachment context", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-forward-rich-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-forward-rich-"));
   const buildTurn = createTelegramPromptTurnRuntimeBuilder({
     allocateQueueOrder: () => 1,
     downloadFile: async (_fileId, fileName) => {
@@ -421,7 +421,7 @@ test("Turn runtime builder keeps forwarded Rich media in source attachment conte
 });
 
 test("Turn runtime builder keeps a trailing comment before a forwarded photo source", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-forward-photo-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-forward-photo-"));
   const buildTurn = createTelegramPromptTurnRuntimeBuilder({
     allocateQueueOrder: () => 1,
     downloadFile: async (_fileId, fileName) => {
@@ -657,7 +657,7 @@ test("Turn builder keeps grouped and folded source update receipts distinct", as
     messages: [
       {
         message_id: 10,
-        pi_telegram_source_update_id: 101,
+        pa_telegram_source_update_id: 101,
         chat: { id: 5 },
       },
     ],
@@ -672,12 +672,12 @@ test("Turn builder keeps grouped and folded source update receipts distinct", as
     messages: [
       {
         message_id: 11,
-        pi_telegram_source_update_id: 102,
+        pa_telegram_source_update_id: 102,
         chat: { id: 5 },
       },
       {
         message_id: 12,
-        pi_telegram_source_update_id: 103,
+        pa_telegram_source_update_id: 103,
         chat: { id: 5 },
       },
     ],
@@ -707,7 +707,7 @@ test("Turn builder fails closed when journaled source ids lack receipt scope", a
       messages: [
         {
           message_id: 10,
-          pi_telegram_source_update_id: 101,
+          pa_telegram_source_update_id: 101,
           chat: { id: 5 },
         },
       ],
@@ -897,7 +897,7 @@ test("Turn runtime keeps manual mode silent without voice flags", async () => {
 });
 
 test("Turn runtime helper reads image payloads from local files", async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), "pi-telegram-turn-runtime-"));
+  const tempDir = await mkdtemp(join(tmpdir(), "pa-telegram-turn-runtime-"));
   const imagePath = join(tempDir, "image.png");
   await writeFile(imagePath, Buffer.from("demo-image"));
   const turn = await buildTelegramPromptTurnRuntime({
@@ -1057,7 +1057,7 @@ test("Turn edit runtime keeps reply context prompt-only when queued messages cha
 });
 
 test("Turn helpers preserve queued prompt attachments when captions are edited", () => {
-  const attachmentDir = join(tmpdir(), "pi-telegram-turn-attachments");
+  const attachmentDir = join(tmpdir(), "pa-telegram-turn-attachments");
   const attachmentBlock =
     `[attachments] ${attachmentDir}\n` +
     "- /demo.png\n" +

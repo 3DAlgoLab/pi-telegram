@@ -135,25 +135,25 @@ async function createPiPrintFixtureExtension(tempDir: string): Promise<string> {
       `import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";\n\n` +
       `export default function (pi) {\n` +
       `  const agentDir = process.env.PI_CODING_AGENT_DIR;\n` +
-      `  if (process.env.PI_TELEGRAM_TEST_LOCK_MODE === "owner" && agentDir) {\n` +
+      `  if (process.env.PA_TELEGRAM_TEST_LOCK_MODE === "owner" && agentDir) {\n` +
       `    const ownersDir = join(agentDir, "tmp", "telegram");\n` +
       `    mkdirSync(ownersDir, { recursive: true });\n` +
       `    writeFileSync(join(ownersDir, "owners.json"), JSON.stringify({ default: { pid: process.pid } }) + "\\n");\n` +
       `  }\n` +
       `  pi.on("session_start", (_event, ctx) => {\n` +
-      `    const forcedMode = process.env.PI_TELEGRAM_TEST_CTX_MODE;\n` +
+      `    const forcedMode = process.env.PA_TELEGRAM_TEST_CTX_MODE;\n` +
       `    if (forcedMode && ctx.mode === undefined) ctx.mode = forcedMode;\n` +
-      `    const methodMarker = process.env.PI_TELEGRAM_TEST_METHOD_MARKER;\n` +
+      `    const methodMarker = process.env.PA_TELEGRAM_TEST_METHOD_MARKER;\n` +
       `    if (methodMarker) appendFileSync(methodMarker, "session-mode:" + String(ctx.mode) + "\\n");\n` +
       `  });\n` +
       `  globalThis.fetch = async (input, init = {}) => {\n` +
       `    const method = String(input).split("/").at(-1);\n` +
-      `    const methodMarker = process.env.PI_TELEGRAM_TEST_METHOD_MARKER;\n` +
+      `    const methodMarker = process.env.PA_TELEGRAM_TEST_METHOD_MARKER;\n` +
       `    if (methodMarker) appendFileSync(methodMarker, method + "\\n");\n` +
       `    if (method === "deleteWebhook") return { json: async () => ({ ok: true, result: true }) };\n` +
       `    if (method === "sendChatAction") return { json: async () => ({ ok: true, result: true }) };\n` +
       `    if (method === "sendMessage") {\n` +
-      `      const marker = process.env.PI_TELEGRAM_TEST_SEND_MARKER;\n` +
+      `      const marker = process.env.PA_TELEGRAM_TEST_SEND_MARKER;\n` +
       `      if (marker) writeFileSync(marker, String(init.body ?? "") + "\\n");\n` +
       `      return { json: async () => ({ ok: true, result: { message_id: 100 } }) };\n` +
       `    }\n` +
@@ -197,7 +197,7 @@ async function createPiPrintAgentDir(
   config: Record<string, unknown>,
   locks: Record<string, unknown> = {},
 ): Promise<string> {
-  const agentDir = await mkdtemp(join(tmpdir(), "pi-telegram-pi-print-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "pa-telegram-pi-print-"));
   await writeFile(
     join(agentDir, "telegram.json"),
     JSON.stringify(config, null, "\t") + "\n",
@@ -243,7 +243,7 @@ async function runPiPrintWithTelegram(
 }
 
 test("Child process sharing the agent dir does not poll while parent owns Telegram lock", async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), "pi-telegram-process-lock-"));
+  const tempDir = await mkdtemp(join(tmpdir(), "pa-telegram-process-lock-"));
   const markerPath = join(tempDir, "telegram-methods.log");
   const stopPath = join(tempDir, "stop");
   const agentDir = await createPiPrintAgentDir({
@@ -257,8 +257,8 @@ test("Child process sharing the agent dir does not poll while parent owns Telegr
     import { join } from "node:path";
 
     const agentDir = process.env.PI_CODING_AGENT_DIR;
-    const markerPath = process.env.PI_TELEGRAM_TEST_METHOD_MARKER;
-    const stopPath = process.env.PI_TELEGRAM_TEST_STOP_PATH;
+    const markerPath = process.env.PA_TELEGRAM_TEST_METHOD_MARKER;
+    const stopPath = process.env.PA_TELEGRAM_TEST_STOP_PATH;
     const cwd = "/repo/parent-owner";
     const ownersDir = join(agentDir, "tmp", "telegram");
     mkdirSync(ownersDir, { recursive: true });
@@ -324,8 +324,8 @@ test("Child process sharing the agent dir does not poll while parent owns Telegr
       env: {
         ...process.env,
         PI_CODING_AGENT_DIR: agentDir,
-        PI_TELEGRAM_TEST_METHOD_MARKER: markerPath,
-        PI_TELEGRAM_TEST_STOP_PATH: stopPath,
+        PA_TELEGRAM_TEST_METHOD_MARKER: markerPath,
+        PA_TELEGRAM_TEST_STOP_PATH: stopPath,
       },
       stdio: ["ignore", "ignore", "pipe"],
     },
@@ -346,7 +346,7 @@ test("Child process sharing the agent dir does not poll while parent owns Telegr
     );
     const childScript = `
       import { appendFileSync } from "node:fs";
-      const markerPath = process.env.PI_TELEGRAM_TEST_METHOD_MARKER;
+      const markerPath = process.env.PA_TELEGRAM_TEST_METHOD_MARKER;
       globalThis.fetch = async (input) => {
         const method = String(input).split("/").at(-1);
         appendFileSync(markerPath, "child:" + method + "\\n");
@@ -383,7 +383,7 @@ test("Child process sharing the agent dir does not poll while parent owns Telegr
     const child = await runNodeScript(childScript, {
       env: {
         PI_CODING_AGENT_DIR: agentDir,
-        PI_TELEGRAM_TEST_METHOD_MARKER: markerPath,
+        PA_TELEGRAM_TEST_METHOD_MARKER: markerPath,
       },
     });
     assert.equal(child.code, 0, child.stderr);
@@ -416,7 +416,7 @@ test("Child process sharing the agent dir does not poll while parent owns Telegr
 });
 
 test("Direct Telegram tools refuse delivery from a non-owner process", async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), "pi-telegram-direct-owner-"));
+  const tempDir = await mkdtemp(join(tmpdir(), "pa-telegram-direct-owner-"));
   const markerPath = join(tempDir, "telegram-methods.log");
   const attachmentPath = join(tempDir, "demo.txt");
   await writeFile(attachmentPath, "demo", "utf8");
@@ -437,8 +437,8 @@ test("Direct Telegram tools refuse delivery from a non-owner process", async () 
   try {
     const script = `
       import { appendFileSync } from "node:fs";
-      const markerPath = process.env.PI_TELEGRAM_TEST_METHOD_MARKER;
-      const attachmentPath = process.env.PI_TELEGRAM_TEST_ATTACHMENT_PATH;
+      const markerPath = process.env.PA_TELEGRAM_TEST_METHOD_MARKER;
+      const attachmentPath = process.env.PA_TELEGRAM_TEST_ATTACHMENT_PATH;
       globalThis.fetch = async (input) => {
         const method = String(input).split("/").at(-1);
         appendFileSync(markerPath, method + "\\n");
@@ -495,8 +495,8 @@ test("Direct Telegram tools refuse delivery from a non-owner process", async () 
     const result = await runNodeScript(script, {
       env: {
         PI_CODING_AGENT_DIR: agentDir,
-        PI_TELEGRAM_TEST_METHOD_MARKER: markerPath,
-        PI_TELEGRAM_TEST_ATTACHMENT_PATH: attachmentPath,
+        PA_TELEGRAM_TEST_METHOD_MARKER: markerPath,
+        PA_TELEGRAM_TEST_ATTACHMENT_PATH: attachmentPath,
       },
     });
     assert.equal(result.code, 0, result.stderr);
@@ -521,7 +521,7 @@ test(
   "pi -p with Telegram extension and no active lock exits",
   { skip: !PI_CLI_AVAILABLE },
   async () => {
-    const tempDir = await mkdtemp(join(tmpdir(), "pi-telegram-pi-print-"));
+    const tempDir = await mkdtemp(join(tmpdir(), "pa-telegram-pi-print-"));
     const fixtureExtension = await createPiPrintFixtureExtension(tempDir);
     const agentDir = await createPiPrintAgentDir({
       botToken: "123:abc",
@@ -544,7 +544,7 @@ test(
   "pi -p with Telegram-owned lock stays passive and does not poll",
   { skip: !PI_CLI_AVAILABLE },
   async () => {
-    const tempDir = await mkdtemp(join(tmpdir(), "pi-telegram-pi-print-"));
+    const tempDir = await mkdtemp(join(tmpdir(), "pa-telegram-pi-print-"));
     const fixtureExtension = await createPiPrintFixtureExtension(tempDir);
     const markerPath = join(tempDir, "telegram-methods.log");
     const agentDir = await createPiPrintAgentDir({
@@ -554,9 +554,9 @@ test(
     });
     try {
       const result = await runPiPrintWithTelegram(agentDir, fixtureExtension, {
-        PI_TELEGRAM_TEST_CTX_MODE: "print",
-        PI_TELEGRAM_TEST_LOCK_MODE: "owner",
-        PI_TELEGRAM_TEST_METHOD_MARKER: markerPath,
+        PA_TELEGRAM_TEST_CTX_MODE: "print",
+        PA_TELEGRAM_TEST_LOCK_MODE: "owner",
+        PA_TELEGRAM_TEST_METHOD_MARKER: markerPath,
       });
       assert.equal(result.code, 0, result.stderr);
       assert.equal(result.signal, null, result.stderr);
@@ -575,7 +575,7 @@ test(
   "pi -p with proactive config and Telegram-owned lock exits",
   { skip: !PI_CLI_AVAILABLE },
   async () => {
-    const tempDir = await mkdtemp(join(tmpdir(), "pi-telegram-pi-print-"));
+    const tempDir = await mkdtemp(join(tmpdir(), "pa-telegram-pi-print-"));
     const fixtureExtension = await createPiPrintFixtureExtension(tempDir);
     const agentDir = await createPiPrintAgentDir({
       botToken: "123:abc",
@@ -585,7 +585,7 @@ test(
     });
     try {
       const result = await runPiPrintWithTelegram(agentDir, fixtureExtension, {
-        PI_TELEGRAM_TEST_LOCK_MODE: "owner",
+        PA_TELEGRAM_TEST_LOCK_MODE: "owner",
       });
       assert.equal(result.code, 0, result.stderr);
       assert.equal(result.signal, null, result.stderr);
@@ -601,7 +601,7 @@ test(
   "pi -p non-owner skips proactive Telegram result",
   { skip: !PI_CLI_AVAILABLE },
   async () => {
-    const tempDir = await mkdtemp(join(tmpdir(), "pi-telegram-pi-print-"));
+    const tempDir = await mkdtemp(join(tmpdir(), "pa-telegram-pi-print-"));
     const fixtureExtension = await createPiPrintFixtureExtension(tempDir);
     const markerPath = join(tempDir, "send-marker.json");
     const agentDir = await createPiPrintAgentDir(
@@ -620,7 +620,7 @@ test(
     );
     try {
       const result = await runPiPrintWithTelegram(agentDir, fixtureExtension, {
-        PI_TELEGRAM_TEST_SEND_MARKER: markerPath,
+        PA_TELEGRAM_TEST_SEND_MARKER: markerPath,
       });
       assert.equal(result.code, 0, result.stderr);
       assert.equal(result.signal, null, result.stderr);
@@ -642,7 +642,7 @@ test("Extension session shutdown without active lock lets process exit", async (
     import { tmpdir } from "node:os";
     import { join } from "node:path";
 
-    const agentDir = await mkdtemp(join(tmpdir(), "pi-telegram-process-shutdown-"));
+    const agentDir = await mkdtemp(join(tmpdir(), "pa-telegram-process-shutdown-"));
     process.env.PI_CODING_AGENT_DIR = agentDir;
     await writeFile(
       join(agentDir, "telegram.json"),
@@ -690,7 +690,7 @@ test("Extension session shutdown lets an active polling owner process exit", asy
     import { tmpdir } from "node:os";
     import { join } from "node:path";
 
-    const agentDir = await mkdtemp(join(tmpdir(), "pi-telegram-process-shutdown-"));
+    const agentDir = await mkdtemp(join(tmpdir(), "pa-telegram-process-shutdown-"));
     process.env.PI_CODING_AGENT_DIR = agentDir;
     const cwd = "/repo/process-shutdown";
     await writeFile(

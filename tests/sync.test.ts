@@ -357,7 +357,7 @@ test("Telegram sync slice state records suspect and fresh transitions", () => {
 });
 
 test("Leader thread sync creates a visible leader thread when no binding exists", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-leader-sync-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-leader-sync-"));
   const store = createTelegramTopicTargetStore({
     path: join(dir, "telegram-targets.json"),
     getNowMs: () => 2000,
@@ -395,7 +395,7 @@ test("Leader thread sync creates a visible leader thread when no binding exists"
 });
 
 test("Leader thread sync reuses same-profile topic across reload", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-leader-sync-prev-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-leader-sync-prev-"));
   const store = createTelegramTopicTargetStore({
     path: join(dir, "telegram-targets.json"),
     getNowMs: () => 2000,
@@ -458,7 +458,7 @@ test("Leader thread sync reuses same-profile topic across reload", async () => {
 });
 
 test("Leader thread sync rejects reused binding after load loses epoch", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-leader-reuse-epoch-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-leader-reuse-epoch-"));
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
     getNowMs: () => 2000,
@@ -504,7 +504,7 @@ test("Leader thread sync rejects reused binding after load loses epoch", async (
 
 test("Leader thread sync reuses same-process legacy leader topic across reload", async () => {
   const dir = await mkdtemp(
-    join(tmpdir(), "pi-telegram-leader-sync-same-pid-"),
+    join(tmpdir(), "pa-telegram-leader-sync-same-pid-"),
   );
   const store = createTelegramTopicTargetStore({
     path: join(dir, "telegram-targets.json"),
@@ -567,7 +567,7 @@ test("Leader thread sync reuses same-process legacy leader topic across reload",
 });
 
 test("Leader thread sync does not visibly probe same-profile topic during reload", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-leader-sync-defer-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-leader-sync-defer-"));
   const store = createTelegramTopicTargetStore({
     path: join(dir, "telegram-targets.json"),
     getNowMs: () => 2000,
@@ -613,7 +613,7 @@ test("Leader thread sync does not visibly probe same-profile topic during reload
 
 test("Leader thread sync proactively deletes known reservations on startup", async () => {
   const dir = await mkdtemp(
-    join(tmpdir(), "pi-telegram-leader-reservation-cleanup-"),
+    join(tmpdir(), "pa-telegram-leader-reservation-cleanup-"),
   );
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
@@ -663,7 +663,7 @@ test("Leader thread sync proactively deletes known reservations on startup", asy
 
 test("Leader thread sync preserves follower records from previous instances", async () => {
   const dir = await mkdtemp(
-    join(tmpdir(), "pi-telegram-leader-preserve-followers-"),
+    join(tmpdir(), "pa-telegram-leader-preserve-followers-"),
   );
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
@@ -716,7 +716,7 @@ test("Leader thread sync preserves follower records from previous instances", as
 
 test("Leader thread sync cleans previous leader records regardless of profile key", async () => {
   const dir = await mkdtemp(
-    join(tmpdir(), "pi-telegram-leader-cross-profile-"),
+    join(tmpdir(), "pa-telegram-leader-cross-profile-"),
   );
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
@@ -760,7 +760,7 @@ test("Leader thread sync cleans previous leader records regardless of profile ke
 
 test("Leader thread sync preserves previous leader state when deletion is unconfirmed", async () => {
   const dir = await mkdtemp(
-    join(tmpdir(), "pi-telegram-leader-cleanup-unconfirmed-"),
+    join(tmpdir(), "pa-telegram-leader-cleanup-unconfirmed-"),
   );
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
@@ -804,7 +804,7 @@ test("Leader thread sync preserves previous leader state when deletion is unconf
 
 test("Leader thread sync aborts local previous-leader cleanup after ownership loss", async () => {
   const dir = await mkdtemp(
-    join(tmpdir(), "pi-telegram-leader-cleanup-epoch-loss-"),
+    join(tmpdir(), "pa-telegram-leader-cleanup-epoch-loss-"),
   );
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
@@ -850,7 +850,7 @@ test("Leader thread sync aborts local previous-leader cleanup after ownership lo
 });
 
 test("Leader thread sync gets next monotonic slot after D on reload", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-leader-sync-d-to-e-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-leader-sync-d-to-e-"));
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
     getNowMs: () => 2000,
@@ -892,7 +892,7 @@ test("Leader thread sync gets next monotonic slot after D on reload", async () =
 });
 
 test("Leader thread sync does not reuse a target with pending cleanup", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-leader-sync-deleted-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-leader-sync-deleted-"));
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
     getNowMs: () => 2000,
@@ -941,7 +941,7 @@ test("Leader thread sync does not reuse a target with pending cleanup", async ()
 });
 
 test("Leader thread sync can force-refresh unnamed stale-prone leader bindings", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-leader-sync-refresh-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-leader-sync-refresh-"));
   const store = createTelegramTopicTargetStore({
     path: join(dir, "telegram-targets.json"),
     getNowMs: () => 2000,
@@ -993,7 +993,7 @@ test("Leader thread sync can force-refresh unnamed stale-prone leader bindings",
 
 test("Leader thread sync force-refresh preserves promoted follower bindings", async () => {
   const dir = await mkdtemp(
-    join(tmpdir(), "pi-telegram-promoted-follower-refresh-"),
+    join(tmpdir(), "pa-telegram-promoted-follower-refresh-"),
   );
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),

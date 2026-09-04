@@ -289,7 +289,7 @@ export function registerTelegramSection(
   ] as TelegramSectionRegistry | undefined;
   if (!registry) {
     throw new Error(
-      "Telegram section registry not available. Is pi-telegram loaded and initialized?",
+      "Telegram section registry not available. Is pa-telegram loaded and initialized?",
     );
   }
 

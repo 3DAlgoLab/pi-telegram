@@ -504,7 +504,7 @@ test("Connect recovers disposable runtime corruption and retries exactly once", 
 });
 
 test("Connect performs filesystem recovery before its one reconnect attempt", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-connect-recovery-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-connect-recovery-"));
   try {
     const ownersPath = join(dir, "owners.json");
     const statePath = join(dir, "state.json");
@@ -859,7 +859,7 @@ test("Command target queue runtime binds source ids to exact control receipts", 
     {
       chat: { id: number };
       message_id: number;
-      pi_telegram_source_update_id?: number;
+      pa_telegram_source_update_id?: number;
     },
     string
   >({
@@ -894,7 +894,7 @@ test("Command target queue runtime binds source ids to exact control receipts", 
     {
       chat: { id: 7 },
       message_id: 11,
-      pi_telegram_source_update_id: 91,
+      pa_telegram_source_update_id: 91,
     },
     "ctx",
     "status",

@@ -32,17 +32,17 @@ test("Public package subpaths expose the stable extension API", async () => {
     voice,
     keyboard,
   ] = await Promise.all([
-    import("@llblab/pi-telegram"),
-    import("@llblab/pi-telegram/inbound"),
-    import("@llblab/pi-telegram/outbound"),
-    import("@llblab/pi-telegram/delivery"),
-    import("@llblab/pi-telegram/activity"),
-    import("@llblab/pi-telegram/updates"),
-    import("@llblab/pi-telegram/commands"),
-    import("@llblab/pi-telegram/sections"),
-    import("@llblab/pi-telegram/status"),
-    import("@llblab/pi-telegram/voice"),
-    import("@llblab/pi-telegram/keyboard"),
+    import("prime-agent-telegram"),
+    import("prime-agent-telegram/inbound"),
+    import("prime-agent-telegram/outbound"),
+    import("prime-agent-telegram/delivery"),
+    import("prime-agent-telegram/activity"),
+    import("prime-agent-telegram/updates"),
+    import("prime-agent-telegram/commands"),
+    import("prime-agent-telegram/sections"),
+    import("prime-agent-telegram/status"),
+    import("prime-agent-telegram/voice"),
+    import("prime-agent-telegram/keyboard"),
   ]);
 
   assert.deepEqual(Object.keys(root), ["default"]);
@@ -109,7 +109,7 @@ test("Activity API declares the Pi lifecycle compatibility floor", async () => {
 });
 
 test("Package-private lib implementation paths are not exported", async () => {
-  await assertPackagePathNotExported("@llblab/pi-telegram/lib/updates.ts");
-  await assertPackagePathNotExported("@llblab/pi-telegram/lib/sections.ts");
-  await assertPackagePathNotExported("@llblab/pi-telegram/api/updates.ts");
+  await assertPackagePathNotExported("prime-agent-telegram/lib/updates.ts");
+  await assertPackagePathNotExported("prime-agent-telegram/lib/sections.ts");
+  await assertPackagePathNotExported("prime-agent-telegram/api/updates.ts");
 });

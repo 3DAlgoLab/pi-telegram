@@ -226,7 +226,7 @@ export function buildVoiceReplyModeSettingsText(
       getVoiceReplyModeSetting(mode, configured),
     )}</code>`,
     "",
-    "Controls when pi-telegram converts assistant text replies into Telegram voice messages.",
+    "Controls when pa-telegram converts assistant text replies into Telegram voice messages.",
     "",
     "<code>-</code> <code>manual</code> (default): add no automatic voice context; explicit 'telegram_voice' actions still work.",
     "<code>-</code> <code>mirror</code>: voice input activates automatic voice delivery; text input follows 'manual' behavior.",

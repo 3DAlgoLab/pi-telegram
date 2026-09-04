@@ -75,7 +75,7 @@ test("Thread owner keys isolate named Telegram profiles without changing default
 test("Thread names are deterministic for the same seed", () => {
   const input = {
     seed: "123",
-    cwd: "/repo/pi-telegram",
+    cwd: "/repo/pa-telegram",
     role: "leader" as const,
   };
   assert.equal(
@@ -126,17 +126,17 @@ test("Baked thread names can be selected from timestamp entropy", () => {
 test("Thread names include workspace and role hints", () => {
   const name = createTelegramThreadName({
     seed: "123",
-    cwd: "/repo/pi-telegram",
+    cwd: "/repo/pa-telegram",
     role: "leader",
   });
-  assert.match(name, /pi-telegram/);
+  assert.match(name, /pa-telegram/);
   assert.match(name, /Leader/);
 });
 
 test("Thread names can include the assigned slot", () => {
   const name = createTelegramThreadName({
     seed: "123",
-    cwd: "/repo/pi-telegram",
+    cwd: "/repo/pa-telegram",
     role: "follower",
     slot: "B",
   });
@@ -164,7 +164,7 @@ test("Thread state path is transient and profile-aware", () => {
 });
 
 test("Thread store persists explicit owner target mappings privately", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-threads-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-threads-"));
   const path = join(dir, "telegram-targets.json");
   try {
     const store = createTelegramTopicTargetStore({ path });
@@ -218,7 +218,7 @@ test("Thread store persists explicit owner target mappings privately", async () 
 });
 
 test("Thread store persists status snapshot sections separately from threads", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-state-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-state-"));
   const path = join(dir, "state.json");
   try {
     const store = createTelegramTopicTargetStore({ path });
@@ -265,7 +265,7 @@ test("Thread store persists status snapshot sections separately from threads", a
 });
 
 test("Thread store status snapshot persist preserves unloaded thread records", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-state-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-state-"));
   const path = join(dir, "state.json");
   try {
     const seeded = createTelegramTopicTargetStore({
@@ -318,7 +318,7 @@ test("Thread store status snapshot persist preserves unloaded thread records", a
 });
 
 test("Thread store stale status writer refreshes current bindings before persist", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-state-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-state-"));
   const path = join(dir, "state.json");
   try {
     const leader = createTelegramTopicTargetStore({ path });
@@ -369,7 +369,7 @@ test("Thread store stale status writer refreshes current bindings before persist
 });
 
 test("Thread store denies follower writes until transport ownership promotes", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-state-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-state-"));
   const path = join(dir, "state.json");
   try {
     const leader = createTelegramTopicTargetStore({ path });
@@ -432,7 +432,7 @@ test("Thread store denies follower writes until transport ownership promotes", a
 });
 
 test("Thread store snapshot commit is fenced by exact transport ownership", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-state-fence-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-state-fence-"));
   const path = join(dir, "state.json");
   const ownersPath = join(dir, "owners.json");
   try {
@@ -495,7 +495,7 @@ test("Thread store snapshot commit is fenced by exact transport ownership", asyn
 });
 
 test("Thread store skips semantically unchanged state snapshots", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-state-semantic-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-state-semantic-"));
   const path = join(dir, "state.json");
   try {
     let nowMs = 1000;
@@ -524,7 +524,7 @@ test("Thread store skips semantically unchanged state snapshots", async () => {
 });
 
 test("Thread store load does not clobber unpersisted thread mutations", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-state-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-state-"));
   const path = join(dir, "state.json");
   try {
     const seeded = createTelegramTopicTargetStore({ path });
@@ -565,7 +565,7 @@ test("Thread store load does not clobber unpersisted thread mutations", async ()
 });
 
 test("Thread store refresh discards stale local projections for owner-published capability", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-state-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-state-"));
   const path = join(dir, "state.json");
   try {
     const owner = createTelegramTopicTargetStore({ path });
@@ -588,7 +588,7 @@ test("Thread store refresh discards stale local projections for owner-published 
 
 test("Thread store concurrent persists use unique temp files", async () => {
   const dir = await mkdtemp(
-    join(tmpdir(), "pi-telegram-state-concurrent-persist-"),
+    join(tmpdir(), "pa-telegram-state-concurrent-persist-"),
   );
   const path = join(dir, "state.json");
   try {
@@ -611,7 +611,7 @@ test("Thread store concurrent persists use unique temp files", async () => {
 });
 
 test("Thread store retains mutations that arrive during snapshot commit", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-state-revision-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-state-revision-"));
   const path = join(dir, "state.json");
   try {
     let injectMutation = true;
@@ -671,7 +671,7 @@ test("Thread store retains mutations that arrive during snapshot commit", async 
 });
 
 test("Thread store persists bot-wide capability state separately from threads", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-state-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-state-"));
   const path = join(dir, "state.json");
   try {
     const store = createTelegramTopicTargetStore({ path });
@@ -694,7 +694,7 @@ test("Thread store persists bot-wide capability state separately from threads", 
 });
 
 test("Thread store migrates legacy displayName fields to threadName on load", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-state-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-state-"));
   const path = join(dir, "state.json");
   try {
     await writeFile(
@@ -926,7 +926,7 @@ test("Thread slot allocator treats live pending provisions as occupied", () => {
 });
 
 test("Thread store persists and prunes pending provisions", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-pending-provisions-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-pending-provisions-"));
   const path = join(dir, "state.json");
   try {
     const store = createTelegramTopicTargetStore({
@@ -970,7 +970,7 @@ test("Thread store persists and prunes pending provisions", async () => {
 });
 
 test("Thread store persists exact graceful cleanup intents until confirmation", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-pending-cleanups-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-pending-cleanups-"));
   const path = join(dir, "state.json");
   try {
     const store = createTelegramTopicTargetStore({ path, getNowMs: () => 1000 });
@@ -1014,7 +1014,7 @@ test("Thread store persists exact graceful cleanup intents until confirmation", 
 
 test("Thread store retains expired targeted pending provisions for reconciler cleanup", async () => {
   const dir = await mkdtemp(
-    join(tmpdir(), "pi-telegram-expired-pending-provisions-"),
+    join(tmpdir(), "pa-telegram-expired-pending-provisions-"),
   );
   const path = join(dir, "state.json");
   try {
@@ -1070,7 +1070,7 @@ test("Thread store retains expired targeted pending provisions for reconciler cl
 });
 
 test("Thread slot allocator continues after persisted last slot when no threads remain", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-thread-slot-cursor-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-thread-slot-cursor-"));
   const path = join(dir, "telegram-targets.json");
   try {
     await writeFile(
@@ -1146,7 +1146,7 @@ test("Thread slot allocator ignores expired reservations", () => {
 });
 
 test("Thread store prunes expired reservations on load", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-reservations-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-reservations-"));
   const path = join(dir, "state.json");
   try {
     await writeFile(
@@ -1325,7 +1325,7 @@ test("Thread renamer rejects bare slot and generic role labels", async () => {
 });
 
 test("Thread store preserves thread identity after stale target pruning", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-identity-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-identity-"));
   const path = join(dir, "state.json");
   const calls: unknown[] = [];
   try {
@@ -1604,7 +1604,7 @@ test("Thread provisioner reuses the same-runtime active manual follower target",
 });
 
 test("Thread provisioner persists pending provision while creating a fresh topic", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-provision-pending-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-provision-pending-"));
   const path = join(dir, "state.json");
   try {
     const store = createTelegramTopicTargetStore({
@@ -1653,7 +1653,7 @@ test("Thread provisioner persists pending provision while creating a fresh topic
 });
 
 test("Thread provisioner preserves ambiguous creation intent and blocks successor duplication", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-provision-ambiguous-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-provision-ambiguous-"));
   const path = join(dir, "state.json");
   let nowMs = 2000;
   try {
@@ -1719,7 +1719,7 @@ test("Thread provisioner preserves ambiguous creation intent and blocks successo
 });
 
 test("Thread provisioner treats a malformed successful create as commit-unknown", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-provision-malformed-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-provision-malformed-"));
   try {
     const store = createTelegramTopicTargetStore({
       path: join(dir, "state.json"),
@@ -1770,7 +1770,7 @@ test("Thread provisioner fails closed before mutation without leader ownership",
 
 test("Thread provisioner preserves its intent and stops binding after create loses ownership", async () => {
   const dir = await mkdtemp(
-    join(tmpdir(), "pi-telegram-provision-epoch-loss-"),
+    join(tmpdir(), "pa-telegram-provision-epoch-loss-"),
   );
   const path = join(dir, "state.json");
   let currentEpoch: number | undefined = 1;
@@ -1845,7 +1845,7 @@ test("Thread provisioner preserves its intent and stops binding after create los
 
 test("Thread provisioner keeps targeted pending provision after post-create binding failure", async () => {
   const dir = await mkdtemp(
-    join(tmpdir(), "pi-telegram-provision-post-create-fail-"),
+    join(tmpdir(), "pa-telegram-provision-post-create-fail-"),
   );
   const path = join(dir, "state.json");
   try {
@@ -2766,7 +2766,7 @@ test("Thread titles are trimmed and capped to Telegram's 128 character limit", (
 });
 
 test("Own bus topic provisioner assigns a leader topic through the common provisioner", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-own-topic-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-own-topic-"));
   const calls: unknown[] = [];
   const events: unknown[] = [];
   const store = createTelegramTopicTargetStore({
@@ -2812,7 +2812,7 @@ test("Own bus topic provisioner assigns a leader topic through the common provis
 
 test("Own bus topic provisioner cleans previous leader before reusing promoted follower topic", async () => {
   const dir = await mkdtemp(
-    join(tmpdir(), "pi-telegram-own-topic-promoted-cleanup-"),
+    join(tmpdir(), "pa-telegram-own-topic-promoted-cleanup-"),
   );
   const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
   const store = createTelegramTopicTargetStore({
@@ -2880,7 +2880,7 @@ test("Own bus topic provisioner cleans previous leader before reusing promoted f
 
 test("Own bus topic provisioner reuses promoted follower topic", async () => {
   const dir = await mkdtemp(
-    join(tmpdir(), "pi-telegram-own-topic-promoted-follower-"),
+    join(tmpdir(), "pa-telegram-own-topic-promoted-follower-"),
   );
   const calls: unknown[] = [];
   const store = createTelegramTopicTargetStore({
@@ -2929,7 +2929,7 @@ test("Own bus topic provisioner reuses promoted follower topic", async () => {
 
 test("Own bus topic provisioner restores a promoted leader session handoff", async () => {
   const dir = await mkdtemp(
-    join(tmpdir(), "pi-telegram-own-topic-promoted-reload-"),
+    join(tmpdir(), "pa-telegram-own-topic-promoted-reload-"),
   );
   const path = join(dir, "telegram-targets.json");
   const store = createTelegramTopicTargetStore({ path });
@@ -2992,7 +2992,7 @@ test("Own bus topic provisioner restores a promoted leader session handoff", asy
 });
 
 test("Own bus topic provisioner does not claim pending follower topics", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-own-topic-pending-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-own-topic-pending-"));
   const calls: unknown[] = [];
   const store = createTelegramTopicTargetStore({
     path: join(dir, "telegram-targets.json"),
@@ -3039,7 +3039,7 @@ test("Own bus topic provisioner does not claim pending follower topics", async (
 });
 
 test("Own bus topic provisioner ignores non-current offline history", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-own-topic-stale-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-own-topic-stale-"));
   const calls: unknown[] = [];
   const store = createTelegramTopicTargetStore({
     path: join(dir, "telegram-targets.json"),
@@ -3086,7 +3086,7 @@ test("Own bus topic provisioner ignores non-current offline history", async () =
 });
 
 test("Own bus topic provisioner reuses a current topic without visible startup probes", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-own-topic-no-probe-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-own-topic-no-probe-"));
   const calls: unknown[] = [];
   const store = createTelegramTopicTargetStore({
     path: join(dir, "telegram-targets.json"),
@@ -3136,7 +3136,7 @@ test("Own bus topic provisioner reuses a current topic without visible startup p
 });
 
 test("Thread store persists only current state statuses", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-threads-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-threads-"));
   const path = join(dir, "telegram-targets.json");
   try {
     const store = createTelegramTopicTargetStore({ path });

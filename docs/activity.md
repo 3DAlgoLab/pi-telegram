@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The Telegram Activity API lets trusted extension consumers observe normalized Pi work lifecycle without importing pi-telegram internals, correlating raw Pi events with bridge state, or capturing session contexts.
+The Telegram Activity API lets trusted extension consumers observe normalized Pi work lifecycle without importing pa-telegram internals, correlating raw Pi events with bridge state, or capturing session contexts.
 
 It is a higher-level event surface over the [Telegram Delivery API](./delivery.md). Activity owns lifecycle normalization and event routing; delivery owns target authorization, rendering transport, ordering, chunk reconciliation, and stale-generation behavior.
 
@@ -11,7 +11,7 @@ The public membrane is:
 ```ts
 import {
   registerTelegramActivityHandler,
-} from "@llblab/pi-telegram/activity";
+} from "prime-agent-telegram/activity";
 ```
 
 An issue #126 consumer can own optional Settings policy for reasoning, intermediate assistant prose, and tool rows. Those visibility choices do not become mandatory bridge-core settings.
@@ -26,7 +26,7 @@ Consumer extension code owns:
 - Coalescing or replacing its own visible activity documents.
 - Redacting additional domain-specific data before display.
 
-pi-telegram owns:
+pa-telegram owns:
 
 - Mapping Pi lifecycle events into one normalized activity stream.
 - Correlating events with the current Telegram turn or Pi instance.
@@ -264,7 +264,7 @@ The bridge maps Pi hooks as follows:
 
 ## Diagnostics
 
-Duplicate registration fails synchronously. When a handler throws or rejects, the dispatcher forwards only the handler id, event type, activity id, and error to pi-telegram's existing bounded/redacted runtime event recorder. The bridge does not copy reasoning, assistant prose, tool arguments/results, Telegram payloads, or queue contents into diagnostic metadata. It does not currently record queue phase, queue length, coalescing counts, or handler latency.
+Duplicate registration fails synchronously. When a handler throws or rejects, the dispatcher forwards only the handler id, event type, activity id, and error to pa-telegram's existing bounded/redacted runtime event recorder. The bridge does not copy reasoning, assistant prose, tool arguments/results, Telegram payloads, or queue contents into diagnostic metadata. It does not currently record queue phase, queue length, coalescing counts, or handler latency.
 
 The first implementation has no public Activity diagnostics getter because handler failures already flow through bridge runtime diagnostics and `/telegram-status`. Add queue telemetry or a dedicated getter only when an observed consumer needs inspectable backpressure state.
 
@@ -308,4 +308,4 @@ The registration and delivery examples above remain the public building blocks f
 - Interactive toggles belong in a registered Section and Settings row; activity messages can remain non-interactive.
 - `session_shutdown` should dispose stable registrations and drop retained delivery handles, so reload/session replacement cannot reuse old contexts or handles.
 
-The separate [`pi-telegram-extension-demo`](https://github.com/llblab/pi-telegram-extension-demo) project remains the maintained companion-extension and managed-UI reference. This document owns the Activity-specific usage pattern; pi-telegram does not ship a redundant `examples/` package directory.
+The separate [`pi-telegram-extension-demo`](https://github.com/llblab/pi-telegram-extension-demo) project remains the maintained companion-extension and managed-UI reference. This document owns the Activity-specific usage pattern; pa-telegram does not ship a redundant `examples/` package directory.

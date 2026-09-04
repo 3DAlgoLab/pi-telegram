@@ -84,7 +84,7 @@ function runJournalWorker(
 async function withJournalTempDir(
   run: (input: { dir: string; path: string }) => Promise<void>,
 ): Promise<void> {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-journal-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-journal-"));
   try {
     await run({ dir, path: join(dir, "inbox.work.json") });
   } finally {
@@ -144,7 +144,7 @@ function createStore(
 }
 
 test("Update journal runtime binding separates worker and process recovery identity", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "pi-telegram-journal-binding-"));
+  const directory = await mkdtemp(join(tmpdir(), "pa-telegram-journal-binding-"));
   let profileName: string | undefined;
   let botToken: string | undefined;
   let botId: number | undefined;

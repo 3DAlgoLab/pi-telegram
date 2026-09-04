@@ -1,34 +1,34 @@
-# pi-telegram
+# pa-telegram
 
-![pi-telegram screenshot](screenshot.png)
+![pa-telegram screenshot](screenshot.png)
 
-**A Telegram companion hub for live Pi sessions.**
+**A Telegram companion hub for live Prime Agent sessions.**
 
-`pi-telegram` turns a private Telegram DM into a mobile operator surface for Pi. It accepts prompts, queues work, streams readable previews, delivers final replies and files, exposes safe controls, and lets companion extensions add Telegram-native capabilities without owning a second bot loop.
+`pa-telegram` turns a private Telegram DM into a mobile operator surface for Prime Agent. It accepts prompts, queues work, streams readable previews, delivers final replies and files, exposes safe controls, and lets companion extensions add Telegram-native capabilities without owning a second bot loop.
 
 It is a **runtime adapter**, not a remote terminal. Start or supervise work in the Pi TUI, then continue from Telegram while away from the keyboard. Each Telegram destination follows a running Pi instance and sends prompts into that instance's currently active session; it is not permanently bound to one session file or session identity. The bridge preserves Pi session semantics instead of pretending Telegram is a PTY, shell, process launcher, or session browser. That boundary is the product: Telegram gets safe runtime handles, not raw terminal power.
 
 Every completed intermediate commentary block from a Telegram-originated turn is delivered once as its own message before the existing final reply. While Telegram is connected, local, autonomous, and unclassified extension follow-up work also projects visible checkpoints and the final answer to the authorized Telegram target once and in order, preserving assistant-authored `telegram_button` comments as interactive prompt buttons. This connected companion projection is always active rather than configurable. Neither path mirrors local prompts, thinking, tool traffic, token deltas, or stale-generation work. The separate `Activity` setting defaults to `verbose` so new installations discover collapsed provider-exposed thinking and tool evidence immediately; operators can narrow it to one class or choose `quiet`. See [Outbound](docs/outbound.md#public-assistant-output) and the [configuration reference](docs/public-api.md#configuration-api).
 
-This repository is an actively maintained standalone fork of [`badlogic/pi-telegram`](https://github.com/badlogic/pi-telegram). It started from upstream commit [`cb34008`](https://github.com/badlogic/pi-telegram/commit/cb34008460b6c1ca036d92322f69d87f626be0fc) and has since diverged substantially.
+This repository is a fork of [`llblab/pi-telegram`](https://github.com/llblab/pi-telegram), itself an actively maintained standalone fork of [`badlogic/pi-telegram`](https://github.com/badlogic/pi-telegram). It started from upstream commit [`cb34008`](https://github.com/badlogic/pi-telegram/commit/cb34008460b6c1ca036d92322f69d87f626be0fc) and has since diverged substantially.
 
 ## Install
 
 From npm:
 
 ```bash
-pi install npm:@llblab/pi-telegram
+prime-agent package install npm:prime-agent-telegram
 ```
 
 From git:
 
 ```bash
-pi install git:github.com/llblab/pi-telegram
+prime-agent package install git:github.com/3DAlgoLab/pa-telegram
 ```
 
 The 0.21 extension platform requires Pi `0.80.6` or newer. Its Activity API uses the public `agent_settled` lifecycle event to keep retries/continuations under one activity identity and release that identity only after the run fully settles.
 
-Pi is the primary and only officially supported host. Narrow host-neutral adapters preserve ordered prompt blocks and normalize synchronous or asynchronous legacy/generic settings services for Pi-compatible hosts, but this is best-effort compatibility rather than an OMP support guarantee. Alternate-host shims must still reproduce required Pi lifecycle semantics—especially `agent_settled`—and their maintainers own ongoing validation.
+Prime Agent is the primary and only officially supported host. Narrow host-neutral adapters preserve ordered prompt blocks and normalize synchronous or asynchronous legacy/generic settings services for Pi-compatible hosts, but this is best-effort compatibility rather than an OMP support guarantee. Alternate-host shims must still reproduce required Pi lifecycle semantics—especially `agent_settled`—and their maintainers own ongoing validation.
 
 ## Quick Start
 
@@ -39,17 +39,17 @@ Pi is the primary and only officially supported host. Narrow host-neutral adapte
 3. Pick a name and username.
 4. Copy the bot token.
 
-### 2. Configure Pi
+### 2. Configure Prime Agent
 
-Run this inside Pi:
+Run this inside Prime Agent:
 
 ```bash
 /telegram-setup
 ```
 
-Paste the bot token. If `~/.pi/agent/telegram.json` already contains a saved token, setup offers it as the default. If no saved token exists, setup can prefill from `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_KEY`, `TELEGRAM_TOKEN`, or `TELEGRAM_KEY`. Bot/session identity persists under `profiles.default`; shared handlers and assistant/voice/time settings remain top-level. `/telegram-setup default` and `/telegram-connect default` are exact aliases for the bare commands. Use `/telegram-setup <name>` only when you want an additional bot profile. Cancelling or failing named-profile token validation leaves the currently active profile and polling runtime unchanged; setup reports the profile as saved and connected only after polling startup succeeds.
+Paste the bot token. If `~/.prime/agent/telegram.json` already contains a saved token, setup offers it as the default. If no saved token exists, setup can prefill from `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_KEY`, `TELEGRAM_TOKEN`, or `TELEGRAM_KEY`. Bot/session identity persists under `profiles.default`; shared handlers and assistant/voice/time settings remain top-level. `/telegram-setup default` and `/telegram-connect default` are exact aliases for the bare commands. Use `/telegram-setup <name>` only when you want an additional bot profile. Cancelling or failing named-profile token validation leaves the currently active profile and polling runtime unchanged; setup reports the profile as saved and connected only after polling startup succeeds.
 
-### 3. Connect this Pi instance and its active session
+### 3. Connect this Prime Agent instance and its active session
 
 ```bash
 /telegram-connect
@@ -67,7 +67,7 @@ Open the bot DM and send:
 /start
 ```
 
-The first Telegram user to message the bot becomes the allowed owner. Other users are ignored. This is a first-contact security boundary: keep the bot private and send `/start` immediately after connecting. For stricter setup, restrict access to your account in the BotFather Mini App when that control is available, or preconfigure your numeric Telegram user id as `profiles.default.allowedUserId` in the existing `~/.pi/agent/telegram.json` before connecting (preserve the saved `botToken` and any other settings):
+The first Telegram user to message the bot becomes the allowed owner. Other users are ignored. This is a first-contact security boundary: keep the bot private and send `/start` immediately after connecting. For stricter setup, restrict access to your account in the BotFather Mini App when that control is available, or preconfigure your numeric Telegram user id as `profiles.default.allowedUserId` in the existing `~/.prime/agent/telegram.json` before connecting (preserve the saved `botToken` and any other settings):
 
 ```json
 {
@@ -102,7 +102,7 @@ Enable the optional capabilities the bridge needs in the [@BotFather](https://t.
 
 ## Product Model
 
-| Lens | What `pi-telegram` owns |
+| Lens | What `pa-telegram` owns |
 | --- | --- |
 | Operator companion | A phone-width control surface for the active session of a running Pi instance |
 | Runtime adapter | Telegram targets mapped to Pi instances, then into each instance's current session lifecycle, queueing, previews, final replies, and artifacts |
@@ -113,7 +113,7 @@ Enable the optional capabilities the bridge needs in the [@BotFather](https://t.
 
 ## Feature Showcase
 
-`pi-telegram` is intentionally broad: it is a Telegram-shaped runtime surface, not only a message relay. This catalogue keeps the practical feature surface visible while detailed contracts stay in `/docs`.
+`pa-telegram` is intentionally broad: it is a Telegram-shaped runtime surface, not only a message relay. This catalogue keeps the practical feature surface visible while detailed contracts stay in `/docs`.
 
 | Surface | What you can do | Why it matters |
 | --- | --- | --- |
@@ -136,7 +136,7 @@ Enable the optional capabilities the bridge needs in the [@BotFather](https://t.
 | Callback routing | Route known callbacks to the owner extension and unknown callbacks back into Pi. | Companion extensions can build UI without polling Telegram themselves. |
 | Threaded Mode | Run one leader plus visible follower Pi instances through named private-chat threads. | One bot can host a local multi-instance Pi organism without hidden process spawning. |
 | Reroute and restore | Give unknown and command-created temporary threads explicit forward and replace/restore choices. | Forward removes the temporary tab; restore rebinds it and removes only the replaced old tab, so Telegram client state repairs without orphan controls. |
-| Extension sections | Add menu sections, commands, status rows, settings, callbacks, and delivery helpers from companion extensions. | `pi-telegram` becomes a platform surface for other Pi extensions. |
+| Extension sections | Add menu sections, commands, status rows, settings, callbacks, and delivery helpers from companion extensions. | `pa-telegram` becomes a platform surface for other Pi extensions. |
 | Runtime diagnostics | Use `/telegram-status` and recent runtime events for connection, role, negotiated bus protocol/build/capabilities, separate polling and inbound-worker progress, journal depth, local/foreign queue ownership, automatic retry waits, transport, and failures. | Compatible build skew, foreign semantic authority, a healthy poller, durable backoff and an infrastructure-blocked worker remain distinguishable without hidden logs. |
 | Safety and ownership | Pair one owner, lock transport, scope targets, and reject fake terminal behavior. | Remote access remains explicit, bounded, and understandable. |
 
@@ -218,7 +218,7 @@ Inbound files land under `<agent-dir>/tmp/telegram` and default to a 50 MiB limi
 
 ### Voice And Media
 
-Voice notes, audio, images, PDFs, and other media can pass through configured inbound handlers, programmatic handlers, or registered STT providers. Outbound voice can use configured `outboundHandlers` or registered TTS providers; `pi-telegram` owns reply policy and Telegram transport, while providers own synthesis. Configure provider-neutral local/API pipelines and ordered fallbacks through [`telegram.json` command templates](./docs/voice.md#choose-an-integration-path). The default `manual` reply mode still supports intentional voice delivery through explicit `telegram_voice` actions; `mirror` and `always` add automatic voice policy. Explicit actions prefer positional `{text}`, `{text|lang}`, or `{text|lang|rate}` cells and use JSON for multiline content, named fields, or escaping.
+Voice notes, audio, images, PDFs, and other media can pass through configured inbound handlers, programmatic handlers, or registered STT providers. Outbound voice can use configured `outboundHandlers` or registered TTS providers; `pa-telegram` owns reply policy and Telegram transport, while providers own synthesis. Configure provider-neutral local/API pipelines and ordered fallbacks through [`telegram.json` command templates](./docs/voice.md#choose-an-integration-path). The default `manual` reply mode still supports intentional voice delivery through explicit `telegram_voice` actions; `mirror` and `always` add automatic voice policy. Explicit actions prefer positional `{text}`, `{text|lang}`, or `{text|lang|rate}` cells and use JSON for multiline content, named fields, or escaping.
 
 ### Buttons And Callbacks
 
@@ -249,12 +249,12 @@ Most controls live in Pi commands or the Telegram menu. Environment variables re
 | --- | --- |
 | Bot token bootstrap | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_KEY`, `TELEGRAM_TOKEN`, `TELEGRAM_KEY` |
 | HTTP proxy | `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, plus `NODE_USE_ENV_PROXY=1` or Node `--use-env-proxy` |
-| Telegram network family | `PI_TELEGRAM_NETWORK_FAMILY=auto`, `ipv4`, `ipv6`, or `ipv4-fallback` |
-| Agent data root | `PI_CODING_AGENT_DIR` |
-| Inbound file limit | `PI_TELEGRAM_INBOUND_FILE_MAX_BYTES`, `TELEGRAM_MAX_FILE_SIZE_BYTES` |
-| Outbound attachment limit | `PI_TELEGRAM_OUTBOUND_ATTACHMENT_MAX_BYTES`, `TELEGRAM_MAX_ATTACHMENT_SIZE_BYTES` |
+| Telegram network family | `PA_TELEGRAM_NETWORK_FAMILY=auto`, `ipv4`, `ipv6`, or `ipv4-fallback` |
+| Agent data root | `PI_CODING_AGENT_DIR`, `PRIME_AGENT_CODING_AGENT_DIR` |
+| Inbound file limit | `PA_TELEGRAM_INBOUND_FILE_MAX_BYTES`, `TELEGRAM_MAX_FILE_SIZE_BYTES` |
+| Outbound attachment limit | `PA_TELEGRAM_OUTBOUND_ATTACHMENT_MAX_BYTES`, `TELEGRAM_MAX_ATTACHMENT_SIZE_BYTES` |
 
-Defaults are chosen for ordinary private-bot use: saved config in `~/.pi/agent`, inbound temp files in `~/.pi/agent/tmp/telegram`, `assistant: { rendering: "rich", draftPreviews: false, activity: "verbose", timeInjection: "interval" }` for assistant output and activity, and native Telegram active status for long-running turns.
+Defaults are chosen for ordinary private-bot use: saved config in `~/.prime/agent`, inbound temp files in `~/.prime/agent/tmp/telegram`, `assistant: { rendering: "rich", draftPreviews: false, activity: "verbose", timeInjection: "interval" }` for assistant output and activity, and native Telegram active status for long-running turns.
 
 ## Extension Platform
 
@@ -274,9 +274,9 @@ Stable public entrypoints are documented in [Public API](./docs/public-api.md), 
 
 ## Safety Boundaries
 
-Durable inbound admission is a **process-crash recovery** guarantee. Atomic private-file replacement preserves acknowledged journal authority and its journal-owned `acceptedThroughUpdateId` polling cursor across ordinary process exit, crash, kill, and replacement, but the extension does not flush files or parent directories for host/kernel/filesystem/device/power-loss durability. `telegram.json` contains configuration only. Keep `~/.pi/agent` on appropriately managed storage and backups if that stronger operational guarantee is required. Before downgrading below `0.37.0`, run `node scripts/check-downgrade.mjs`; any retained cursor-schema journal blocks downgrade because an older runtime could repoll admitted updates. See [Durable Admission And Recovery](./docs/architecture.md#durable-admission-and-recovery).
+Durable inbound admission is a **process-crash recovery** guarantee. Atomic private-file replacement preserves acknowledged journal authority and its journal-owned `acceptedThroughUpdateId` polling cursor across ordinary process exit, crash, kill, and replacement, but the extension does not flush files or parent directories for host/kernel/filesystem/device/power-loss durability. `telegram.json` contains configuration only. Keep your agent directory (`~/.prime/agent` under Prime Agent) on appropriately managed storage and backups if that stronger operational guarantee is required. Before downgrading below `0.37.0`, run `node scripts/check-downgrade.mjs`; any retained cursor-schema journal blocks downgrade because an older runtime could repoll admitted updates. See [Durable Admission And Recovery](./docs/architecture.md#durable-admission-and-recovery).
 
-`pi-telegram` intentionally does not:
+`pa-telegram` intentionally does not:
 
 - Spawn hidden Pi follower processes.
 - Pretend Telegram is a terminal or PTY.
@@ -287,7 +287,7 @@ Durable inbound admission is a **process-crash recovery** guarantee. Atomic priv
 
 Telegram is a companion surface around a live Pi runtime, not a second runtime. It can compact the current session, but it cannot create, resume, fork, browse, or switch sessions until Pi exposes safe public extension APIs for those operations.
 
-A Telegram prompt is a normal model turn in the active Pi session and therefore inherits that session's active post-compaction context; the bridge does not make token cost proportional only to the new mobile message. The bundled `telegram-bridge` Skill owns general agent operation, `generated-control-surface` proactively compiles optional evidence-backed ephemeral controls when model interpretation remains useful, and `generative-apps` compiles stable repeated interaction into reviewed reusable applications whose bound buttons bypass model inference while ordinary prompt buttons retain it. Generative Apps may own a closed state machine or adapt another authoritative tool, service, Actor Run, or application through bounded methods. Disconnecting removes pi-telegram's delivery tools and transient routing guidance from later requests until direct ownership or follower registration returns, without changing other active Pi tools. Pi session JSONL contains model history; profile-scoped pi-telegram `logs*.jsonl` contains redacted operational events and is never model context.
+A Telegram prompt is a normal model turn in the active Pi session and therefore inherits that session's active post-compaction context; the bridge does not make token cost proportional only to the new mobile message. The bundled `telegram-bridge` Skill owns general agent operation, `generated-control-surface` proactively compiles optional evidence-backed ephemeral controls when model interpretation remains useful, and `generative-apps` compiles stable repeated interaction into reviewed reusable applications whose bound buttons bypass model inference while ordinary prompt buttons retain it. Generative Apps may own a closed state machine or adapt another authoritative tool, service, Actor Run, or application through bounded methods. Disconnecting removes pa-telegram's delivery tools and transient routing guidance from later requests until direct ownership or follower registration returns, without changing other active Pi tools. Pi session JSONL contains model history; profile-scoped pa-telegram `logs*.jsonl` contains redacted operational events and is never model context.
 
 ## Documentation Map
 
@@ -323,7 +323,7 @@ Full validation:
 npm run validate
 ```
 
-`npm run audit` fails closed over dependencies owned and shipped by `pi-telegram`, omitting Pi host packages declared as peers because the host selects and supplies their dependency graph. Use `npm run audit:host` separately to inspect the complete installed development graph, including upstream Pi advisories; host findings remain visible without being misattributed to this extension's release artifact.
+`npm run audit` fails closed over dependencies owned and shipped by `pa-telegram`, omitting Pi host packages declared as peers because the host selects and supplies their dependency graph. Use `npm run audit:host` separately to inspect the complete installed development graph, including upstream Pi advisories; host findings remain visible without being misattributed to this extension's release artifact.
 
 Project context:
 

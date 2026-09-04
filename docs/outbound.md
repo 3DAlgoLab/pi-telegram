@@ -1,6 +1,6 @@
 # Outbound Handlers
 
-`pi-telegram` maps hidden assistant-authored HTML comments to Telegram-native outbound actions.
+`pa-telegram` maps hidden assistant-authored HTML comments to Telegram-native outbound actions.
 
 Normal Telegram-turn replies are intentionally prompt-driven: the agent writes Markdown plus small hidden top-level blocks, and the bridge performs transport after `agent_end`. `telegram_voice` and `telegram_button` are not Pi tools. Action activation remains restricted to recognized top-level column-zero comments, but Telegram preview and final delivery remove every assistant-authored `<!-- … -->` block regardless of Markdown position or owning extension. Unclosed comment tails are withheld, comment-only text plans send no message, and the Pi terminal transcript remains unchanged. For local/TUI-initiated work where the user explicitly asks to send something to Telegram, the bridge also exposes direct tools: `telegram_message` for Markdown text and `telegram_attach` for file delivery when no Telegram turn is active. In classic mode, direct local/TUI delivery requires this Pi instance to own `/telegram-connect`; in Threaded Mode, a registered follower may route direct-tool sends through the leader-owned bus transport. During an active Telegram turn, `telegram_message` rejects an implicit or same-turn target so ordinary final delivery remains the sole current-target response. Its `thread` argument accepts a case-insensitive live thread name or numeric id: the bridge preflights one live owner, sends visibly, then admits the text as a source-attributed turn in that instance. Unknown, ambiguous, same-target, offline, and cross-chat destinations fail before sending. Existing `chat_id` plus `thread_id` targeting stays compatible; registered followers use authenticated, generation-fenced bus routing. Outbound behavior combines assistant prompt markup, text command-template handlers, registered voice synthesis providers, generated artifacts, direct Telegram tools, and reply delivery. Direct `telegram_message` text is planned through the same reply markup path, so embedded top-level `telegram_button` comments become buttons attached to that text message.
 
@@ -62,7 +62,7 @@ Core assistant output accepts only the Markdown or HTML `InputRichMessage` forms
 
 A Guest Mode reply is one `answerGuestQuery` call carrying exactly one `InlineQueryResult`; it is not a normal chat target and cannot receive `sendDocument`/`sendVoice` multipart uploads through sentinel `chatId: 0`. `telegram_attach` therefore admits at most one file during a guest turn and rejects additional files before queue mutation.
 
-Telegram accepts public URLs or existing Telegram `file_id` values for inline media results, but pi-telegram does not publish local artifacts to external hosting. A local guest document, photo, MP3 audio, or OGG/OPUS voice therefore uses a temporary upload to the paired owner's bot chat, extraction of the returned `file_id`, one cached-media guest answer, and best-effort deletion of the staging message. That message can briefly appear or notify the owner. One guest query can carry only one media item, and its answer text must fit the media caption limit rather than a separate full Rich Markdown message.
+Telegram accepts public URLs or existing Telegram `file_id` values for inline media results, but pa-telegram does not publish local artifacts to external hosting. A local guest document, photo, MP3 audio, or OGG/OPUS voice therefore uses a temporary upload to the paired owner's bot chat, extraction of the returned `file_id`, one cached-media guest answer, and best-effort deletion of the staging message. That message can briefly appear or notify the owner. One guest query can carry only one media item, and its answer text must fit the media caption limit rather than a separate full Rich Markdown message.
 
 Configured text handlers provide `template`. A string is one command; an array is ordered composition. Top-level `args` and `defaults` apply to all composed steps unless a step defines private values. The command-template default timeout applies automatically. Use `template: [...]` for composition; the old local `pipe` alias is removed in 0.13.0.
 
@@ -106,16 +106,16 @@ Voice replies use one fallback pipeline:
 
 1. configured `outboundHandlers` with `type: "voice"` in `telegram.json` order
 2. programmatic `registerTelegramOutboundHandler("voice", ...)` handlers
-3. registered voice synthesis providers from `@llblab/pi-telegram/voice`
+3. registered voice synthesis providers from `prime-agent-telegram/voice`
 
 This makes provider extensions a zero-config convenience without overriding explicit operator-owned `telegram.json` handlers. If several synthesis providers are registered, they are tried in registration order; the first provider that returns a valid `.ogg`/`.opus` artifact handles the reply. Returning `undefined` passes to the next provider, while thrown errors or invalid files are recorded before the next fallback is tried.
 
 ## Voice Synthesis Provider API
 
-Voice replies can be delivered by synthesis providers registered through `@llblab/pi-telegram/voice`:
+Voice replies can be delivered by synthesis providers registered through `prime-agent-telegram/voice`:
 
 ```ts
-import { registerTelegramVoiceSynthesisProvider } from "@llblab/pi-telegram/voice";
+import { registerTelegramVoiceSynthesisProvider } from "prime-agent-telegram/voice";
 
 const dispose = registerTelegramVoiceSynthesisProvider(
   async (text, options) => {

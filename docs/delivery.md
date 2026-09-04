@@ -14,7 +14,7 @@ import {
   editTelegramView,
   sendTelegramChatAction,
   sendTelegramView,
-} from "@llblab/pi-telegram/delivery";
+} from "prime-agent-telegram/delivery";
 ```
 
 ## Ownership Boundary
@@ -26,7 +26,7 @@ Consumer extension code owns:
 - Its own settings and callback policy.
 - Retaining a returned handle only for the current live extension generation.
 
-pi-telegram owns:
+pa-telegram owns:
 
 - Active-turn and current-instance target resolution.
 - Pairing and target authorization.
@@ -169,7 +169,7 @@ The bridge constructs and binds a genuinely fresh delivery runtime during every 
 - An already-issued Telegram request may resolve during shutdown, but the old operation returns `runtime-unavailable` and cannot issue another edit, delete, chunk, or chat action afterward.
 - Old operations never adopt the replacement generation implicitly.
 
-The binding uses the same `globalThis` membrane pattern as other extension registries so package load order does not expose bridge internals. Only pi-telegram may bind or replace the runtime port.
+The binding uses the same `globalThis` membrane pattern as other extension registries so package load order does not expose bridge internals. Only pa-telegram may bind or replace the runtime port.
 
 ## Ordering And Delivery Semantics
 

@@ -4,14 +4,14 @@
 
 - `Mobile companion boundary`: Telegram extends a running Pi session; it is not a remote terminal, PTY supervisor, process launcher, session browser, or replacement TUI. Never emulate Pi navigation through private internals, ANSI/TTY injection, or a shadow `pi` process.
 - `Runtime safety`: Prefer explicit, fenced, recoverable behavior over shortcuts that can desynchronize Telegram transport, durable admission, local queue state, or Pi lifecycle state.
-- `Pi-native extensibility`: Add capabilities through stable Pi and pi-telegram contracts. Do not fork polling, transport, menu ownership, or package-private runtime internals.
+- `Pi-native extensibility`: Add capabilities through stable Pi and pa-telegram contracts. Do not fork polling, transport, menu ownership, or package-private runtime internals.
 - `Bidirectional binding`: Treat Pi instance ↔ Telegram thread and bot ↔ client state as two-way relationships. Create, observe, repair, and reflect bindings on both surfaces.
 - `Progressive enhancement`: Use richer Telegram/Pi capability when proven available and retain a useful fail-closed fallback when it is not.
 - `Boundary clarity`: Keep Telegram transport, Pi integration, rendering/delivery, durable admission, extension APIs, and release/context state under distinct owners.
 
 ## 1. Product Contract
 
-`pi-telegram` is a session-local Telegram runtime adapter for Pi: a private-DM operator surface for prompts, streaming previews, queue controls, settings, files, voice/buttons, and companion-extension interop. Its core loop is mobile continuation of a live Pi session.
+`pa-telegram` is a session-local Telegram runtime adapter for Prime Agent: a private-DM operator surface for prompts, streaming previews, queue controls, settings, files, voice/buttons, and companion-extension interop. Its core loop is mobile continuation of a live Pi session.
 
 Canonical terms:
 
@@ -109,7 +109,7 @@ The detailed map is canonical in [`docs/architecture.md`](./docs/architecture.md
 
 ## 6. Public And Integration Boundaries
 
-- Companion extensions use documented package subpaths such as `@llblab/pi-telegram/sections`, `/delivery`, `/voice`, `/inbound`, `/outbound`, and `/updates`; never import `lib/*.ts`.
+- Companion extensions use documented package subpaths such as `prime-agent-telegram/sections`, `/delivery`, `/voice`, `/inbound`, `/outbound`, and `/updates`; never import `lib/*.ts`.
 - Low-level handler buses have no caller-supplied ids; high-level registries use stable identities. Imperative delivery resolves the current runtime on every call and returns generation-bound logical handles rather than captured Pi contexts.
 - Extension sections receive only documented context ports. They do not access raw bot clients/filesystems or run a second polling loop; unregister on shutdown.
 - Unknown callback data may reach extension handlers only after built-in namespaces decline it. Follow [`docs/callback-namespaces.md`](./docs/callback-namespaces.md).

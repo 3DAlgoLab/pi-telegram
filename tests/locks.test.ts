@@ -36,7 +36,7 @@ import {
 } from "../lib/locks.ts";
 
 function createTempLockPath(): { dir: string; path: string } {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-owners-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-owners-"));
   return { dir, path: join(dir, "owners.json") };
 }
 

@@ -143,7 +143,7 @@ test("Telegram extension contributes focused bundled skills", async () => {
   );
   assert.match(
     generativeAppsDoc,
-    /concrete Generative App runtime implemented by `pi-telegram`/u,
+    /concrete Generative App runtime implemented by `pa-telegram`/u,
   );
   assert.match(generativeAppsDoc, /states\.jsonl/u);
   assert.match(generativeAppsDoc, /worker-isolated/u);

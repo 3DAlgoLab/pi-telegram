@@ -41,14 +41,14 @@ const TELEGRAM_TEMP_SCRATCH_FILE_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/u;
 const TELEGRAM_INBOUND_FILE_MAX_BYTES = getTelegramInboundFileByteLimitFromEnv(
   process.env,
-  ["PI_TELEGRAM_INBOUND_FILE_MAX_BYTES", "TELEGRAM_MAX_FILE_SIZE_BYTES"],
+  ["PA_TELEGRAM_INBOUND_FILE_MAX_BYTES", "TELEGRAM_MAX_FILE_SIZE_BYTES"],
   TELEGRAM_FILE_MAX_BYTES,
 );
 
 export type TelegramNetworkFamilyPolicy =
   "auto" | "ipv4" | "ipv6" | "ipv4-fallback";
 
-const TELEGRAM_NETWORK_FAMILY_ENV = "PI_TELEGRAM_NETWORK_FAMILY";
+const TELEGRAM_NETWORK_FAMILY_ENV = "PA_TELEGRAM_NETWORK_FAMILY";
 const TELEGRAM_NETWORK_FAMILY_VALUES = new Set<TelegramNetworkFamilyPolicy>([
   "auto",
   "ipv4",
@@ -872,7 +872,7 @@ async function buildTelegramMultipartBody(
   fileBlob: Blob,
   fileName: string,
 ): Promise<{ body: Buffer; contentType: string }> {
-  const boundary = `pi-telegram-${randomUUID()}`;
+  const boundary = `pa-telegram-${randomUUID()}`;
   const chunks: Buffer[] = [];
   for (const [key, value] of Object.entries(fields)) {
     chunks.push(

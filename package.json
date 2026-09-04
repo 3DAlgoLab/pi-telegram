@@ -1,14 +1,14 @@
 {
-  "name": "@llblab/pi-telegram",
+  "name": "prime-agent-telegram",
   "version": "0.42.2",
   "private": false,
   "publishConfig": {
     "access": "public"
   },
-  "description": "Telegram runtime adapter for Pi",
+  "description": "Telegram runtime adapter for Prime Agent",
   "keywords": [
-    "pi-package",
-    "pi",
+    "pa-package",
+    "prime-agent",
     "telegram",
     "bot",
     "extension"
@@ -17,11 +17,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/llblab/pi-telegram.git"
+    "url": "https://github.com/3DAlgoLab/pa-telegram.git"
   },
-  "homepage": "https://github.com/llblab/pi-telegram",
+  "homepage": "https://github.com/3DAlgoLab/pa-telegram",
   "bugs": {
-    "url": "https://github.com/llblab/pi-telegram/issues"
+    "url": "https://github.com/3DAlgoLab/pa-telegram/issues"
   },
   "engines": {
     "node": ">=22.19.0"
@@ -68,7 +68,7 @@
     "skills": [
       "./skills"
     ],
-    "image": "https://raw.githubusercontent.com/llblab/pi-telegram/main/screenshot.png"
+    "image": "https://raw.githubusercontent.com/3DAlgoLab/pa-telegram/main/screenshot.png"
   },
   "peerDependencies": {
     "@earendil-works/pi-agent-core": ">=0.84.4",

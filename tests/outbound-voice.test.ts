@@ -32,7 +32,7 @@ test(
   "Outbound voice sender executes a Windows cmd handler and uploads its ogg artifact",
   { skip: process.platform !== "win32" },
   async () => {
-    const tempDir = await mkdtemp(join(tmpdir(), "pi-telegram-outbound-voice-cmd-"));
+    const tempDir = await mkdtemp(join(tmpdir(), "pa-telegram-outbound-voice-cmd-"));
     const scriptPath = join(tempDir, "voice-writer.cmd");
     await writeFile(
       scriptPath,

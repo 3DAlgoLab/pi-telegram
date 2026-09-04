@@ -18,7 +18,7 @@ Use the smallest path that fits the operator's available capabilities:
 2. **Companion extension:** Register programmatic STT/TTS providers when installation, provider-owned settings, lifecycle integration, or zero-config reuse justifies code.
 3. **Hybrid:** Keep explicit operator command templates first and let installed providers supply progressive fallbacks.
 
-pi-telegram does not maintain a built-in or exhaustive speech-provider catalog. Configuration agents should discover applicable Skills or trusted local executables, verify required environment variables by presence without exposing values, preserve unrelated `telegram.json` state, ensure TTS ends as OGG/Opus, and test each stage before the live Telegram path. `hidden` remains the safe and useful default: it disables only automatic voice replies, while explicit `telegram_voice` actions continue to use the configured synthesis pipeline.
+pa-telegram does not maintain a built-in or exhaustive speech-provider catalog. Configuration agents should discover applicable Skills or trusted local executables, verify required environment variables by presence without exposing values, preserve unrelated `telegram.json` state, ensure TTS ends as OGG/Opus, and test each stage before the live Telegram path. `hidden` remains the safe and useful default: it disables only automatic voice replies, while explicit `telegram_voice` actions continue to use the configured synthesis pipeline.
 
 ### Ready-made command-template examples
 
@@ -49,7 +49,7 @@ Inbound handlers match `kind: "voice"` or `mime: "audio/*"` to run a transcripti
 
 The transcription output becomes the raw text of the prompt.
 
-Voice provider extensions can also register STT backends with `registerTelegramVoiceTranscriptionProvider()` from `@llblab/pi-telegram/voice`. Inbound command-template handlers and programmatic inbound handlers remain the stronger generic paths and run first; if no matching handler produces output for a voice/audio file, registered transcription providers are tried as fallback in registration order. The first provider that returns non-empty text wins; providers that return `undefined` pass to the next provider, and provider failures are recorded before trying the next provider. This lets a full voice extension provide both TTS and STT without requiring `telegram.json` handler templates, while still preserving operator-configured inbound handlers as the stronger choice.
+Voice provider extensions can also register STT backends with `registerTelegramVoiceTranscriptionProvider()` from `prime-agent-telegram/voice`. Inbound command-template handlers and programmatic inbound handlers remain the stronger generic paths and run first; if no matching handler produces output for a voice/audio file, registered transcription providers are tried as fallback in registration order. The first provider that returns non-empty text wins; providers that return `undefined` pass to the next provider, and provider failures are recorded before trying the next provider. This lets a full voice extension provide both TTS and STT without requiring `telegram.json` handler templates, while still preserving operator-configured inbound handlers as the stronger choice.
 
 ## Voice Reply Policy
 
@@ -82,7 +82,7 @@ A voice extension may combine three public seams:
 - `registerTelegramVoiceSynthesisProvider()` for outbound TTS/synthesis fallback to Telegram voice messages
 - `registerTelegramSection()` for provider-specific Telegram UI such as voice, language, style, or provider on/off controls
 
-The reply policy itself remains a built-in pi-telegram setting (`voice.replyMode`) rather than a provider-owned menu.
+The reply policy itself remains a built-in pa-telegram setting (`voice.replyMode`) rather than a provider-owned menu.
 
 ## Outbound Voice Synthesis Provider Registration
 
@@ -96,7 +96,7 @@ The bridge shows a `record_voice` action while delivering and sends the final au
 
 Providers can implement `getVoicePromptContribution(view)` to inject voice-specific instructions into voice-tagged prompts (for example: "Reply only with the spoken text"). The bridge appends the first non-empty provider contribution when `mirror` or `always` mode tags the turn.
 
-Import provider APIs from `@llblab/pi-telegram/voice`; see the TSDoc on `registerTelegramVoiceSynthesisProvider` and `TelegramVoiceSynthesisProviderResult` there for the exact interface.
+Import provider APIs from `prime-agent-telegram/voice`; see the TSDoc on `registerTelegramVoiceSynthesisProvider` and `TelegramVoiceSynthesisProviderResult` there for the exact interface.
 
 The provider receives the raw agent text plus optional `{ lang?, rate? }`.
 
@@ -137,10 +137,10 @@ Priority for outbound voice delivery is: configured `outboundHandlers` with `typ
 
 ### Surfacing provider diagnostics
 
-Voice provider extensions can record runtime events that appear in `/telegram-status` alongside pi-telegram's own events:
+Voice provider extensions can record runtime events that appear in `/telegram-status` alongside pa-telegram's own events:
 
 ```typescript
-import { recordTelegramRuntimeEvent } from "@llblab/pi-telegram/outbound";
+import { recordTelegramRuntimeEvent } from "prime-agent-telegram/outbound";
 
 recordTelegramRuntimeEvent("voice-provider", new Error("TTS failed"), {
   phase: "tts",
@@ -148,19 +148,19 @@ recordTelegramRuntimeEvent("voice-provider", new Error("TTS failed"), {
 });
 ```
 
-`recordTelegramRuntimeEvent` writes to the same event ring that pi-telegram uses. Events are visible via `/telegram-status` in Telegram. Calls are silently dropped if pi-telegram is not loaded.
+`recordTelegramRuntimeEvent` writes to the same event ring that pa-telegram uses. Events are visible via `/telegram-status` in Telegram. Calls are silently dropped if pa-telegram is not loaded.
 
 ## Voice Extension Section
 
-Voice provider extensions can register a Voice Extension Section (settings UI) via `registerTelegramSection`. The section can expose provider-specific controls such as TTS voice, language, speech style, or STT/TTS enablement. Reply mode is a core pi-telegram setting and belongs in the built-in Settings menu.
+Voice provider extensions can register a Voice Extension Section (settings UI) via `registerTelegramSection`. The section can expose provider-specific controls such as TTS voice, language, speech style, or STT/TTS enablement. Reply mode is a core pa-telegram setting and belongs in the built-in Settings menu.
 
-**Note on resume:** Because the previous automatic persistent re-registration system has been removed, extensions are responsible for re-registering their Voice Extension Section on `session_start` if they want the menu to survive a `pi resume`. See `registerTelegramSection` from `@llblab/pi-telegram/sections`.
+**Note on resume:** Because the previous automatic persistent re-registration system has been removed, extensions are responsible for re-registering their Voice Extension Section on `session_start` if they want the menu to survive a `pi resume`. See `registerTelegramSection` from `prime-agent-telegram/sections`.
 
 ## Prompt Guidance
 
 The bridge keeps voice prompt context compact, effective, and policy-owned. `manual` and text-originated `mirror` turns add no voice line. Voice/audio-originated `mirror` turns and every `always` turn add exactly `[voice] delivery: automatic voice`, describing the current delivery environment without exposing the underlying mode matrix or an instruction list. The marker is appended after `[outputs]` when handler output exists, otherwise after `[attachments]`. Voice inputs also appear in `[attachments]` with their downloaded file names, MIME data, and handler output, so agents can infer concrete voice-file context from attachment metadata.
 
-Voice synthesis providers can supply prompt guidance through `getVoicePromptContribution(view)`, but provider text should stay optional and provider-specific. Reply-mode context belongs to pi-telegram.
+Voice synthesis providers can supply prompt guidance through `getVoicePromptContribution(view)`, but provider text should stay optional and provider-specific. Reply-mode context belongs to pa-telegram.
 
 ## Fallback Behavior
 
@@ -206,4 +206,4 @@ The bridge reads `voice.replyMode` from the config when building a turn.
 
 ### Provider config
 
-Provider-specific settings (voice ID, language, speech style, STT/TTS enablement) are owned by the voice provider extension. Reply mode is owned by pi-telegram's `voice.replyMode` and configured from the built-in pi-telegram Settings menu, not duplicated in provider UIs.
+Provider-specific settings (voice ID, language, speech style, STT/TTS enablement) are owned by the voice provider extension. Reply mode is owned by pa-telegram's `voice.replyMode` and configured from the built-in pa-telegram Settings menu, not duplicated in provider UIs.

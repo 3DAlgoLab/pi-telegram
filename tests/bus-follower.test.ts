@@ -171,7 +171,7 @@ test("Bus follower profile key resolver follows the active profile", () => {
 });
 
 test("Bus follower promotion handler transfers binding only after leadership acquisition", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-follower-promotion-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-follower-promotion-"));
   const store = createTelegramTopicTargetStore({ path: join(dir, "state.json") });
   const events: unknown[] = [];
   const promote = createTelegramBusFollowerPromotionHandler({
@@ -240,7 +240,7 @@ test("Bus follower promotion handler transfers binding only after leadership acq
 });
 
 test("Bus follower promotion leaves binding unchanged when election is lost", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-follower-election-lost-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-follower-election-lost-"));
   const store = createTelegramTopicTargetStore({ path: join(dir, "state.json") });
   const promote = createTelegramBusFollowerPromotionHandler({
     topicTargetStore: store,
@@ -269,7 +269,7 @@ test("Bus follower promotion leaves binding unchanged when election is lost", as
 });
 
 test("Bus follower receiver stages authenticated queue handoff payloads", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-queue-handoff-receiver-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-queue-handoff-receiver-"));
   const socketPath = join(dir, "follower.sock");
   const staged: unknown[] = [];
   const receiver = createTelegramBusForwardedUpdateReceiverRuntime({
@@ -396,7 +396,7 @@ test("Bus follower receiver stages authenticated queue handoff payloads", async 
 });
 
 test("Bus follower receiver handles leader-forwarded updates and target replacement", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-forward-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-forward-"));
   const leaderSocketPath = join(dir, "leader.sock");
   const followerSocketPath = join(dir, "follower.sock");
   const registry = createTelegramBusFollowerRegistry();
@@ -610,7 +610,7 @@ test("Bus follower receiver handles leader-forwarded updates and target replacem
 });
 
 test("Bus follower receiver rejects delayed work from a replaced registration generation", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-forward-generation-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-forward-generation-"));
   const socketPath = join(dir, "follower.sock");
   let handled = 0;
   const receiver = createTelegramBusForwardedUpdateReceiverRuntime({
@@ -643,7 +643,7 @@ test("Bus follower receiver rejects delayed work from a replaced registration ge
           recipientBindingKey: "manual:owner-b",
           sourceUpdateId: 1,
         }),
-        query: { id: "old", pi_telegram_source_update_id: 1 },
+        query: { id: "old", pa_telegram_source_update_id: 1 },
         sentAtMs: 2000,
       },
     });
@@ -661,7 +661,7 @@ test("Bus follower receiver rejects delayed work from a replaced registration ge
 });
 
 test("Bus follower receiver ACKs durable append before downstream execution and deduplicates replay", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-durable-admission-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-durable-admission-"));
   const socketPath = join(dir, "follower.sock");
   const admitted = new Set<number>();
   const journaled: unknown[] = [];
@@ -700,7 +700,7 @@ test("Bus follower receiver ACKs durable append before downstream execution and 
         recipientInstanceId: "inst-b",
         recipientRegistrationGeneration: "generation-b",
         delivery,
-        query: { id: "callback", pi_telegram_source_update_id: 44 },
+        query: { id: "callback", pa_telegram_source_update_id: 44 },
         sentAtMs: 2000,
       },
     });
@@ -731,7 +731,7 @@ test("Bus follower receiver ACKs durable append before downstream execution and 
         update_id: 44,
         callback_query: {
           id: "callback",
-          pi_telegram_source_update_id: 44,
+          pa_telegram_source_update_id: 44,
         },
       },
     ]);
@@ -746,7 +746,7 @@ test("Follower replay restores persisted forward grouping metadata without expos
   const prepared: unknown[] = [];
   const journaled = {
     update_id: 45,
-    pi_telegram_forward_comment_batch_position: "forward",
+    pa_telegram_forward_comment_batch_position: "forward",
     message: { message_id: 9 },
   };
   const update = prepareTelegramBusFollowerJournaledUpdateForExecution(
@@ -761,13 +761,13 @@ test("Follower replay restores persisted forward grouping metadata without expos
     message: { message_id: 9 },
   });
   assert.equal(
-    "pi_telegram_forward_comment_batch_position" in journaled,
+    "pa_telegram_forward_comment_batch_position" in journaled,
     true,
   );
 });
 
 test("Bus follower receiver rejects a mismatched durable delivery binding", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-delivery-binding-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-delivery-binding-"));
   const socketPath = join(dir, "follower.sock");
   let handled = 0;
   const receiver = createTelegramBusForwardedUpdateReceiverRuntime({
@@ -818,7 +818,7 @@ test("Bus follower receiver rejects a mismatched durable delivery binding", asyn
 });
 
 test("Bus follower receiver rejects journal admission failure without a receipt", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-admission-failure-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-admission-failure-"));
   const socketPath = join(dir, "follower.sock");
   const receiver = createTelegramBusForwardedUpdateReceiverRuntime({
     socketPath,
@@ -848,7 +848,7 @@ test("Bus follower receiver rejects journal admission failure without a receipt"
         }),
         query: {
           id: "callback",
-          pi_telegram_source_update_id: 44,
+          pa_telegram_source_update_id: 44,
         },
         sentAtMs: 2000,
       },
@@ -1365,7 +1365,7 @@ test("Bus follower target replacement resolves named-profile fallback at call ti
 });
 
 test("Bus follower assembly wires receiver, recovery, and registration", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-follower-assembly-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-follower-assembly-"));
   const leaderSocketPath = join(dir, "leader.sock");
   const followerSocketPath = join(dir, "follower.sock");
   const registrationState = createTelegramBusFollowerRegistrationState();
@@ -1461,7 +1461,7 @@ test("Bus follower assembly wires receiver, recovery, and registration", async (
 });
 
 test("Bus follower registration state tracks successful registration and stop", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-follower-state-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-follower-state-"));
   const socketPath = join(dir, "bus.sock");
   const registry = createTelegramBusFollowerRegistry();
   const availability: boolean[] = [];
@@ -1519,7 +1519,7 @@ test("Bus follower registration state tracks successful registration and stop", 
 
 test("Bus follower re-registration carries its last known target", async () => {
   const dir = mkdtempSync(
-    join(tmpdir(), "pi-telegram-follower-reload-target-"),
+    join(tmpdir(), "pa-telegram-follower-reload-target-"),
   );
   const socketPath = join(dir, "bus.sock");
   const state = createTelegramBusFollowerRegistrationState();
@@ -1586,7 +1586,7 @@ test("Bus follower re-registration carries its last known target", async () => {
 });
 
 test("Bus follower registration runtime retries while leader endpoint is starting", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-follower-retry-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-follower-retry-"));
   const socketPath = join(dir, "bus.sock");
   const registry = createTelegramBusFollowerRegistry();
   const state = createTelegramBusFollowerRegistrationState();
@@ -1638,7 +1638,7 @@ test("Bus follower registration runtime retries while leader endpoint is startin
 
 test("Bus follower registration runtime waits for slow target provisioning", async () => {
   const dir = mkdtempSync(
-    join(tmpdir(), "pi-telegram-bus-follower-slow-register-"),
+    join(tmpdir(), "pa-telegram-bus-follower-slow-register-"),
   );
   const socketPath = join(dir, "bus.sock");
   const registry = createTelegramBusFollowerRegistry();
@@ -1684,7 +1684,7 @@ test("Bus follower registration runtime waits for slow target provisioning", asy
 });
 
 test("Bus follower registration runtime registers and explicitly disconnects", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-follower-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-follower-"));
   const socketPath = join(dir, "bus.sock");
   const registry = createTelegramBusFollowerRegistry();
   const leaderProtocol = createTelegramBusProtocolIdentity({
@@ -1752,7 +1752,7 @@ test("Bus follower registration runtime registers and explicitly disconnects", a
 });
 
 test("Bus follower rejects an acknowledgement without protocol identity", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-follower-protocol-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-follower-protocol-"));
   const socketPath = join(dir, "bus.sock");
   const server = createRawTelegramBusLocalServer({
     socketPath,
@@ -1790,7 +1790,7 @@ test("Bus follower rejects an acknowledgement without protocol identity", async 
 });
 
 test("Bus follower rejects a leader without its required durable capability", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-follower-capability-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-follower-capability-"));
   const socketPath = join(dir, "bus.sock");
   const server = createTelegramBusLocalServer({
     socketPath,
@@ -1829,7 +1829,7 @@ test("Bus follower rejects a leader without its required durable capability", as
 });
 
 test("Bus follower registration runtime accepts explicit manual profile keys", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-follower-profile-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-follower-profile-"));
   const socketPath = join(dir, "bus.sock");
   const registry = createTelegramBusFollowerRegistry();
   const server = createTelegramBusLocalServer({
@@ -1862,7 +1862,7 @@ test("Bus follower registration runtime accepts explicit manual profile keys", a
 
 test("Bus follower registration runtime reports heartbeat failure with active context", async () => {
   const dir = mkdtempSync(
-    join(tmpdir(), "pi-telegram-bus-follower-heartbeat-fail-"),
+    join(tmpdir(), "pa-telegram-bus-follower-heartbeat-fail-"),
   );
   const socketPath = join(dir, "bus.sock");
   const failures: unknown[] = [];
@@ -1902,7 +1902,7 @@ test("Bus follower registration runtime reports heartbeat failure with active co
 
 test("Bus follower registration runtime reports rejected heartbeat with active context", async () => {
   const dir = mkdtempSync(
-    join(tmpdir(), "pi-telegram-bus-follower-heartbeat-reject-"),
+    join(tmpdir(), "pa-telegram-bus-follower-heartbeat-reject-"),
   );
   const socketPath = join(dir, "bus.sock");
   const failures: unknown[] = [];
@@ -1948,7 +1948,7 @@ test("Bus follower registration runtime reports rejected heartbeat with active c
 });
 
 test("Bus follower registration runtime owns one in-flight heartbeat", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-heartbeat-gate-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-heartbeat-gate-"));
   const socketPath = join(dir, "bus.sock");
   let heartbeatCalls = 0;
   let releaseBlockedHeartbeat: (() => void) | undefined;
@@ -1994,7 +1994,7 @@ test("Bus follower registration runtime owns one in-flight heartbeat", async () 
 
 test("Bus follower registration runtime heartbeats until stopped", async () => {
   const dir = mkdtempSync(
-    join(tmpdir(), "pi-telegram-bus-follower-heartbeat-"),
+    join(tmpdir(), "pa-telegram-bus-follower-heartbeat-"),
   );
   const socketPath = join(dir, "bus.sock");
   const registry = createTelegramBusFollowerRegistry();
@@ -2039,7 +2039,7 @@ test("Bus follower registration runtime heartbeats until stopped", async () => {
 });
 
 test("Bus follower registration runtime surfaces leader rejection reasons", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-follower-reject-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-follower-reject-"));
   const socketPath = join(dir, "bus.sock");
   const server = createTelegramBusLocalServer({
     socketPath,
@@ -2077,7 +2077,7 @@ test("Bus follower registration runtime surfaces leader rejection reasons", asyn
 
 test("Bus follower registration runtime derives leader socket when lock omits it", async () => {
   const dir = mkdtempSync(
-    join(tmpdir(), "pi-telegram-bus-follower-derived-socket-"),
+    join(tmpdir(), "pa-telegram-bus-follower-derived-socket-"),
   );
   const socketPath = join(dir, "bus.sock");
   const registry = createTelegramBusFollowerRegistry();
@@ -2105,7 +2105,7 @@ test("Bus follower registration runtime derives leader socket when lock omits it
 });
 
 test("Bus follower queue handoff client rejects a mismatched staged receipt", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-queue-handoff-mismatch-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-queue-handoff-mismatch-"));
   const socketPath = join(dir, "leader.sock");
   const server = createTelegramBusLocalServer({
     socketPath,
@@ -2160,7 +2160,7 @@ test("Bus follower queue handoff client rejects a mismatched staged receipt", as
 });
 
 test("Bus follower queue handoff client requires an exact staged acknowledgement", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-queue-handoff-client-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-queue-handoff-client-"));
   const socketPath = join(dir, "leader.sock");
   const received: unknown[] = [];
   const server = createTelegramBusLocalServer({
@@ -2265,7 +2265,7 @@ test("Bus follower queue handoff client requires an exact staged acknowledgement
 });
 
 test("Bus follower API caller sends method and multipart voice calls over local transport", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-api-caller-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-api-caller-"));
   const socketPath = join(dir, "bus.sock");
   const voicePath = join(dir, "voice output.ogg");
   const received: unknown[] = [];
@@ -2337,7 +2337,7 @@ test("Bus follower API caller sends method and multipart voice calls over local 
 });
 
 test("Bus follower API calls wait for heartbeat recovery before transport", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-api-recovery-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-api-recovery-"));
   const socketPath = join(dir, "bus.sock");
   const received: unknown[] = [];
   const registrationState = createTelegramBusFollowerRegistrationState();
@@ -2448,7 +2448,7 @@ test("Bus follower API calls do not cross an explicit recovery cancellation", as
 });
 
 test("Bus follower API caller preserves structured commit-unknown errors", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-api-ambiguous-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-api-ambiguous-"));
   const socketPath = join(dir, "bus.sock");
   const server = createTelegramBusLocalServer({
     socketPath,
@@ -2479,7 +2479,7 @@ test("Bus follower API caller preserves structured commit-unknown errors", async
 });
 
 test("Bus follower API caller preserves structured stale-target evidence", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-api-stale-target-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-api-stale-target-"));
   const socketPath = join(dir, "bus.sock");
   const server = createTelegramBusLocalServer({
     socketPath,
@@ -2514,7 +2514,7 @@ test("Bus follower API caller preserves structured stale-target evidence", async
 });
 
 test("Bus follower API caller classifies non-idempotent acknowledgement loss as commit-unknown", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-api-ack-loss-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-api-ack-loss-"));
   const socketPath = join(dir, "bus.sock");
   let executions = 0;
   const server = createTelegramBusLocalServer({
@@ -2551,7 +2551,7 @@ test("Bus follower API caller classifies non-idempotent acknowledgement loss as 
 });
 
 test("Bus follower initial registration consumes a pending session handoff after acknowledgement", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-follower-handoff-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-follower-handoff-"));
   const socketPath = join(dir, "bus.sock");
   const registrations: Array<{
     target: unknown;
@@ -2788,7 +2788,7 @@ test("Bus follower session refresh re-registers with the handed-off target", asy
 });
 
 test("follower client runtime exposes authenticated queue handoff transport", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-follower-client-handoff-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-follower-client-handoff-"));
   const socketPath = join(dir, "bus.sock");
   const received: unknown[] = [];
   const server = createTelegramBusLocalServer({
@@ -2877,7 +2877,7 @@ test("follower client runtime exposes authenticated queue handoff transport", as
 });
 
 test("follower client defaults the forwarding timeout to the 30s bus window", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-follower-timeout-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-follower-timeout-"));
   const socketPath = join(dir, "bus.sock");
   const server = createTelegramBusLocalServer({
     socketPath,
@@ -2913,7 +2913,7 @@ test("follower client defaults the forwarding timeout to the 30s bus window", as
       message: {
         message_id: 1,
         chat: { id: 7, type: "supergroup" },
-        pi_telegram_source_update_id: 44,
+        pa_telegram_source_update_id: 44,
       },
       ownership: {
         instanceId: "inst-a",

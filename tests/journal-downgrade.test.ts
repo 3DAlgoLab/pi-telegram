@@ -75,7 +75,7 @@ async function runCheck(
 async function withAgentDir(
   run: (input: { agentDir: string; runtimeDir: string }) => Promise<void>,
 ) {
-  const agentDir = await mkdtemp(join(tmpdir(), "pi-telegram-downgrade-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "pa-telegram-downgrade-"));
   const runtimeDir = join(agentDir, "tmp", "telegram");
   await mkdir(runtimeDir, { recursive: true });
   try {
@@ -181,7 +181,7 @@ test("Downgrade check uses PI_CODING_AGENT_DIR when no argument is provided", as
 });
 
 test("Downgrade check auto-detects an OMP invocation", async () => {
-  const home = await mkdtemp(join(tmpdir(), "pi-telegram-downgrade-home-"));
+  const home = await mkdtemp(join(tmpdir(), "pa-telegram-downgrade-home-"));
   const runtimeDir = join(home, ".omp", "agent", "tmp", "telegram");
   const ompScriptPath = join(home, "omp");
   await mkdir(runtimeDir, { recursive: true });
@@ -368,7 +368,7 @@ test("Downgrade checker and runtime journal agree on shared entry schema", async
   ];
 
   for (const { name, entry: fixture } of validCases) {
-    const journalDir = await mkdtemp(join(tmpdir(), "pi-telegram-recon-journal-"));
+    const journalDir = await mkdtemp(join(tmpdir(), "pa-telegram-recon-journal-"));
     try {
       const path = join(journalDir, "inbox.json");
       await writeFile(path, JSON.stringify(snapshot([fixture])));
@@ -400,7 +400,7 @@ test("Downgrade checker and runtime journal agree on shared entry schema", async
   }
 
   for (const { name, entry: fixture } of invalidCases) {
-    const journalDir = await mkdtemp(join(tmpdir(), "pi-telegram-recon-journal-"));
+    const journalDir = await mkdtemp(join(tmpdir(), "pa-telegram-recon-journal-"));
     try {
       const path = join(journalDir, "inbox.json");
       await writeFile(path, JSON.stringify(snapshot([fixture])));

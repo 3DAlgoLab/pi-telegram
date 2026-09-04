@@ -109,7 +109,7 @@ export function createTelegramAgentMessageRuntime<TContext, TUpdate>(
         chat: { id: target.chatId, type: "private" as const },
         from: { id: allowedChatId, is_bot: false, first_name: "Pi Agent" },
         message_thread_id: target.threadId,
-        pi_telegram_agent_source_thread: sourceLabel,
+        pa_telegram_agent_source_thread: sourceLabel,
         text: input.message.text,
       } as TelegramRoutedMessage;
       await deps.handleUpdate(

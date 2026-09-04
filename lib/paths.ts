@@ -14,18 +14,50 @@ import { join, resolve } from "node:path";
 export const TELEGRAM_DEFAULT_PROFILE_NAME = "default";
 
 export interface TelegramAgentDirResolutionInput {
-  env?: Partial<Pick<NodeJS.ProcessEnv, "PI_CODING_AGENT_DIR">>;
+  env?: Partial<
+    Pick<
+      NodeJS.ProcessEnv,
+      "PI_CODING_AGENT_DIR" | "PRIME_AGENT_CODING_AGENT_DIR"
+    >
+  >;
   execPath?: string;
   argv?: readonly string[];
+}
+
+function detectRuntimeAgentDir(
+  execPath: string,
+  argv: readonly string[],
+): string | undefined {
+  const execBasename = execPath.toLowerCase().split(/[\\/]/u).pop() ?? "";
+  const argv1 = (argv[1] ?? "").toLowerCase();
+  const argv1Last = argv1.split(/[\\/]/u).pop() ?? "";
+  if (execBasename.startsWith("omp") || argv1Last.startsWith("omp")) {
+    return join(".omp", "agent");
+  }
+  // prime-agent is a pi-compatible host whose CLI entry (cli.js) lives inside a
+  // `prime-agent` package directory, so the identity marker is a path segment,
+  // not the basename.
+  const segments = [execPath, argv1].flatMap((value) =>
+    value.split(/[\\/]+/u),
+  );
+  if (
+    segments.some(
+      (segment) => segment === "prime-agent" || segment === "prime_agent",
+    )
+  ) {
+    return join(".prime", "agent");
+  }
+  return undefined;
 }
 
 /**
  * Resolve the agent data directory for the current Pi-compatible runtime.
  *
  * Precedence:
- * 1. `PI_CODING_AGENT_DIR` env variable, when explicitly set.
- * 2. Detect Pi-compatible runtime identity from the executable or argv[1]
- *    (e.g. OMP vs standard Pi agent).
+ * 1. `PI_CODING_AGENT_DIR` or `PRIME_AGENT_CODING_AGENT_DIR` env variable,
+ *    when explicitly set.
+ * 2. Detect the runtime identity from the executable or argv[1]
+ *    (OMP → `~/.omp/agent`, prime-agent → `~/.prime/agent`).
  * 3. Fallback: `~/.pi/agent`.
  */
 export function resolveAgentDir(
@@ -33,13 +65,13 @@ export function resolveAgentDir(
 ): string {
   const env = input.env ?? process.env;
   if (env.PI_CODING_AGENT_DIR) return resolve(env.PI_CODING_AGENT_DIR);
+  if (env.PRIME_AGENT_CODING_AGENT_DIR) {
+    return resolve(env.PRIME_AGENT_CODING_AGENT_DIR);
+  }
   const execPath = input.execPath ?? process.execPath;
   const argv = input.argv ?? process.argv;
-  const execBasename = execPath.toLowerCase().split(/[\\/]/u).pop() ?? "";
-  const argv1Last = (argv[1] ?? "").toLowerCase().split(/[\\/]/u).pop() ?? "";
-  if (execBasename.startsWith("omp") || argv1Last.startsWith("omp")) {
-    return join(homedir(), ".omp", "agent");
-  }
+  const detected = detectRuntimeAgentDir(execPath, argv);
+  if (detected) return join(homedir(), detected);
   return join(homedir(), ".pi", "agent");
 }
 
@@ -75,15 +107,25 @@ export function resolveTelegramProfileTempFilePath(
   );
 }
 
+function formatTelegramDiagnosticsDisplayPath(filePath: string): string {
+  const home = homedir();
+  return filePath.startsWith(home + "/") ? `~/${filePath.slice(home.length + 1)}` : filePath;
+}
+
 export function getTelegramDiagnosticsDisplayPaths(profileName?: string): {
   state: string;
   logs: string;
 } {
   const suffix = getTelegramProfilePathSuffix(profileName);
   const profileSlug = suffix.slice(1);
+  const tempDir = resolveTelegramTempDir();
   return {
-    state: `~/.pi/agent/tmp/telegram/state${suffix}.json`,
-    logs: `~/.pi/agent/tmp/telegram/logs${profileSlug ? `.${profileSlug}` : ""}.jsonl`,
+    state: formatTelegramDiagnosticsDisplayPath(
+      join(tempDir, `state${suffix}.json`),
+    ),
+    logs: formatTelegramDiagnosticsDisplayPath(
+      join(tempDir, `logs${profileSlug ? `.${profileSlug}` : ""}.jsonl`),
+    ),
   };
 }
 

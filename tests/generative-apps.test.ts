@@ -87,7 +87,7 @@ test("Generative App bound-action parser separates ordinary prompts from strict 
 });
 
 test("Generative App install initializes state and later methods commit or remain output-only", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-telegram-generative-app-"));
+  const root = await mkdtemp(join(tmpdir(), "pa-telegram-generative-app-"));
   const agentDir = join(root, "agent");
   try {
     const script = await writeApp(root, "counter", statefulApp);
@@ -162,7 +162,7 @@ test("Generative App install initializes state and later methods commit or remai
 });
 
 test("Generative App initialization failure preserves a working install and rejects silent replacement", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-telegram-generative-app-"));
+  const root = await mkdtemp(join(tmpdir(), "pa-telegram-generative-app-"));
   const agentDir = join(root, "agent");
   try {
     const script = await writeApp(root, "counter", statefulApp);
@@ -191,7 +191,7 @@ test("Generative App initialization failure preserves a working install and reje
 });
 
 test("Generative App explicit replacement publishes only an initialized new application", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-telegram-generative-app-"));
+  const root = await mkdtemp(join(tmpdir(), "pa-telegram-generative-app-"));
   const agentDir = join(root, "agent");
   try {
     const script = await writeApp(root, "counter", statefulApp);
@@ -235,7 +235,7 @@ test("Generative App explicit replacement publishes only an initialized new appl
 });
 
 test("Generative App replacement fences buttons from the previous installation generation", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-telegram-generative-app-"));
+  const root = await mkdtemp(join(tmpdir(), "pa-telegram-generative-app-"));
   const agentDir = join(root, "agent");
   try {
     const script = await writeApp(root, "counter", statefulApp);
@@ -264,7 +264,7 @@ test("Generative App replacement fences buttons from the previous installation g
 });
 
 test("Generative App replacement requires an existing installation", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-telegram-generative-app-"));
+  const root = await mkdtemp(join(tmpdir(), "pa-telegram-generative-app-"));
   const agentDir = join(root, "agent");
   try {
     const script = await writeApp(root, "counter", statefulApp);
@@ -278,7 +278,7 @@ test("Generative App replacement requires an existing installation", async () =>
 });
 
 test("Generative App install rejects noncanonical scripts and source symlinks", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-telegram-generative-app-"));
+  const root = await mkdtemp(join(tmpdir(), "pa-telegram-generative-app-"));
   const agentDir = join(root, "agent");
   try {
     const wrongStem = await writeApp(root, "source", statefulApp);
@@ -299,7 +299,7 @@ test("Generative App install rejects noncanonical scripts and source symlinks", 
 });
 
 test("Generative App install rejects a symlinked managed root", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-telegram-generative-app-"));
+  const root = await mkdtemp(join(tmpdir(), "pa-telegram-generative-app-"));
   const agentDir = join(root, "agent");
   const outside = join(root, "outside");
   try {
@@ -317,7 +317,7 @@ test("Generative App install rejects a symlinked managed root", async () => {
 });
 
 test("Generative App invocation recovers current state from the last complete journal line", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-telegram-generative-app-"));
+  const root = await mkdtemp(join(tmpdir(), "pa-telegram-generative-app-"));
   const agentDir = join(root, "agent");
   try {
     const script = await writeApp(root, "counter", statefulApp);
@@ -351,7 +351,7 @@ test("Generative App invocation recovers current state from the last complete jo
 });
 
 test("Generative App invocation reloads same-size module edits even when file timestamps match", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-telegram-generative-app-"));
+  const root = await mkdtemp(join(tmpdir(), "pa-telegram-generative-app-"));
   const agentDir = join(root, "agent");
   try {
     const script = await writeApp(
@@ -393,7 +393,7 @@ export function inspect() { return { output: "old" }; }
 });
 
 test("Generative App transition lock serializes sibling processes and recovers a dead owner", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-telegram-generative-app-"));
+  const root = await mkdtemp(join(tmpdir(), "pa-telegram-generative-app-"));
   const agentDir = join(root, "agent");
   try {
     const script = await writeApp(
@@ -448,7 +448,7 @@ process.stdout.write(result.output);
 });
 
 test("Generative App bounded process port uses argv execution and captures structured output", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-telegram-generative-app-"));
+  const root = await mkdtemp(join(tmpdir(), "pa-telegram-generative-app-"));
   const agentDir = join(root, "agent");
   try {
     const script = await writeApp(
@@ -481,7 +481,7 @@ export async function inspect({ run, argument }) {
 });
 
 test("Generative App worker bounds synchronous methods and cancels in-flight processes", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-telegram-generative-app-"));
+  const root = await mkdtemp(join(tmpdir(), "pa-telegram-generative-app-"));
   const agentDir = join(root, "agent");
   try {
     const hanging = await writeApp(
@@ -553,7 +553,7 @@ test("telegram_bind Tool output contributes exactly one leading newline", () => 
 });
 
 test("telegram_bind displays app output directly in an active Telegram turn", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-telegram-generative-app-"));
+  const root = await mkdtemp(join(tmpdir(), "pa-telegram-generative-app-"));
   const agentDir = join(root, "agent");
   let tool: {
     execute: (toolCallId: string, params: Record<string, unknown>) => Promise<unknown>;
@@ -613,7 +613,7 @@ test("telegram_bind displays app output directly in an active Telegram turn", as
 });
 
 test("telegram_bind Tool exposes mutually exclusive install and invocation shapes", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-telegram-generative-app-"));
+  const root = await mkdtemp(join(tmpdir(), "pa-telegram-generative-app-"));
   const agentDir = join(root, "agent");
   let tool: {
     execute: (toolCallId: string, params: Record<string, unknown>) => Promise<unknown>;

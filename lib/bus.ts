@@ -951,7 +951,7 @@ export interface TelegramBusLocalServer {
 }
 
 const TELEGRAM_ACTIVE_LOCAL_SERVERS = Symbol.for(
-  "@llblab/pi-telegram/active-local-servers",
+  "prime-agent-telegram/active-local-servers",
 );
 type TelegramBusServerGlobal = typeof globalThis & {
   [TELEGRAM_ACTIVE_LOCAL_SERVERS]?: Map<string, TelegramBusLocalServer>;
@@ -979,7 +979,7 @@ export function resolveTelegramBusSocketPath(
     });
   }
   const ownerScope = process.getuid?.() ?? "user";
-  const fallbackDir = join(tmpdir(), `pi-telegram-${ownerScope}`);
+  const fallbackDir = join(tmpdir(), `pa-telegram-${ownerScope}`);
   if (
     dirname(endpoint) === fallbackDir &&
     /^[0-9a-f]{16}\.sock$/u.test(basename(endpoint))
@@ -1062,7 +1062,7 @@ function getTelegramBusForwardSourceUpdateId(
   value: unknown,
 ): number | undefined {
   if (!isRecord(value)) return undefined;
-  const updateId = value.pi_telegram_source_update_id;
+  const updateId = value.pa_telegram_source_update_id;
   return Number.isSafeInteger(updateId) && (updateId as number) >= 0
     ? (updateId as number)
     : undefined;

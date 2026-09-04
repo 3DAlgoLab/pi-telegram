@@ -352,7 +352,7 @@ test("Bus transport boundary derives socket and pipe endpoints", () => {
     agentDir: "C:\\Users\\Admin\\.pi\\agent",
     platform: "win32",
   });
-  assert.match(pipe, /^\\\\\.\\pipe\\pi-telegram-.+-bus$/);
+  assert.match(pipe, /^\\\\\.\\pipe\\pa-telegram-.+-bus$/);
   assert.equal(getTelegramBusTransportKind(pipe), "pipe");
   assert.equal(getTelegramBusTransportKind("/tmp/bus.sock"), "socket");
   assert.equal(
@@ -464,7 +464,7 @@ test("Bus socket paths isolate named profiles and preserve default Unix paths", 
 test("Bus socket path uses profile-scoped Windows named pipes on win32", () => {
   assert.match(
     getTelegramBusSocketPath("C:\\Users\\me\\.pi\\agent", "win32"),
-    /^\\\\\.\\pipe\\pi-telegram-[A-Za-z0-9_-]{16}-bus$/,
+    /^\\\\\.\\pipe\\pa-telegram-[A-Za-z0-9_-]{16}-bus$/,
   );
   assert.match(
     getTelegramBusFollowerSocketPath(
@@ -472,11 +472,11 @@ test("Bus socket path uses profile-scoped Windows named pipes on win32", () => {
       "C:\\Users\\me\\.pi\\agent",
       "win32",
     ),
-    /^\\\\\.\\pipe\\pi-telegram-[A-Za-z0-9_-]{16}-follower-pid_123_unsafe$/,
+    /^\\\\\.\\pipe\\pa-telegram-[A-Za-z0-9_-]{16}-follower-pid_123_unsafe$/,
   );
   assert.match(
     getTelegramBusSocketPath("C:\\Users\\me\\.pi\\agent", "win32", "work"),
-    /^\\\\\.\\pipe\\pi-telegram-[A-Za-z0-9_-]{16}-bus-work$/,
+    /^\\\\\.\\pipe\\pa-telegram-[A-Za-z0-9_-]{16}-bus-work$/,
   );
   assert.match(
     getTelegramBusFollowerSocketPath(
@@ -485,7 +485,7 @@ test("Bus socket path uses profile-scoped Windows named pipes on win32", () => {
       "win32",
       "work",
     ),
-    /^\\\\\.\\pipe\\pi-telegram-[A-Za-z0-9_-]{16}-follower-work-pid_123_unsafe$/,
+    /^\\\\\.\\pipe\\pa-telegram-[A-Za-z0-9_-]{16}-follower-work-pid_123_unsafe$/,
   );
 });
 
@@ -1287,7 +1287,7 @@ test("Bus follower API allowlist permits scoped own-topic cleanup only", () => {
 });
 
 test("Bus transport probe reports reachable and unreachable endpoints", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-probe-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-probe-"));
   const socketPath = join(dir, "bus.sock");
   const endpoint = resolveTelegramBusSocketPath(socketPath);
   const server = createTelegramBusLocalServer({
@@ -1320,7 +1320,7 @@ test("Bus transport probe reports reachable and unreachable endpoints", async ()
 test("Bus local server roundtrips through a bounded long-path fallback", { skip: process.platform === "win32" }, async () => {
   const socketPath = join(
     tmpdir(),
-    "pi-telegram-very-long-endpoint-segment".repeat(4),
+    "pa-telegram-very-long-endpoint-segment".repeat(4),
     "bus.sock",
   );
   const server = createTelegramBusLocalServer({
@@ -1349,7 +1349,7 @@ test("Bus local server roundtrips through a bounded long-path fallback", { skip:
 });
 
 test("Bus local server resolves the active profile endpoint on each start", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-profile-switch-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-profile-switch-"));
   let profileName = "work";
   const getSocketPath = () =>
     getTelegramBusSocketPath(dir, process.platform, profileName);
@@ -1392,7 +1392,7 @@ test("Bus local server resolves the active profile endpoint on each start", asyn
 });
 
 test("Old bus server stop cannot invalidate a replacement endpoint generation", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-generation-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-generation-"));
   const socketPath = join(dir, "bus.sock");
   const first = createTelegramBusLocalServer({
     socketPath,
@@ -1449,7 +1449,7 @@ test("Old bus server stop cannot invalidate a replacement endpoint generation", 
 });
 
 test("Stale bus server cannot publish over a replacement endpoint generation", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-publish-fence-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-publish-fence-"));
   const socketPath = join(dir, "bus.sock");
   let releasePublication: (() => void) | undefined;
   let signalPublicationReady: (() => void) | undefined;
@@ -1508,7 +1508,7 @@ test("Stale bus server cannot publish over a replacement endpoint generation", a
 });
 
 test("Bus local server rebinds an externally unlinked Unix endpoint", { skip: process.platform === "win32" }, async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-rebind-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-rebind-"));
   const socketPath = join(dir, "bus.sock");
   const phases: string[] = [];
   const server = createTelegramBusLocalServer({
@@ -1545,7 +1545,7 @@ test("Bus local server rebinds an externally unlinked Unix endpoint", { skip: pr
 });
 
 test("Bus local client transport events include request diagnostics", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-client-events-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-client-events-"));
   const socketPath = join(dir, "missing.sock");
   const events: Array<{ phase: string; details: Record<string, unknown> }> = [];
   try {
@@ -1576,7 +1576,7 @@ test("Bus local client transport events include request diagnostics", async () =
 });
 
 test("Bus local client classifies response timeouts as transport timeouts", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-client-timeout-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-client-timeout-"));
   const socketPath = join(dir, "bus.sock");
   const events: Array<{ phase: string; details: Record<string, unknown> }> = [];
   const server = createTelegramBusLocalServer({
@@ -1611,7 +1611,7 @@ test("Bus local client classifies response timeouts as transport timeouts", asyn
 });
 
 test("Bus local server memoizes completed and in-flight request results", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-ledger-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-ledger-"));
   const socketPath = join(dir, "bus.sock");
   let executions = 0;
   let release: (() => void) | undefined;
@@ -1663,7 +1663,7 @@ test("Bus local server memoizes completed and in-flight request results", async 
 });
 
 test("Bus retry returns the memoized result after the first acknowledgement is lost", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-ledger-ack-loss-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-ledger-ack-loss-"));
   const socketPath = join(dir, "bus.sock");
   let executions = 0;
   let dropped = false;
@@ -1714,7 +1714,7 @@ test("Bus retry returns the memoized result after the first acknowledgement is l
 });
 
 test("Bus local server rejects request-id reuse with a changed payload", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-ledger-collision-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-ledger-collision-"));
   const socketPath = join(dir, "bus.sock");
   let executions = 0;
   const server = createTelegramBusLocalServer({
@@ -1756,7 +1756,7 @@ test("Bus local server rejects request-id reuse with a changed payload", async (
 });
 
 test("Bus local IPC server reports handler failures as protocol acks", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-handler-failure-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-handler-failure-"));
   const socketPath = join(dir, "bus.sock");
   const events: Array<{ phase: string; details: Record<string, unknown> }> = [];
   const server = createTelegramBusLocalServer({
@@ -1799,7 +1799,7 @@ test("Bus local IPC server reports handler failures as protocol acks", async () 
 });
 
 test("Bus local IPC server handles request/response envelopes over a private Unix socket", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-"));
   const socketPath = join(dir, "bus.sock");
   const received: string[] = [];
   const server = createTelegramBusLocalServer({
@@ -1842,7 +1842,7 @@ test(
   { skip: process.platform !== "win32" },
   async () => {
     const socketPath = getTelegramBusSocketPath(
-      join(tmpdir(), `pi-telegram-bus-win-${process.pid}`),
+      join(tmpdir(), `pa-telegram-bus-win-${process.pid}`),
       "win32",
     );
     const received: string[] = [];
@@ -1878,7 +1878,7 @@ test(
 );
 
 test("Bus foreign-owned update forwarder sends routed update envelopes", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-forwarder-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-forwarder-"));
   const socketPath = join(dir, "bus.sock");
   const received: unknown[] = [];
   const server = createTelegramBusLocalServer({
@@ -1945,7 +1945,7 @@ test("Bus foreign-owned update forwarder sends routed update envelopes", async (
       });
     assert.deepEqual(
       await forwarder.forwardMessage({
-        message: { message_id: 7, pi_telegram_source_update_id: 43 },
+        message: { message_id: 7, pa_telegram_source_update_id: 43 },
         ownership: {
           instanceId: "inst-b",
           recipientBindingKey: "manual:owner-b",
@@ -1961,7 +1961,7 @@ test("Bus foreign-owned update forwarder sends routed update envelopes", async (
     );
     assert.deepEqual(
       await forwarder.forwardMessage({
-        message: { message_id: 7, pi_telegram_source_update_id: 43 },
+        message: { message_id: 7, pa_telegram_source_update_id: 43 },
         ownership: {
           instanceId: "inst-b",
           ownerGeneration: "registration-b",
@@ -1979,7 +1979,7 @@ test("Bus foreign-owned update forwarder sends routed update envelopes", async (
       await forwarder.forwardMessage({
         message: {
           message_id: 8,
-          pi_telegram_source_update_id: 44,
+          pa_telegram_source_update_id: 44,
         },
         ownership: {
           instanceId: "inst-b",
@@ -2011,7 +2011,7 @@ test("Bus foreign-owned update forwarder sends routed update envelopes", async (
         delivery: expectedDelivery,
         message: {
           message_id: 8,
-          pi_telegram_source_update_id: 44,
+          pa_telegram_source_update_id: 44,
         },
         sentAtMs: 9000,
       },
@@ -2023,7 +2023,7 @@ test("Bus foreign-owned update forwarder sends routed update envelopes", async (
 });
 
 test("Bus durable follower forwarding rejects an ACK without the exact receipt", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-missing-receipt-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-missing-receipt-"));
   const socketPath = join(dir, "bus.sock");
   const server = createTelegramBusLocalServer({
     socketPath,
@@ -2046,7 +2046,7 @@ test("Bus durable follower forwarding rejects an ACK without the exact receipt",
     });
     assert.deepEqual(
       await forwarder.forwardMessage({
-        message: { message_id: 8, pi_telegram_source_update_id: 44 },
+        message: { message_id: 8, pa_telegram_source_update_id: 44 },
         ownership: {
           instanceId: "inst-b",
           ownerGeneration: "registration-b",
@@ -2068,7 +2068,7 @@ test("Bus durable follower forwarding rejects an ACK without the exact receipt",
 });
 
 test("Bus durable follower forwarding classifies negative ACKs as retryable", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-negative-ack-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-negative-ack-"));
   const socketPath = join(dir, "bus.sock");
   const server = createTelegramBusLocalServer({
     socketPath,
@@ -2092,7 +2092,7 @@ test("Bus durable follower forwarding classifies negative ACKs as retryable", as
     await server.start();
     assert.deepEqual(
       await forwarder.forwardMessage({
-        message: { message_id: 8, pi_telegram_source_update_id: 44 },
+        message: { message_id: 8, pa_telegram_source_update_id: 44 },
         ownership: {
           instanceId: "inst-b",
           ownerGeneration: "registration-b",
@@ -2114,7 +2114,7 @@ test("Bus durable follower forwarding classifies negative ACKs as retryable", as
 });
 
 test("Bus durable follower forwarding rejects a mismatched receipt", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-mismatched-receipt-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-mismatched-receipt-"));
   const socketPath = join(dir, "bus.sock");
   const server = createTelegramBusLocalServer({
     socketPath,
@@ -2138,7 +2138,7 @@ test("Bus durable follower forwarding rejects a mismatched receipt", async () =>
     await server.start();
     assert.deepEqual(
       await forwarder.forwardMessage({
-        message: { message_id: 8, pi_telegram_source_update_id: 44 },
+        message: { message_id: 8, pa_telegram_source_update_id: 44 },
         ownership: {
           instanceId: "inst-b",
           ownerGeneration: "registration-b",
@@ -2160,7 +2160,7 @@ test("Bus durable follower forwarding rejects a mismatched receipt", async () =>
 });
 
 test("Bus lost ACK replay keeps delivery identity and follower admission idempotent", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-lost-ack-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-lost-ack-"));
   const socketPath = join(dir, "bus.sock");
   const admitted = new Set<number>();
   const journalAppends: number[] = [];
@@ -2197,7 +2197,7 @@ test("Bus lost ACK replay keeps delivery identity and follower admission idempot
   });
   const forward = () =>
     forwarder.forwardMessage({
-      message: { message_id: 8, pi_telegram_source_update_id: 44 },
+      message: { message_id: 8, pa_telegram_source_update_id: 44 },
       ownership: {
         instanceId: "inst-b",
         ownerGeneration: "registration-b",
@@ -2226,7 +2226,7 @@ test("Bus lost ACK replay keeps delivery identity and follower admission idempot
 });
 
 test("Bus foreign-owned update forwarder supports tolerant timeouts", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-forwarder-slow-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-forwarder-slow-"));
   const socketPath = join(dir, "bus.sock");
   const server = createTelegramBusLocalServer({
     socketPath,
@@ -2260,7 +2260,7 @@ test("Bus foreign-owned update forwarder supports tolerant timeouts", async () =
     });
     assert.deepEqual(
       await forwarder.forwardMessage({
-        message: { message_id: 8, pi_telegram_source_update_id: 44 },
+        message: { message_id: 8, pa_telegram_source_update_id: 44 },
         ownership: {
           instanceId: "inst-b",
           ownerGeneration: "registration-b",

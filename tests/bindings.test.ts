@@ -60,7 +60,7 @@ function createBindingApiHarness() {
 }
 
 test("Generative App bound-button composition rejects a retained stale revision before delivery", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-telegram-binding-app-"));
+  const root = await mkdtemp(join(tmpdir(), "pa-telegram-binding-app-"));
   const agentDir = join(root, "agent");
   const script = join(root, "counter.mjs");
   const store = Outbound.createTelegramButtonActionStore();

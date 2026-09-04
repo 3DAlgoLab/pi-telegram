@@ -74,7 +74,7 @@ test("Runtime JSONL paths do not collide across profile lifecycle names", () => 
 });
 
 test("Runtime JSONL log resets and appends session events", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-log-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-log-"));
   try {
     let nowMs = 1000;
     const path = join(dir, "logs.jsonl");
@@ -146,7 +146,7 @@ test("Runtime JSONL log resets and appends session events", async () => {
 });
 
 test("Runtime JSONL batching rotates between records that cross maxBytes", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-log-batch-rotate-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-log-batch-rotate-"));
   const path = join(dir, "logs.jsonl");
   const previousPath = join(dir, "logs._prev.jsonl");
   try {
@@ -186,7 +186,7 @@ test("Runtime JSONL batching rotates between records that cross maxBytes", async
 });
 
 test("Runtime JSONL destructive reset commits only under exact ownership", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-log-reset-fence-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-log-reset-fence-"));
   const path = join(dir, "logs.jsonl");
   let owned = false;
   try {
@@ -222,7 +222,7 @@ test("Runtime JSONL destructive reset commits only under exact ownership", async
 });
 
 test("Runtime JSONL append failures stay contained and do not poison later records", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-log-failure-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-log-failure-"));
   const blockerPath = join(dir, "not-a-directory");
   const validPath = join(dir, "logs.jsonl");
   let path = join(blockerPath, "logs.jsonl");
@@ -251,7 +251,7 @@ test("Runtime JSONL append failures stay contained and do not poison later recor
 });
 
 test("Runtime JSONL contains one failed record under strict unhandled rejection mode", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-log-strict-failure-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-log-strict-failure-"));
   const blockerPath = join(dir, "not-a-directory");
   const moduleUrl = new URL("../lib/logs.ts", import.meta.url).href;
   try {
@@ -273,7 +273,7 @@ test("Runtime JSONL contains one failed record under strict unhandled rejection 
 });
 
 test("Runtime JSONL appends serialize across processes without lost lines", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-log-race-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-log-race-"));
   const path = join(dir, "logs.jsonl");
   const startPath = join(dir, "start");
   const moduleUrl = new URL("../lib/logs.ts", import.meta.url).href;
@@ -333,7 +333,7 @@ test("Runtime JSONL appends serialize across processes without lost lines", asyn
 });
 
 test("Runtime JSONL append captures its profile path before queued execution", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-log-path-capture-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-log-path-capture-"));
   try {
     let profileName = "alpha";
     const log = createTelegramRuntimeJsonlLog({
@@ -356,7 +356,7 @@ test("Runtime JSONL append captures its profile path before queued execution", a
 });
 
 test("Runtime JSONL log keeps previous logs per active profile path", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-profile-log-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-profile-log-"));
   try {
     let profileName: string | undefined;
     let nowMs = 1000;

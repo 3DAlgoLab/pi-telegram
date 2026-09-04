@@ -202,7 +202,7 @@ test("Inbound text handlers keep original text on empty or failed output", async
 });
 
 test("Built-in text attachment handling injects text files into outputs", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-text-attachment-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-text-attachment-"));
   const filePath = join(dir, "note.txt");
   await writeFile(filePath, "hello from file\n", "utf8");
   const result = await processTelegramInboundHandlers({
@@ -288,7 +288,7 @@ test("Inbound handler failure output is bounded before runtime events", async ()
 });
 
 test("Built-in text attachment handling accepts text wildcards", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-text-attachment-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-text-attachment-"));
   const filePath = join(dir, "note.md");
   await writeFile(filePath, "# Hello\n", "utf8");
   const result = await processTelegramInboundHandlers({

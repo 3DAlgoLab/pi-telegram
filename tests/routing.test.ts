@@ -911,7 +911,7 @@ async function withTopicStore<T>(
     path: string,
   ) => Promise<T>,
 ): Promise<T> {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-routing-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-routing-"));
   try {
     const path = join(dir, "telegram-targets.json");
     const store = Threads.createTelegramTopicTargetStore({

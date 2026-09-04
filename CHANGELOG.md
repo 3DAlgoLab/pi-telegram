@@ -2,6 +2,12 @@
 
 > Each release keeps at most 8 outcome records of at most 512 characters.
 
+## Unreleased
+
+- `Package Rename`: Renames the bridge to `pa-telegram` (`prime-agent-telegram`) across package metadata, install guidance, docs, skills, public subpaths, display strings, internal registry keys, temp endpoints, and `PA_TELEGRAM_*` environment variables, while keeping the `pi` manifest contract, `TELEGRAM_*` legacy env fallbacks, and external `pi-telegram-*` companion package references intact.
+- `Prime Agent Host Paths`: Resolves the agent directory from `PRIME_AGENT_CODING_AGENT_DIR` or detected prime-agent runtime identity (defaulting to `~/.prime/agent`) so saved config, state, journals, and logs live under the running host's agent directory, and diagnostic display paths follow the resolved location instead of hardcoding `~/.pi/agent`.
+- `Host Settings Scope`: Passes the bridge-resolved agent directory into the host settings factory so the model menu reads and writes the running host's `settings.json` (including prime-agent's config root) instead of the SDK package default.
+
 ## 0.42.2: Telegram Comment Membrane
 
 - `Transport-Private HTML Comments`: Removes every assistant-authored `<!-- … -->` block from Telegram previews, active-turn finals, connected companion projections, direct sends, and Guest Mode regardless of Markdown position or owning extension; only recognized top-level comments activate actions, unclosed tails stay hidden, comment-only text plans send nothing, and the Pi terminal transcript remains unchanged.

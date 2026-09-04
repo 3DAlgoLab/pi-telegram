@@ -249,7 +249,7 @@ test("Setup prompt runtime rolls memory back when persistence fails", async () =
 
 test("Setup prompt runtime persists the first validated config to missing or empty files", async () => {
   for (const initialFile of [undefined, "{}\n"]) {
-    const dir = await mkdtemp(join(tmpdir(), "pi-telegram-setup-first-run-"));
+    const dir = await mkdtemp(join(tmpdir(), "pa-telegram-setup-first-run-"));
     const configPath = join(dir, "telegram.json");
     try {
       if (initialFile !== undefined) await writeFile(configPath, initialFile);
@@ -295,7 +295,7 @@ test("Setup prompt runtime persists the first validated config to missing or emp
 });
 
 test("Setup prompt runtime persists a first named profile without changing siblings", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-setup-profile-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-setup-profile-"));
   const configPath = join(dir, "telegram.json");
   try {
     const store = createTelegramConfigStore({

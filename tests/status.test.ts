@@ -1082,9 +1082,9 @@ test("Bridge status lines include local bus diagnostics", () => {
       pendingModelSwitch: false,
       queuedItems: [],
       localBus: {
-        leaderSocketPath: "\\\\.\\pipe\\pi-telegram-demo-bus",
+        leaderSocketPath: "\\\\.\\pipe\\pa-telegram-demo-bus",
         leaderTransport: "pipe",
-        followerSocketPath: "\\\\.\\pipe\\pi-telegram-demo-follower",
+        followerSocketPath: "\\\\.\\pipe\\pa-telegram-demo-follower",
         followerTransport: "pipe",
         followerRegistered: true,
         followerTarget: { chatId: 42, threadId: 9 },
@@ -1107,12 +1107,12 @@ test("Bridge status lines include local bus diagnostics", () => {
   );
   assert.ok(
     lines.includes(
-      "- leader endpoint [pipe]: \\\\.\\pipe\\pi-telegram-demo-bus",
+      "- leader endpoint [pipe]: \\\\.\\pipe\\pa-telegram-demo-bus",
     ),
   );
   assert.ok(
     lines.includes(
-      "- follower endpoint [pipe]: \\\\.\\pipe\\pi-telegram-demo-follower",
+      "- follower endpoint [pipe]: \\\\.\\pipe\\pa-telegram-demo-follower",
     ),
   );
 });

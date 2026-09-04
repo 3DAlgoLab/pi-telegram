@@ -1,6 +1,6 @@
 ---
 name: generative-apps
-description: Design, author, review, install, replace, invoke, or debug reusable Generative Apps that combine generated button interfaces, deterministic bound methods, and optional model-mediated prompts. Use for standalone applications and bounded view/controller adapters rendered through pi-telegram; prefer Generated Control Surface when no reusable deterministic program is earned.
+description: Design, author, review, install, replace, invoke, or debug reusable Generative Apps that combine generated button interfaces, deterministic bound methods, and optional model-mediated prompts. Use for standalone applications and bounded view/controller adapters rendered through pa-telegram; prefer Generated Control Surface when no reusable deterministic program is earned.
 ---
 
 # Generative Apps
@@ -47,7 +47,7 @@ This Skill owns agent operating judgment:
 
 This Skill also owns the transport-independent concept, vocabulary, application shapes, hybrid action model, and relationship to Generated Control Surface.
 
-[`../../docs/generative-apps.md`](../../docs/generative-apps.md) owns only the concrete `pi-telegram` runtime reference: Telegram wire syntax, managed layout, executable ABI, state timeline, generation/revision fencing, worker execution, locking, installation transactions, callback routing, lifecycle behavior, and current limitations. Do not duplicate those implementation details here.
+[`../../docs/generative-apps.md`](../../docs/generative-apps.md) owns only the concrete `pa-telegram` runtime reference: Telegram wire syntax, managed layout, executable ABI, state timeline, generation/revision fencing, worker execution, locking, installation transactions, callback routing, lifecycle behavior, and current limitations. Do not duplicate those implementation details here.
 
 ## When To Use
 

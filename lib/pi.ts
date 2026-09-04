@@ -5,6 +5,8 @@
  */
 
 import type { AssistantMessageEvent } from "@earendil-works/pi-ai";
+
+import * as Paths from "./paths.ts";
 import {
   type AgentEndEvent,
   type AgentSettledEvent,
@@ -167,7 +169,7 @@ export function createExtensionApiRuntimePorts(
 }
 
 type PiSettingsManagerFactory = {
-  create: (cwd: string) => unknown | PromiseLike<unknown>;
+  create: (cwd: string, agentDir?: string) => unknown | PromiseLike<unknown>;
 };
 
 type HostSettingsManager = {
@@ -230,8 +232,11 @@ export async function createSettingsManager(
   // Pi returns its legacy settings surface synchronously. Compatible hosts may
   // resolve a generic settings service asynchronously; normalize both once at
   // the SDK boundary instead of leaking host distinctions into menu domains.
+  // Pass the bridge-resolved agent dir so Pi-compatible hosts with a different
+  // config root (e.g. prime-agent's ~/.prime/agent) read and write their own
+  // settings file instead of the SDK package default (~/.pi/agent).
   const factory = SettingsManager as unknown as PiSettingsManagerFactory;
-  return normalizeSettingsManager(await factory.create(cwd));
+  return normalizeSettingsManager(await factory.create(cwd, Paths.resolveAgentDir()));
 }
 
 export function createScopedModelPatternPersister(deps: {

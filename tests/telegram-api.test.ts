@@ -91,12 +91,12 @@ function setApiTestFetch(fetchImpl: typeof fetch): () => void {
 }
 
 function setApiTestNetworkFamily(value: string | undefined): () => void {
-  const previous = process.env.PI_TELEGRAM_NETWORK_FAMILY;
-  if (value === undefined) delete process.env.PI_TELEGRAM_NETWORK_FAMILY;
-  else process.env.PI_TELEGRAM_NETWORK_FAMILY = value;
+  const previous = process.env.PA_TELEGRAM_NETWORK_FAMILY;
+  if (value === undefined) delete process.env.PA_TELEGRAM_NETWORK_FAMILY;
+  else process.env.PA_TELEGRAM_NETWORK_FAMILY = value;
   return () => {
-    if (previous === undefined) delete process.env.PI_TELEGRAM_NETWORK_FAMILY;
-    else process.env.PI_TELEGRAM_NETWORK_FAMILY = previous;
+    if (previous === undefined) delete process.env.PA_TELEGRAM_NETWORK_FAMILY;
+    else process.env.PA_TELEGRAM_NETWORK_FAMILY = previous;
   };
 }
 
@@ -154,8 +154,8 @@ test("Telegram API byte-limit helpers expose the inbound file default", () => {
 test("Telegram API byte-limit config prefers positive integer env values", () => {
   assert.equal(
     getTelegramInboundFileByteLimitFromEnv(
-      { PI_TELEGRAM_INBOUND_FILE_MAX_BYTES: "12345" },
-      ["PI_TELEGRAM_INBOUND_FILE_MAX_BYTES"],
+      { PA_TELEGRAM_INBOUND_FILE_MAX_BYTES: "12345" },
+      ["PA_TELEGRAM_INBOUND_FILE_MAX_BYTES"],
       99,
     ),
     12345,
@@ -163,10 +163,10 @@ test("Telegram API byte-limit config prefers positive integer env values", () =>
   assert.equal(
     getTelegramInboundFileByteLimitFromEnv(
       {
-        PI_TELEGRAM_INBOUND_FILE_MAX_BYTES: "0",
+        PA_TELEGRAM_INBOUND_FILE_MAX_BYTES: "0",
         TELEGRAM_MAX_FILE_SIZE_BYTES: "bad",
       },
-      ["PI_TELEGRAM_INBOUND_FILE_MAX_BYTES", "TELEGRAM_MAX_FILE_SIZE_BYTES"],
+      ["PA_TELEGRAM_INBOUND_FILE_MAX_BYTES", "TELEGRAM_MAX_FILE_SIZE_BYTES"],
       99,
     ),
     99,
@@ -541,7 +541,7 @@ test("Telegram API helper fetches bot identity through IPv4 fallback", async () 
 });
 
 test("Telegram temp cleanup removes only stale UUID-prefixed scratch files", async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), "pi-telegram-cleanup-"));
+  const tempDir = await mkdtemp(join(tmpdir(), "pa-telegram-cleanup-"));
   const oldFile = join(
     tempDir,
     "00000000-0000-4000-8000-000000000001-old.txt",
@@ -570,7 +570,7 @@ test("Telegram temp cleanup removes only stale UUID-prefixed scratch files", asy
 
 test("Telegram temp preparation creates the directory and removes stale scratch files", async () => {
   const parentDir = await mkdtemp(
-    join(tmpdir(), "pi-telegram-prepare-parent-"),
+    join(tmpdir(), "pa-telegram-prepare-parent-"),
   );
   const tempDir = join(parentDir, "nested", "telegram");
   assert.equal(await prepareTelegramTempDir(tempDir, 5_000), 0);
@@ -597,7 +597,7 @@ test("Telegram API helpers reject missing bot token for direct calls", async () 
         undefined,
         "file-id",
         "demo.txt",
-        join(tmpdir(), "pi-telegram-missing-token"),
+        join(tmpdir(), "pa-telegram-missing-token"),
       ),
     {
       message: "Telegram bot token is not configured",
@@ -814,7 +814,7 @@ test("Telegram API transport does not IPv4-fallback retry HTTP 400", async () =>
 });
 
 test("Telegram multipart transport failure reports commit unknown without fallback", async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), "pi-telegram-upload-fallback-"));
+  const tempDir = await mkdtemp(join(tmpdir(), "pa-telegram-upload-fallback-"));
   const filePath = join(tempDir, "demo.txt");
   await writeFile(filePath, "hello", "utf8");
   const formStates: string[] = [];
@@ -867,7 +867,7 @@ test("Telegram multipart transport failure reports commit unknown without fallba
 
 test("Telegram file downloads use transport fallback for file content", async () => {
   const tempDir = await mkdtemp(
-    join(tmpdir(), "pi-telegram-download-fallback-"),
+    join(tmpdir(), "pa-telegram-download-fallback-"),
   );
   const calls: string[] = [];
   const restoreEnv = setApiTestNetworkFamily("ipv4-fallback");
@@ -947,7 +947,7 @@ test("Telegram transport diagnostics serialize nested fetch causes", async () =>
 });
 
 test("Telegram multipart 5xx reports commit unknown without replay", async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), "pi-telegram-upload-"));
+  const tempDir = await mkdtemp(join(tmpdir(), "pa-telegram-upload-"));
   const filePath = join(tempDir, "demo.txt");
   await writeFile(filePath, "hello", "utf8");
   const contentTypes: string[] = [];
@@ -986,7 +986,7 @@ test("Telegram multipart 5xx reports commit unknown without replay", async () =>
 });
 
 test("Telegram file downloads use unique sanitized temp file names", async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), "pi-telegram-download-"));
+  const tempDir = await mkdtemp(join(tmpdir(), "pa-telegram-download-"));
   const restoreFetch = setApiTestFetch(async (input) => {
     const url = getApiTestFetchUrl(input);
     if (url.includes("/getFile")) {
@@ -1013,7 +1013,7 @@ test("Telegram file downloads use unique sanitized temp file names", async () =>
 });
 
 test("Telegram file downloads reject files above configured limits", async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), "pi-telegram-download-limit-"));
+  const tempDir = await mkdtemp(join(tmpdir(), "pa-telegram-download-limit-"));
   let calls = 0;
   const restoreFetch = setApiTestFetch(async (input) => {
     calls += 1;
@@ -1040,7 +1040,7 @@ test("Telegram file downloads reject files above configured limits", async () =>
 
 test("Telegram streaming downloads remove partial files after limit failures", async () => {
   const tempDir = await mkdtemp(
-    join(tmpdir(), "pi-telegram-download-partial-"),
+    join(tmpdir(), "pa-telegram-download-partial-"),
   );
   const restoreFetch = setApiTestFetch(async (input) => {
     const url = getApiTestFetchUrl(input);
@@ -1142,7 +1142,7 @@ test("Default Telegram bridge API runtime binds lazy token client and defaults",
 
 test("Default Telegram bridge API runtime honors PI_CODING_AGENT_DIR for temp files", async () => {
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-  const agentDir = await mkdtemp(join(tmpdir(), "pi-telegram-agent-dir-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "pa-telegram-agent-dir-"));
   const tempDir = resolve(agentDir, "tmp", "telegram");
   process.env.PI_CODING_AGENT_DIR = agentDir;
   try {

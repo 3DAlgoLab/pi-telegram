@@ -2444,7 +2444,7 @@ test("Settings menu rehydrates expired state before persisting and rendering voi
 });
 
 test("Settings activity callback persists through the real config store while agent work remains active", async () => {
-  const agentDir = await mkdtemp(join(tmpdir(), "pi-telegram-live-activity-setting-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "pa-telegram-live-activity-setting-"));
   const configPath = join(agentDir, "telegram.json");
   const store = createTelegramConfigStore({
     agentDir,

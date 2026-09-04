@@ -103,7 +103,7 @@ The menu may clear internal Skip but cannot remove a reaction created by the use
 
 ### Decorative Or Local-Example Emoji
 
-Some emoji are intentionally local examples or decorative variants, not global semantics. Empty-queue rotating messages (`🫙`, `🍃`, `🕳`, `🦗`, `🌙`, `🧘`, `🪐`, `🧺`, `🔭`, `🫧`, `🛸`) are copy flavor only and must not become controls. Example extension icons such as `🧪`, `🔧`, and `🗂` are documentation fixtures for companion extensions, not built-in pi-telegram meanings.
+Some emoji are intentionally local examples or decorative variants, not global semantics. Empty-queue rotating messages (`🫙`, `🍃`, `🕳`, `🦗`, `🌙`, `🧘`, `🪐`, `🧺`, `🔭`, `🫧`, `🛸`) are copy flavor only and must not become controls. Example extension icons such as `🧪`, `🔧`, and `🗂` are documentation fixtures for companion extensions, not built-in pa-telegram meanings.
 
 Thread UI rule: when a message heading, chooser, or status line is specifically about Telegram/Pi threads or target thread selection, start the heading with `🧵`. Button labels for concrete thread targets should stay clean (`threadName` or slot fallback) and should not add `🧵` to every target button unless the row would otherwise be ambiguous.
 

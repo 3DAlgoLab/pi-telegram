@@ -368,7 +368,7 @@ function parseTelegramProfileArg(args: string): string | undefined {
 }
 
 function formatTelegramTakeoverTitle(ctx: ExtensionCommandContext): string {
-  return ctx.ui.theme.fg("accent", "pi-telegram");
+  return ctx.ui.theme.fg("accent", "pa-telegram");
 }
 
 function formatTelegramTakeoverPrompt(
@@ -498,7 +498,7 @@ export function registerTelegramBridgeCommands(
       const threadName = deps.getDisconnectThreadName?.();
       if (threadName) {
         const confirmed = await ctx.ui.confirm(
-          ctx.ui.theme.fg("accent", "pi-telegram"),
+          ctx.ui.theme.fg("accent", "pa-telegram"),
           `Delete Telegram thread ${ctx.ui.theme.fg("warning", threadName)} and disconnect this Pi session?`,
         );
         if (!confirmed) {
@@ -694,7 +694,7 @@ export interface TelegramCommandRuntimeMessage {
   message_id: number;
   message_thread_id?: number;
   from?: { id?: number };
-  pi_telegram_source_update_id?: number;
+  pa_telegram_source_update_id?: number;
 }
 
 export interface TelegramCommandMessageTarget {
@@ -891,7 +891,7 @@ export function createTelegramCommandTargetRuntime<
 ): TelegramCommandTargetRuntime<TMessage, TContext> {
   return {
     enqueueControlItem: (message, ctx, controlType, statusSummary, execute) => {
-      const sourceUpdateId = message.pi_telegram_source_update_id;
+      const sourceUpdateId = message.pa_telegram_source_update_id;
       const baseReceipt =
         typeof sourceUpdateId === "number"
           ? createTelegramQueueAdmissionReceipt({
@@ -1057,7 +1057,7 @@ export interface TelegramCommandRuntimeDeps<
 }
 
 export const TELEGRAM_APP_MENU_INTRO_HTML = [
-  "<b>Pi Telegram</b>",
+  "<b>PA Telegram</b>",
   "",
   `${formatTelegramCommandEmojiPrefix("start")}/start — Open menu / Pair bridge`,
   `${formatTelegramCommandEmojiPrefix("compact")}/compact — Compact current session`,
@@ -1097,7 +1097,7 @@ function buildTelegramAppMenuIntroHtml(): string {
   const extensionLines = buildTelegramExtensionCommandMenuLines();
   if (extensionLines.length === 0) return TELEGRAM_APP_MENU_INTRO_HTML;
   return [
-    "<b>Pi Telegram</b>",
+    "<b>PA Telegram</b>",
     "",
     `${formatTelegramCommandEmojiPrefix("start")}/start — Open menu / Pair bridge`,
     `${formatTelegramCommandEmojiPrefix("compact")}/compact — Compact current session`,

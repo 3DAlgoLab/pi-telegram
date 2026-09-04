@@ -2232,8 +2232,8 @@ test("Admission handle binds source ids after public interception and returns qu
     registry,
     defaultHandle: async (update) => {
       assert.equal(
-        (update.message as { pi_telegram_source_update_id?: number })
-          .pi_telegram_source_update_id,
+        (update.message as { pa_telegram_source_update_id?: number })
+          .pa_telegram_source_update_id,
         71,
       );
       reportTelegramQueueAdmission([update.message], [
@@ -2259,8 +2259,8 @@ test("Admission handle binds source ids after public interception and returns qu
   });
   assert.deepEqual(publicUpdates, [rawUpdate]);
   assert.equal(
-    (rawUpdate.message as { pi_telegram_source_update_id?: number })
-      .pi_telegram_source_update_id,
+    (rawUpdate.message as { pa_telegram_source_update_id?: number })
+      .pa_telegram_source_update_id,
     undefined,
   );
 });

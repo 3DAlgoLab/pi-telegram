@@ -48,6 +48,56 @@ await test("resolveAgentDir", async (t) => {
     );
   });
 
+  await t.test("returns PRIME_AGENT_CODING_AGENT_DIR when env is set", () => {
+    assert.equal(
+      resolveAgentDir({
+        env: { PRIME_AGENT_CODING_AGENT_DIR: "/custom/prime/agent" },
+        execPath: "/usr/bin/node",
+        argv: [
+          "node",
+          "/opt/node_modules/prime-agent/dist/bundle/cli.js",
+        ],
+      }),
+      resolve("/custom/prime/agent"),
+    );
+  });
+
+  await t.test("keeps PI_CODING_AGENT_DIR precedence over PRIME_AGENT_CODING_AGENT_DIR", () => {
+    assert.equal(
+      resolveAgentDir({
+        env: {
+          PI_CODING_AGENT_DIR: "/custom/pi/agent",
+          PRIME_AGENT_CODING_AGENT_DIR: "/custom/prime/agent",
+        },
+        execPath: "/usr/bin/node",
+        argv: ["node"],
+      }),
+      resolve("/custom/pi/agent"),
+    );
+  });
+
+  await t.test("returns ~/.prime/agent for prime-agent runtimes", () => {
+    assert.equal(
+      resolveAgentDir({
+        env: {},
+        execPath: "/usr/bin/node",
+        argv: [
+          "node",
+          "/opt/node_modules/prime-agent/dist/bundle/cli.js",
+        ],
+      }),
+      join(homedir(), ".prime", "agent"),
+    );
+    assert.equal(
+      resolveAgentDir({
+        env: {},
+        execPath: "/opt/node_modules/prime-agent/dist/bundle/cli.js",
+        argv: ["node"],
+      }),
+      join(homedir(), ".prime", "agent"),
+    );
+  });
+
   await t.test(
     "returns ~/.pi/agent as fallback when no env and no OMP runtime",
     () => {
@@ -138,4 +188,29 @@ await test("explicit default profile keeps canonical unsuffixed paths", () => {
     getTelegramDiagnosticsDisplayPaths("default"),
     getTelegramDiagnosticsDisplayPaths(),
   );
+});
+
+await test("diagnostics display paths follow the resolved agent dir", async (t) => {
+  const previous = process.env.PRIME_AGENT_CODING_AGENT_DIR;
+  if (previous === undefined) delete process.env.PRIME_AGENT_CODING_AGENT_DIR;
+  else process.env.PRIME_AGENT_CODING_AGENT_DIR = previous;
+  t.after(() => {
+    if (previous === undefined) delete process.env.PRIME_AGENT_CODING_AGENT_DIR;
+    else process.env.PRIME_AGENT_CODING_AGENT_DIR = previous;
+  });
+  const agentDir = "/custom/prime/display-agent";
+  process.env.PRIME_AGENT_CODING_AGENT_DIR = agentDir;
+  try {
+    assert.deepEqual(getTelegramDiagnosticsDisplayPaths(), {
+      state: join(agentDir, "tmp", "telegram", "state.json"),
+      logs: join(agentDir, "tmp", "telegram", "logs.jsonl"),
+    });
+    assert.deepEqual(getTelegramDiagnosticsDisplayPaths("work"), {
+      state: join(agentDir, "tmp", "telegram", "state.work.json"),
+      logs: join(agentDir, "tmp", "telegram", "logs.work.jsonl"),
+    });
+  } finally {
+    if (previous === undefined) delete process.env.PRIME_AGENT_CODING_AGENT_DIR;
+    else process.env.PRIME_AGENT_CODING_AGENT_DIR = previous;
+  }
 });

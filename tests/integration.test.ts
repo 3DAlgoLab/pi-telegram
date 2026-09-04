@@ -309,7 +309,7 @@ function runQueueOwnerReplacementProcess(
 async function ensureRuntimeAgentDir(): Promise<string> {
   if (!runtimeAgentDir) {
     runtimeAgentDir = await mkdtemp(
-      join(tmpdir(), "pi-telegram-runtime-agent-"),
+      join(tmpdir(), "pa-telegram-runtime-agent-"),
     );
     process.env.PI_CODING_AGENT_DIR = runtimeAgentDir;
   }
@@ -351,7 +351,7 @@ test("Cross-instance agent turns route in both leader and follower directions", 
       foreignOwnedUpdateForwarder: {
         forwardMessage: async ({ message, ownership }) => {
           events.push(
-            `forward:${ownership.instanceId}:${ownership.ownerGeneration}:${message.message_thread_id}:${message.pi_telegram_agent_source_thread}`,
+            `forward:${ownership.instanceId}:${ownership.ownerGeneration}:${message.message_thread_id}:${message.pa_telegram_agent_source_thread}`,
           );
           return {
             status: "accepted",
@@ -373,7 +373,7 @@ test("Cross-instance agent turns route in both leader and follower directions", 
       sendTextReply: async () => undefined,
       handleAuthorizedTelegramMessage: async (message) => {
         events.push(
-          `local:${message.message_thread_id}:${message.pi_telegram_agent_source_thread}`,
+          `local:${message.message_thread_id}:${message.pa_telegram_agent_source_thread}`,
         );
       },
       handleAuthorizedTelegramEditedMessage: async () => {},
@@ -935,7 +935,7 @@ test("v0.27.12 artifacts and graceful tab cleanup preserve same-directory auto-c
 }, 60_000);
 
 test("Graceful follower disconnect persists intent and deletes through its live leader", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-follower-cleanup-integration-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-follower-cleanup-integration-"));
   const socketPath = join(dir, "bus.sock");
   const store = Threads.createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
@@ -1585,7 +1585,7 @@ test("Extension runtime polls, pairs, and dispatches an inbound Telegram turn in
 });
 
 test("Durable worker keeps a poison source while draining independent journal tail", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-poison-tail-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-poison-tail-"));
   const path = join(dir, "inbox.json");
   const journal = Journal.createTelegramUpdateJournalStore({
     path,
@@ -1637,7 +1637,7 @@ test("Durable worker keeps a poison source while draining independent journal ta
 });
 
 test("Live replacement process cannot replay or settle another process queue receipt", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-queue-owner-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-queue-owner-"));
   const path = join(dir, "inbox.json");
   const processBirthId = Bus.getTelegramProcessBirthIdentity(
     process.pid,
@@ -1709,7 +1709,7 @@ test("Live replacement process cannot replay or settle another process queue rec
 });
 
 test("Transport takeover hands one live-owned prompt to one exact recipient journal", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-transport-handoff-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-transport-handoff-"));
   const journalPath = join(dir, "inbox.json");
   const recipientJournalPath = journalPath;
   const ownersPath = join(dir, "owners.json");
@@ -1990,7 +1990,7 @@ test("Transport takeover hands one live-owned prompt to one exact recipient jour
 }, 10_000);
 
 test("Queued control handoff reconstructs one local execution in the recipient process", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-control-handoff-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-control-handoff-"));
   const journalPath = join(dir, "inbox.json");
   const ownersPath = join(dir, "owners.json");
   const socketPath = join(dir, "recipient.sock");
@@ -2170,7 +2170,7 @@ test("Queued control handoff reconstructs one local execution in the recipient p
 }, 10_000);
 
 test("Lost handoff ACK cannot cancel accepted cross-process authority", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-handoff-ack-loss-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-handoff-ack-loss-"));
   const journalPath = join(dir, "inbox.json");
   const ownersPath = join(dir, "owners.json");
   const socketPath = join(dir, "recipient.sock");
@@ -2354,7 +2354,7 @@ test("Lost handoff ACK cannot cancel accepted cross-process authority", async ()
 }, 10_000);
 
 test("Live owner remains fenced when replacement races dead-owner recovery", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-live-owner-race-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-live-owner-race-"));
   const path = join(dir, "inbox.json");
   const processBirthId = Bus.getTelegramProcessBirthIdentity(
     process.pid,
@@ -2422,7 +2422,7 @@ test("Live owner remains fenced when replacement races dead-owner recovery", asy
 });
 
 test("Live Windows queue owner remains unrecoverable and unreplayable without a birth proof", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-windows-owner-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-windows-owner-"));
   const path = join(dir, "inbox.json");
   const foreignOwner = {
     instanceId: "windows-owner",
@@ -2520,7 +2520,7 @@ test("Live Windows queue owner remains unrecoverable and unreplayable without a 
 });
 
 test("Replacement registration stays live while its process races dead-owner recovery", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-registration-recovery-race-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-registration-recovery-race-"));
   const journalPath = join(dir, "inbox.json");
   const socketPath = join(dir, "leader.sock");
   const startPath = join(dir, "start");
@@ -2590,7 +2590,7 @@ test("Replacement registration stays live while its process races dead-owner rec
 }, 10_000);
 
 test("Replacement process discards dead session-owned queue authority", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-dead-owner-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-dead-owner-"));
   const path = join(dir, "inbox.json");
   const deadOwner = {
     instanceId: "dead-owner-instance",
@@ -4063,7 +4063,7 @@ test("Extension runtime handles immediate status before queued prompt after agen
     );
     await waitForCondition(() => runtimeEvents.length >= 3);
     assert.equal(runtimeEvents[0], "dispatch:[telegram] first request");
-    assert.match(runtimeEvents[1] ?? "", /^send:<b>Pi Telegram<\/b>/);
+    assert.match(runtimeEvents[1] ?? "", /^send:<b>PA Telegram<\/b>/);
     assert.equal(
       runtimeEvents[2],
       "dispatch:[telegram] follow up after status",
@@ -5092,7 +5092,7 @@ test("Extension runtime applies idle model picks immediately and refreshes statu
     assert.equal(
       runtimeEvents.some(
         (event) =>
-          event.startsWith("edit:<b>Pi Telegram</b>") ||
+          event.startsWith("edit:<b>PA Telegram</b>") ||
           event.startsWith("edit:<b>🤖 Choose a model:</b>"),
       ),
       true,

@@ -1781,7 +1781,7 @@ export function createTelegramBusFollowerRegistrationRuntime<
 }
 
 const TELEGRAM_FOLLOWER_FORWARD_BATCH_POSITION_FIELD =
-  "pi_telegram_forward_comment_batch_position";
+  "pa_telegram_forward_comment_batch_position";
 
 export function prepareTelegramBusFollowerJournaledUpdateForExecution<
   TUpdate extends { message?: unknown } & Record<string, unknown>,
@@ -1838,7 +1838,7 @@ export function createTelegramBusFollowerDurableAdmissionRuntime<TContext>(deps:
             : envelope.message;
       if (
         !isRecord(carrier) ||
-        carrier.pi_telegram_source_update_id !== delivery.sourceUpdateId
+        carrier.pa_telegram_source_update_id !== delivery.sourceUpdateId
       ) {
         throw new Error("Telegram follower delivery source update id mismatch.");
       }

@@ -91,7 +91,7 @@ function createTelegramBusLeaderRuntime<TContext>(
 }
 
 test("Bus leader preserves a binding through follower reload handoff", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-follower-gap-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-follower-gap-"));
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
     getNowMs: () => 1000,
@@ -151,7 +151,7 @@ test("Bus leader preserves a binding through follower reload handoff", async () 
 });
 
 test("Bus leader emits one connected notice across an immediate follower session handoff", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-follower-notice-handoff-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-follower-notice-handoff-"));
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
     getNowMs: () => 1000,
@@ -212,7 +212,7 @@ test("Bus leader emits one connected notice across an immediate follower session
 });
 
 test("Bus leader migrates a reloaded follower from generation to stable identity", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-follower-identity-migration-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-follower-identity-migration-"));
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
     getNowMs: () => 1000,
@@ -371,7 +371,7 @@ async function waitForCondition(
 }
 
 test("Bus leader follower disconnect preserves binding when deletion is unconfirmed", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-follower-disconnect-fail-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-follower-disconnect-fail-"));
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
     getNowMs: () => 1000,
@@ -419,7 +419,7 @@ test("Bus leader follower disconnect preserves binding when deletion is unconfir
 });
 
 test("Successor leader replays durable cleanup intent before provisioning its own thread", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-successor-cleanup-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-successor-cleanup-"));
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
     getNowMs: () => 2000,
@@ -481,7 +481,7 @@ test("Successor leader replays durable cleanup intent before provisioning its ow
 });
 
 test("Successor leader reuses its stable thread before cancelling superseded cleanup", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-successor-reuse-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-successor-reuse-"));
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
     getNowMs: () => 2000,
@@ -540,7 +540,7 @@ test("Successor leader reuses its stable thread before cancelling superseded cle
 
 test("Bus leader follower target provisioner creates thread and announces connection", async () => {
   const dir = mkdtempSync(
-    join(tmpdir(), "pi-telegram-bus-follower-provision-"),
+    join(tmpdir(), "pa-telegram-bus-follower-provision-"),
   );
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
@@ -607,7 +607,7 @@ test("Bus leader follower target provisioner creates thread and announces connec
 });
 
 test("Bus leader follower target provisioner transfers a live session-reload target", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-follower-reload-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-follower-reload-"));
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
     getNowMs: () => 1000,
@@ -670,7 +670,7 @@ test("Bus leader follower target provisioner transfers a live session-reload tar
 });
 
 test("Bus leader replaces a cross-session follower target proven stale by the visibility probe", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-follower-stale-tab-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-follower-stale-tab-"));
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
     getNowMs: () => 1000,
@@ -729,7 +729,7 @@ test("Bus leader replaces a cross-session follower target proven stale by the vi
 });
 
 test("Bus leader rejects cross-session registration when visibility remains ambiguous", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-follower-ambiguous-tab-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-follower-ambiguous-tab-"));
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
     getNowMs: () => 1000,
@@ -798,7 +798,7 @@ test("Bus leader rejects cross-session registration when visibility remains ambi
 });
 
 test("Reloaded bus leader reuses a surviving follower's persisted target", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-leader-reload-follower-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-leader-reload-follower-"));
   const path = join(dir, "state.json");
   const previousStore = createTelegramTopicTargetStore({ path });
   previousStore.upsert({
@@ -847,7 +847,7 @@ test("Reloaded bus leader reuses a surviving follower's persisted target", async
 });
 
 test("Bus leader recovers a live follower target missing from persisted state", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-live-target-recovery-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-live-target-recovery-"));
   const path = join(dir, "state.json");
   const store = createTelegramTopicTargetStore({
     path,
@@ -930,7 +930,7 @@ test("Bus leader recovers a live follower target missing from persisted state", 
 });
 
 test("Bus leader reprobes an unresolved absent carried target on targetless retry", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-carried-probe-retry-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-carried-probe-retry-"));
   const path = join(dir, "state.json");
   const store = createTelegramTopicTargetStore({
     path,
@@ -997,7 +997,7 @@ test("Bus leader reprobes an unresolved absent carried target on targetless retr
 });
 
 test("Bus leader keeps an absent carried target provisional until visibility succeeds", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-carried-probe-pending-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-carried-probe-pending-"));
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
     getNowMs: () => 2000,
@@ -1042,7 +1042,7 @@ test("Bus leader keeps an absent carried target provisional until visibility suc
 });
 
 test("Bus leader replaces a carried target proven deleted after disconnect acknowledgement loss", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-disconnect-ack-loss-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-disconnect-ack-loss-"));
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
     getNowMs: () => 2000,
@@ -1088,7 +1088,7 @@ test("Bus leader replaces a carried target proven deleted after disconnect ackno
 
 test("Bus leader follower target provisioner restores an existing manual follower thread", async () => {
   const dir = mkdtempSync(
-    join(tmpdir(), "pi-telegram-bus-follower-stale-provision-"),
+    join(tmpdir(), "pa-telegram-bus-follower-stale-provision-"),
   );
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
@@ -1148,7 +1148,7 @@ test("Bus leader follower target provisioner restores an existing manual followe
 
 test("Bus leader follower target provisioner coalesces concurrent follower registrations", async () => {
   const dir = mkdtempSync(
-    join(tmpdir(), "pi-telegram-bus-follower-concurrent-provision-"),
+    join(tmpdir(), "pa-telegram-bus-follower-concurrent-provision-"),
   );
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
@@ -1201,7 +1201,7 @@ test("Bus leader follower target provisioner coalesces concurrent follower regis
 });
 
 test("Bus leader target provisioner creates thread and announces connection", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-leader-provision-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-leader-provision-"));
   const store = createTelegramTopicTargetStore({
     path: join(dir, "state.json"),
     getNowMs: () => 1000,
@@ -2081,7 +2081,7 @@ test("Bus leader encodes commit-unknown API failures structurally", async () => 
 });
 
 test("Bus leader proxies only exact-generation traffic and preserves durable receipts", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-exact-proxy-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-exact-proxy-"));
   const followerSocketPath = join(dir, "follower.sock");
   let forwarded = 0;
   const followerServer = createTelegramBusLocalServer({
@@ -2404,7 +2404,7 @@ test("Bus leader authorizes scoped follower API calls", async () => {
 });
 
 test("Bus leader assembly wires provisioners, reconciliation, API, and runtime", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-leader-assembly-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-leader-assembly-"));
   const socketPath = join(dir, "bus.sock");
   const store = createTelegramTopicTargetStore({ path: join(dir, "state.json") });
   const events: string[] = [];
@@ -2445,7 +2445,7 @@ test("Bus leader assembly wires provisioners, reconciliation, API, and runtime",
 });
 
 test("Bus leader runtime exposes direct leader-to-follower queue handoff", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-leader-handoff-route-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-leader-handoff-route-"));
   const socketPath = join(dir, "bus.sock");
   const registry = createTelegramBusFollowerRegistry();
   const recipientSocketPath = join(dir, "recipient.sock");
@@ -2517,7 +2517,7 @@ test("Bus leader runtime exposes direct leader-to-follower queue handoff", async
 });
 
 test("Bus leader runtime provisions leader target before polling", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-leader-target-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-leader-target-"));
   const socketPath = join(dir, "bus.sock");
   const events: string[] = [];
   const runtime = createTelegramBusLeaderRuntime({
@@ -2543,7 +2543,7 @@ test("Bus leader runtime provisions leader target before polling", async () => {
 });
 
 test("Bus leader runtime keeps follower endpoint unpublished during cleanup replay", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-replay-fence-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-replay-fence-"));
   const socketPath = join(dir, "bus.sock");
   let finishProvisioning!: () => void;
   let provisioningStarted!: () => void;
@@ -2592,7 +2592,7 @@ test("Bus leader runtime keeps follower endpoint unpublished during cleanup repl
 });
 
 test("Bus leader runtime starts the local server around polling", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-leader-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-leader-"));
   const socketPath = join(dir, "bus.sock");
   const events: string[] = [];
   const registry = createTelegramBusFollowerRegistry();
@@ -2655,7 +2655,7 @@ test("Bus leader runtime starts the local server around polling", async () => {
 });
 
 test("Bus leader runtime prunes stale followers while polling", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-prune-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-prune-"));
   const socketPath = join(dir, "bus.sock");
   const registry = createTelegramBusFollowerRegistry();
   const runtimeEvents: string[] = [];
@@ -2695,7 +2695,7 @@ test("Bus leader runtime prunes stale followers while polling", async () => {
 });
 
 test("Bus leader owns one generation-fenced follower prune", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-prune-gate-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-prune-gate-"));
   const socketPath = join(dir, "bus.sock");
   const registry = createTelegramBusFollowerRegistry();
   registry.register({
@@ -2745,7 +2745,7 @@ test("Bus leader owns one generation-fenced follower prune", async () => {
 });
 
 test("Bus leader cleans up a stale follower only after its process is confirmed dead and cleanup is enabled", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-dead-cleanup-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-dead-cleanup-"));
   const socketPath = join(dir, "bus.sock");
   const registry = createTelegramBusFollowerRegistry();
   registry.register({
@@ -2783,7 +2783,7 @@ test("Bus leader cleans up a stale follower only after its process is confirmed 
 });
 
 test("Bus leader serializes confirmed-dead cleanup before replacement registration", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-dead-race-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-dead-race-"));
   const socketPath = join(dir, "bus.sock");
   const registry = createTelegramBusFollowerRegistry();
   registry.register({
@@ -2856,7 +2856,7 @@ test("Bus leader serializes confirmed-dead cleanup before replacement registrati
 });
 
 test("Bus leader preserves stale follower threads without both confirmed death and enabled cleanup", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-dead-preserve-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-dead-preserve-"));
   const socketPath = join(dir, "bus.sock");
   const registry = createTelegramBusFollowerRegistry();
   registry.register({ instanceId: "alive", connectedAtMs: 0, pid: 1 });
@@ -2898,7 +2898,7 @@ test("Bus leader preserves stale follower threads without both confirmed death a
 });
 
 test("Bus leader runtime stops stale follower pruning and clears registry on stop", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-prune-stop-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-prune-stop-"));
   const socketPath = join(dir, "bus.sock");
   const registry = createTelegramBusFollowerRegistry();
   let nowMs = 1000;
@@ -2925,7 +2925,7 @@ test("Bus leader runtime stops stale follower pruning and clears registry on sto
 });
 
 test("Bus leader runtime stops the local server if polling startup fails", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-telegram-bus-leader-fail-"));
+  const dir = mkdtempSync(join(tmpdir(), "pa-telegram-bus-leader-fail-"));
   const socketPath = join(dir, "bus.sock");
   const runtime = createTelegramBusLeaderRuntime({
     socketPath,

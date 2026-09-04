@@ -51,7 +51,7 @@ const TELEGRAM_MODEL_CONTEXT_TOOL_NAMES = new Set([
   "telegram_message",
 ]);
 const TELEGRAM_MODEL_CONTEXT_MEMORY_KEY = Symbol.for(
-  "@llblab/pi-telegram:model-context-suspended-tools",
+  "prime-agent-telegram:model-context-suspended-tools",
 );
 
 export interface TelegramModelContextAvailabilityMemory {

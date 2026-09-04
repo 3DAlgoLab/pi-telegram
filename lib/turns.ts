@@ -49,8 +49,8 @@ export interface TelegramTurnTarget {
 export interface TelegramTurnMessage {
   message_id: number;
   message_thread_id?: number;
-  pi_telegram_agent_source_thread?: string;
-  pi_telegram_source_update_id?: number;
+  pa_telegram_agent_source_thread?: string;
+  pa_telegram_source_update_id?: number;
   chat: { id: number; type?: string };
 }
 
@@ -568,7 +568,7 @@ export function createTelegramPromptTurnRuntimeBuilder<
       : undefined;
     const telegramPrefix = createTelegramTurnPrefix({
       thread: threadLabel,
-      "from-thread": firstMessage?.pi_telegram_agent_source_thread,
+      "from-thread": firstMessage?.pa_telegram_agent_source_thread,
     });
     return buildTelegramPromptTurnRuntime({
       telegramPrefix,
@@ -641,8 +641,8 @@ function collectTelegramTurnAdmissionReceipts(
     for (const receipt of turn.admissionReceipts ?? []) addReceipt(receipt);
   }
   const sourceUpdateIds = messages.flatMap((message) =>
-    typeof message.pi_telegram_source_update_id === "number"
-      ? [message.pi_telegram_source_update_id]
+    typeof message.pa_telegram_source_update_id === "number"
+      ? [message.pa_telegram_source_update_id]
       : [],
   );
   if (sourceUpdateIds.length > 0) {

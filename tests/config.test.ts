@@ -95,7 +95,7 @@ test("Telegram profile names allow only lowercase letters and digits", () => {
 });
 
 test("Telegram config helper returns empty config when file is absent", async () => {
-  const agentDir = await mkdtemp(join(tmpdir(), "pi-telegram-missing-config-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "pa-telegram-missing-config-"));
   assert.deepEqual(
     await readTelegramConfig(join(agentDir, "telegram.json")),
     {},
@@ -103,7 +103,7 @@ test("Telegram config helper returns empty config when file is absent", async ()
 });
 
 test("activity defaults absent config to verbose, fails invalid values closed, and migrates legacy verbosity on write", async () => {
-  const agentDir = await mkdtemp(join(tmpdir(), "pi-telegram-verbosity-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "pa-telegram-verbosity-"));
   const configPath = join(agentDir, "telegram.json");
   const store = createTelegramConfigStore({
     agentDir,
@@ -140,7 +140,7 @@ test("activity defaults absent config to verbose, fails invalid values closed, a
 });
 
 test("Concurrent config processes preserve independent settings mutations", async () => {
-  const agentDir = await mkdtemp(join(tmpdir(), "pi-telegram-config-processes-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "pa-telegram-config-processes-"));
   const configPath = join(agentDir, "telegram.json");
   await writeFile(
     configPath,
@@ -189,7 +189,7 @@ test("Concurrent config processes preserve independent settings mutations", asyn
 });
 
 test("Telegram config reads valid atomic snapshots without acquiring the transaction guard", async () => {
-  const agentDir = await mkdtemp(join(tmpdir(), "pi-telegram-config-read-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "pa-telegram-config-read-"));
   const configPath = join(agentDir, "telegram.json");
   const transactionPath = `${configPath}.transaction`;
   const generation = "10000000-0000-4000-8000-000000000001";
@@ -233,7 +233,7 @@ test("Telegram proactive target getter prefers active then assigned targets", ()
 });
 
 test("Telegram config helpers persist and reload config", async () => {
-  const agentDir = await mkdtemp(join(tmpdir(), "pi-telegram-config-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "pa-telegram-config-"));
   const configPath = join(agentDir, "telegram.json");
   const config = {
     botToken: "123:abc",
@@ -334,7 +334,7 @@ test("Telegram default profile normalization merges non-conflicting fields", () 
 
 test("Telegram config load rejects conflicting default identity without mutation", async () => {
   const agentDir = await mkdtemp(
-    join(tmpdir(), "pi-telegram-default-conflict-"),
+    join(tmpdir(), "pa-telegram-default-conflict-"),
   );
   const configPath = join(agentDir, "telegram.json");
   const original = `${JSON.stringify(
@@ -360,7 +360,7 @@ test("Telegram config load rejects conflicting default identity without mutation
 
 test("Telegram config load atomically normalizes the default profile", async () => {
   const agentDir = await mkdtemp(
-    join(tmpdir(), "pi-telegram-default-profile-"),
+    join(tmpdir(), "pa-telegram-default-profile-"),
   );
   const configPath = join(agentDir, "telegram.json");
   await writeTelegramConfig(
@@ -386,7 +386,7 @@ test("Telegram config load atomically normalizes the default profile", async () 
 });
 
 test("Telegram config store persists active named profile configuration without overwriting default", async () => {
-  const agentDir = await mkdtemp(join(tmpdir(), "pi-telegram-profile-config-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "pa-telegram-profile-config-"));
   const configPath = join(agentDir, "telegram.json");
   const store = createTelegramConfigStore({
     agentDir,
@@ -430,7 +430,7 @@ test("Telegram config store persists active named profile configuration without 
 });
 
 test("Stale config persistence preserves unrelated global and profile disk deltas", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-config-delta-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-config-delta-"));
   const configPath = join(dir, "telegram.json");
   try {
     await writeTelegramConfig(dir, configPath, legacyConfig({
@@ -479,7 +479,7 @@ test("Stale config persistence preserves unrelated global and profile disk delta
 });
 
 test("No-op config persistence adopts newer disk state without rewriting it", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-telegram-config-noop-"));
+  const dir = await mkdtemp(join(tmpdir(), "pa-telegram-config-noop-"));
   const configPath = join(dir, "telegram.json");
   try {
     await writeTelegramConfig(dir, configPath, {
@@ -522,7 +522,7 @@ test("Telegram config store rejects missing named profile activation", () => {
 });
 
 test("Telegram config load recovers invalid JSON and records a diagnostic", async () => {
-  const agentDir = await mkdtemp(join(tmpdir(), "pi-telegram-invalid-config-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "pa-telegram-invalid-config-"));
   const configPath = join(agentDir, "telegram.json");
   await writeFile(configPath, "{not valid json", "utf8");
   const events: string[] = [];
@@ -577,7 +577,7 @@ test("Telegram voice reply mode helpers normalize legacy hidden to manual", () =
 });
 
 test("Telegram voice reply mode setter persists telegram.json", async () => {
-  const agentDir = await mkdtemp(join(tmpdir(), "pi-telegram-voice-mode-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "pa-telegram-voice-mode-"));
   const configPath = join(agentDir, "telegram.json");
   const store = createTelegramConfigStore({
     initialConfig: { botToken: "123:abc" },
@@ -617,7 +617,7 @@ test("Telegram config normalization removes the retired proactive push option", 
 
 test("Telegram settings setters reload before scoped writes to preserve shared config changes", async () => {
   const agentDir = await mkdtemp(
-    join(tmpdir(), "pi-telegram-shared-settings-"),
+    join(tmpdir(), "pa-telegram-shared-settings-"),
   );
   const configPath = join(agentDir, "telegram.json");
   await writeTelegramConfig(agentDir, configPath, { botToken: "123:abc" });
@@ -660,7 +660,7 @@ test("Telegram settings setters reload before scoped writes to preserve shared c
 
 test("Thread cleanup fails closed after invalid shared config recovery", async () => {
   const agentDir = await mkdtemp(
-    join(tmpdir(), "pi-telegram-invalid-cleanup-setting-"),
+    join(tmpdir(), "pa-telegram-invalid-cleanup-setting-"),
   );
   const configPath = join(agentDir, "telegram.json");
   await writeTelegramConfig(agentDir, configPath, {
@@ -681,7 +681,7 @@ test("Thread cleanup fails closed after invalid shared config recovery", async (
 });
 
 test("Telegram draft preview config reads and migrates legacy rich flag", async () => {
-  const agentDir = await mkdtemp(join(tmpdir(), "pi-telegram-draft-legacy-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "pa-telegram-draft-legacy-"));
   const configPath = join(agentDir, "telegram.json");
   await writeTelegramConfig(agentDir, configPath, {
     botToken: "123:abc",
@@ -701,7 +701,7 @@ test("Telegram draft preview config reads and migrates legacy rich flag", async 
 
 test("Telegram settings menu callbacks persist voice and time settings to telegram.json", async () => {
   const agentDir = await mkdtemp(
-    join(tmpdir(), "pi-telegram-settings-callbacks-"),
+    join(tmpdir(), "pa-telegram-settings-callbacks-"),
   );
   const configPath = join(agentDir, "telegram.json");
   const store = createTelegramConfigStore({
@@ -770,7 +770,7 @@ test("Telegram settings menu callbacks persist voice and time settings to telegr
 });
 
 test("Telegram time injection mode setter persists telegram.json", async () => {
-  const agentDir = await mkdtemp(join(tmpdir(), "pi-telegram-time-mode-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "pa-telegram-time-mode-"));
   const configPath = join(agentDir, "telegram.json");
   const store = createTelegramConfigStore({
     initialConfig: {
@@ -821,7 +821,7 @@ test("Telegram config runtime lets extensions update live voice config", async (
 });
 
 test("Telegram config store owns load, mutation, and persistence", async () => {
-  const agentDir = await mkdtemp(join(tmpdir(), "pi-telegram-store-"));
+  const agentDir = await mkdtemp(join(tmpdir(), "pa-telegram-store-"));
   const configPath = join(agentDir, "telegram.json");
   const store = createTelegramConfigStore({
     initialConfig: {
